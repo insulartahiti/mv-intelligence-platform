@@ -6,6 +6,7 @@ interface AffinityEntity {
   name: string;
   domain?: string;
   type: number; // 0 = person, 1 = organization
+  global?: boolean;
 }
 
 interface AffinityNote {
@@ -15,6 +16,36 @@ interface AffinityNote {
   mention_ids: number[];
   posted_at: string;
   updated_at: string;
+}
+
+interface AffinityEmail {
+  id: number;
+  subject: string;
+  body: string; // HTML content often
+  sent_at: string;
+  sender_id: number; // Affinity person ID
+  recipient_ids: number[];
+}
+
+interface AffinityMeeting {
+  id: number;
+  type: number; // 0 = meeting, 1 = call
+  start_time: string;
+  end_time: string | null;
+  attendees: {
+    attendee_id: number;
+    attendee_type: number; // 0 = person, 1 = organization
+  }[];
+  title: string | null; // Often null if not manually set
+}
+
+interface AffinityReminder {
+  id: number;
+  content: string;
+  owner_id: number;
+  completed: boolean;
+  due_date: string;
+  created_at: string;
 }
 
 interface AffinityListEntry {
@@ -70,12 +101,24 @@ export class AffinityClient {
   }
 
   // Fetch notes for a specific entity (person or organization)
-  // Affinity notes are attached to entities
   async getNotes(entityType: 'person' | 'organization', entityId: number) {
     return this.request<{ notes: AffinityNote[], next_page_token: string | null }>(`/notes?${entityType}_id=${entityId}`);
   }
-  
-  // Incremental sync logic would go here (fetching since timestamp not directly supported by all endpoints, 
-  // often need to iterate lists or use webhooks)
-}
 
+  // Fetch emails
+  async getEmails(entityType: 'person' | 'organization', entityId: number) {
+    // Note: Affinity API for emails might be /emails?person_id=... or /persons/{id}/emails depending on version. 
+    // Standard v1 is /emails?person_id=...
+    return this.request<{ emails: AffinityEmail[], next_page_token: string | null }>(`/emails?${entityType}_id=${entityId}`);
+  }
+
+  // Fetch meetings
+  async getMeetings(entityType: 'person' | 'organization', entityId: number) {
+    return this.request<{ meetings: AffinityMeeting[], next_page_token: string | null }>(`/meetings?${entityType}_id=${entityId}`);
+  }
+
+  // Fetch reminders
+  async getReminders(entityType: 'person' | 'organization', entityId: number) {
+    return this.request<{ reminders: AffinityReminder[], next_page_token: string | null }>(`/reminders?${entityType}_id=${entityId}`);
+  }
+}
