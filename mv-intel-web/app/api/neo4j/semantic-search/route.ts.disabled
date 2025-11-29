@@ -1,0 +1,434 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
+import { neo4jCache, CACHE_TTL } from '../../../../lib/neo4j-cache';
+
+interface SearchFilters {
+  entityTypes?: string[];
+  pipelineStages?: string[];
+  funds?: string[];
+  industries?: string[];
+  showInternalOnly?: boolean;
+  showLinkedInOnly?: boolean;
+  minImportance?: number;
+}
+
+interface SearchResult {
+  id: string;
+  name: string;
+  type: string;
+  similarity: number;
+  metadata: {
+    domain?: string;
+    industry?: string;
+    pipeline_stage?: string;
+    fund?: string;
+    taxonomy?: string[];
+    internal_owner: boolean;
+    is_portfolio: boolean;
+    is_pipeline: boolean;
+    importance: number;
+    ai_summary?: string;
+    ai_insights?: string[];
+    ai_tags?: string[];
+    has_enrichment_data: boolean;
+    enrichment_insights: string[];
+    recent_news: number;
+    company_info: any;
+    // Graph-specific metadata
+    connection_count: number;
+    centrality_score?: number;
+    community_id?: number;
+    path_to_internal?: number;
+    relationship_strength?: number;
+  };
+}
+
+// Generate embedding using OpenAI (reuse existing function)
+async function generateEmbedding(text: string): Promise<number[]> {
+  const response = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      input: text,
+      model: 'text-embedding-3-large', // 2000 dimensions (Supabase limit)
+      dimensions: 2000,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.data[0].embedding;
+}
+
+// Neo4j semantic search with graph context
+async function performNeo4jSemanticSearch(
+  query: string,
+  filters: SearchFilters,
+  limit: number
+): Promise<SearchResult[]> {
+  const session = driver.session({ database: NEO4J_DATABASE });
+
+  try {
+    console.log('🔍 Starting Neo4j semantic search');
+    console.log('Query:', query);
+    console.log('Filters:', filters);
+
+    // Generate embedding for semantic search
+    const queryEmbedding = await generateEmbedding(query);
+
+    // Build Cypher query with graph-aware search
+    let cypherQuery = `
+      MATCH (n:Entity)
+      WHERE n.embedding IS NOT NULL
+    `;
+
+    const params: any = {
+      queryEmbedding: queryEmbedding,
+      limit: Math.floor(limit) * 2 // Get more results for ranking
+    };
+
+    // Apply filters
+    if (filters.entityTypes && filters.entityTypes.length > 0) {
+      cypherQuery += ` AND n.type IN $entityTypes`;
+      params.entityTypes = filters.entityTypes;
+    }
+
+    if (filters.pipelineStages && filters.pipelineStages.length > 0) {
+      cypherQuery += ` AND n.pipeline_stage IN $pipelineStages`;
+      params.pipelineStages = filters.pipelineStages;
+    }
+
+    if (filters.funds && filters.funds.length > 0) {
+      cypherQuery += ` AND n.fund IN $funds`;
+      params.funds = filters.funds;
+    }
+
+    if (filters.industries && filters.industries.length > 0) {
+      cypherQuery += ` AND n.industry IN $industries`;
+      params.industries = filters.industries;
+    }
+
+    if (filters.showInternalOnly) {
+      cypherQuery += ` AND n.is_internal = true`;
+    }
+
+    if (filters.showLinkedInOnly) {
+      cypherQuery += ` AND n.linkedin_first_degree = true`;
+    }
+
+    if (filters.minImportance) {
+      cypherQuery += ` AND n.importance >= $minImportance`;
+      params.minImportance = filters.minImportance;
+    }
+
+    // Add vector similarity search and graph metrics
+    cypherQuery += `
+      WITH n, 
+           gds.similarity.cosine(n.embedding, $queryEmbedding) AS similarity,
+           COUNT { (n)-[:RELATES]-() } AS connection_count
+      
+      // Calculate centrality metrics
+      OPTIONAL MATCH (n)-[r:RELATES]-(connected)
+      WITH n, similarity, connection_count,
+           collect(DISTINCT connected) AS connected_nodes,
+           avg(r.strength_score) AS avg_relationship_strength
+      
+      // Find path to internal entities
+      OPTIONAL MATCH path = shortestPath((n)-[:RELATES*1..3]-(internal:Entity {is_internal: true}))
+      WITH n, similarity, connection_count, connected_nodes, avg_relationship_strength,
+           CASE WHEN path IS NOT NULL THEN length(path) ELSE null END AS path_to_internal
+      
+      // Community detection (simplified)
+      WITH n, similarity, connection_count, connected_nodes, avg_relationship_strength, path_to_internal,
+           CASE 
+             WHEN n.is_internal THEN 0
+             WHEN n.is_portfolio THEN 1
+             WHEN n.is_pipeline THEN 2
+             ELSE 3
+           END AS community_id
+      
+      // Calculate centrality score based on connections and importance
+      WITH n, similarity, connection_count, connected_nodes, avg_relationship_strength, path_to_internal, community_id,
+           (connection_count * 0.3 + (n.importance * 10) * 0.4 + (avg_relationship_strength * 10) * 0.3) AS centrality_score
+      
+      WHERE similarity > 0.3
+      
+      RETURN n, similarity, connection_count, centrality_score, community_id, 
+             path_to_internal, avg_relationship_strength
+      ORDER BY similarity DESC, centrality_score DESC
+      LIMIT toInteger($limit)
+    `;
+
+    const result = await session.run(cypherQuery, params);
+
+    const searchResults: SearchResult[] = result.records.map(record => {
+      const node = record.get('n');
+      const similarity = record.get('similarity');
+      const connectionCount = record.get('connection_count');
+      const centralityScore = record.get('centrality_score');
+      const communityId = record.get('community_id');
+      const pathToInternal = record.get('path_to_internal');
+      const relationshipStrength = record.get('avg_relationship_strength');
+
+      // Parse enrichment data
+      let enrichmentData = null;
+      let enrichmentInsights: string[] = [];
+      let recentNews = 0;
+      let companyInfo = {};
+
+      try {
+        if (node.properties.enrichment_data) {
+          enrichmentData = JSON.parse(node.properties.enrichment_data);
+          if (enrichmentData.web_search_data) {
+            const webData = JSON.parse(enrichmentData.web_search_data);
+            enrichmentInsights = webData.results?.map((r: any) => r.snippet?.substring(0, 100)) || [];
+            recentNews = webData.results?.length || 0;
+            companyInfo = webData.results?.[0] || {};
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+
+      // Calculate enhanced similarity with graph context
+      let enhancedSimilarity = similarity;
+
+      // Boost for high centrality
+      if (centralityScore > 0.5) {
+        enhancedSimilarity += 0.1;
+      }
+
+      // Boost for connections to internal entities
+      if (pathToInternal && pathToInternal <= 2) {
+        enhancedSimilarity += 0.15;
+      }
+
+      // Boost for strong relationships
+      if (relationshipStrength > 0.7) {
+        enhancedSimilarity += 0.05;
+      }
+
+      // Boost for portfolio/pipeline entities
+      if (node.properties.is_portfolio) {
+        enhancedSimilarity += 0.1;
+      }
+      if (node.properties.is_pipeline) {
+        enhancedSimilarity += 0.05;
+      }
+
+      return {
+        id: node.identity.low.toString(),
+        name: node.properties.name,
+        type: node.properties.type,
+        similarity: Math.min(enhancedSimilarity, 1.0),
+        metadata: {
+          domain: node.properties.domain,
+          industry: node.properties.industry,
+          pipeline_stage: node.properties.pipeline_stage,
+          fund: node.properties.fund,
+          taxonomy: node.properties.taxonomy ? JSON.parse(node.properties.taxonomy) : [],
+          internal_owner: node.properties.is_internal || false,
+          is_portfolio: node.properties.is_portfolio || false,
+          is_pipeline: node.properties.is_pipeline || false,
+          importance: node.properties.importance || 0,
+          ai_summary: node.properties.ai_summary,
+          ai_insights: node.properties.ai_insights ? JSON.parse(node.properties.ai_insights) : [],
+          ai_tags: node.properties.ai_tags ? JSON.parse(node.properties.ai_tags) : [],
+          has_enrichment_data: !!enrichmentData,
+          enrichment_insights: enrichmentInsights,
+          recent_news: recentNews,
+          company_info: companyInfo,
+          // Graph-specific metadata
+          connection_count: connectionCount,
+          centrality_score: centralityScore,
+          community_id: communityId,
+          path_to_internal: pathToInternal,
+          relationship_strength: relationshipStrength
+        }
+      };
+    });
+
+    // Sort by enhanced similarity
+    searchResults.sort((a, b) => b.similarity - a.similarity);
+
+    return searchResults.slice(0, limit);
+
+  } catch (error: any) {
+    console.error('Neo4j semantic search error:', error);
+    throw error;
+  } finally {
+    await session.close();
+  }
+}
+
+// Text-based search fallback
+async function performTextSearch(
+  query: string,
+  filters: SearchFilters,
+  limit: number
+): Promise<SearchResult[]> {
+  const session = driver.session({ database: NEO4J_DATABASE });
+
+  try {
+    let cypherQuery = `
+      MATCH (n:Entity)
+      WHERE n.name CONTAINS $query 
+         OR n.industry CONTAINS $query 
+         OR n.domain CONTAINS $query
+         OR n.ai_summary CONTAINS $query
+    `;
+
+    const params: any = {
+      query: query,
+      limit: parseInt(String(limit), 10)
+    };
+
+    // Apply filters
+    if (filters.entityTypes && filters.entityTypes.length > 0) {
+      cypherQuery += ` AND n.type IN $entityTypes`;
+      params.entityTypes = filters.entityTypes;
+    }
+
+    if (filters.pipelineStages && filters.pipelineStages.length > 0) {
+      cypherQuery += ` AND n.pipeline_stage IN $pipelineStages`;
+      params.pipelineStages = filters.pipelineStages;
+    }
+
+    if (filters.showInternalOnly) {
+      cypherQuery += ` AND n.is_internal = true`;
+    }
+
+    cypherQuery += `
+      RETURN n, 
+             COUNT { (n)-[:RELATES]-() } AS connection_count
+      ORDER BY n.importance DESC, connection_count DESC
+      LIMIT $limit
+    `;
+
+    const result = await session.run(cypherQuery, params);
+
+    return result.records.map(record => {
+      const node = record.get('n');
+      const connectionCount = record.get('connection_count');
+
+      return {
+        id: node.identity.low.toString(),
+        name: node.properties.name,
+        type: node.properties.type,
+        similarity: 0.5, // Default similarity for text search
+        metadata: {
+          domain: node.properties.domain,
+          industry: node.properties.industry,
+          pipeline_stage: node.properties.pipeline_stage,
+          fund: node.properties.fund,
+          taxonomy: node.properties.taxonomy ? JSON.parse(node.properties.taxonomy) : [],
+          internal_owner: node.properties.is_internal || false,
+          is_portfolio: node.properties.is_portfolio || false,
+          is_pipeline: node.properties.is_pipeline || false,
+          importance: node.properties.importance || 0,
+          ai_summary: node.properties.ai_summary,
+          ai_insights: node.properties.ai_insights ? JSON.parse(node.properties.ai_insights) : [],
+          ai_tags: node.properties.ai_tags ? JSON.parse(node.properties.ai_tags) : [],
+          has_enrichment_data: !!node.properties.enrichment_data,
+          enrichment_insights: [],
+          recent_news: 0,
+          company_info: {},
+          connection_count: connectionCount,
+          centrality_score: 0,
+          community_id: 0,
+          path_to_internal: null,
+          relationship_strength: 0
+        }
+      };
+    });
+
+  } catch (error: any) {
+    console.error('Neo4j text search error:', error);
+    throw error;
+  } finally {
+    await session.close();
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { query, filters = {}, limit = 20 } = body;
+    const intLimit = parseInt(String(limit), 10);
+
+    if (!query || query.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Query is required' },
+        { status: 400 }
+      );
+    }
+
+    // Create cache key
+    const cacheKey = `semantic-search-${query}-${JSON.stringify(filters)}-${intLimit}`;
+
+    // Check cache first
+    const cachedResult = neo4jCache.get(cacheKey);
+    if (cachedResult) {
+      neo4jCache.recordHit();
+      console.log('📦 Returning cached search results');
+      return NextResponse.json(cachedResult);
+    }
+
+    neo4jCache.recordMiss();
+    console.log('🔍 Neo4j Semantic Search Request:', { query, filters, limit: intLimit });
+
+    let results: SearchResult[] = [];
+
+    try {
+      // Try semantic search first
+      results = await performNeo4jSemanticSearch(query, filters, intLimit);
+    } catch (semanticError) {
+      console.warn('Semantic search failed, falling back to text search:', semanticError);
+      // Fallback to text search
+      results = await performTextSearch(query, filters, intLimit);
+    }
+
+    const result = {
+      success: true,
+      results,
+      query,
+      filters,
+      total: results.length,
+      searchType: 'neo4j-graph-enhanced'
+    };
+
+    // Cache the result
+    neo4jCache.set(cacheKey, {}, result, CACHE_TTL.SEMANTIC_SEARCH);
+
+    return NextResponse.json(result);
+
+  } catch (error: any) {
+    console.error('Neo4j semantic search error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Search failed'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// Handle GET requests for testing
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const query = url.searchParams.get('q') || 'test';
+  const limit = parseInt(url.searchParams.get('limit') || '10', 10);
+
+  return POST(new Request(request.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, limit })
+  }));
+}

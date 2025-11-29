@@ -1,0 +1,637 @@
+'use client';
+
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Network } from 'vis-network';
+import { DataSet } from 'vis-data';
+
+interface OptimizedNeo4jGraphProps {
+  onNodeClick?: (nodeId: string, nodeData: any) => void;
+  onNodeHover?: (nodeId: string, nodeData: any) => void;
+  className?: string;
+  initialLimit?: number;
+  minImportance?: number;
+  enableMetrics?: boolean;
+}
+
+interface GraphData {
+  nodes: Map<string, any>;
+  edges: Map<string, any>;
+  meta: any;
+  metrics?: any[];
+}
+
+export default function OptimizedNeo4jGraph({ 
+  onNodeClick, 
+  onNodeHover, 
+  className = '',
+  initialLimit = 200,
+  minImportance = 0.1,
+  enableMetrics = true
+}: OptimizedNeo4jGraphProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const networkRef = useRef<Network | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [graphData, setGraphData] = useState<GraphData>({
+    nodes: new Map(),
+    edges: new Map(),
+    meta: null
+  });
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const [networkReady, setNetworkReady] = useState(false);
+  
+  // Use refs to store the latest callback functions
+  const onNodeClickRef = useRef(onNodeClick);
+  const onNodeHoverRef = useRef(onNodeHover);
+
+  // Update refs when props change
+  useEffect(() => {
+    onNodeClickRef.current = onNodeClick;
+    onNodeHoverRef.current = onNodeHover;
+  }, [onNodeClick, onNodeHover]);
+
+  // Optimized data fetching with proper error handling
+  const fetchGraphData = useCallback(async (
+    cursor: number = 0, 
+    expandNodeId?: string,
+    append: boolean = false
+  ) => {
+    try {
+      const url = new URL('/api/neo4j/graph-data-optimized', window.location.origin);
+      url.searchParams.set('limit', initialLimit.toString());
+      url.searchParams.set('minImportance', minImportance.toString());
+      url.searchParams.set('cursor', cursor.toString());
+      url.searchParams.set('includeMetrics', enableMetrics.toString());
+      if (expandNodeId) {
+        url.searchParams.set('expandNodeId', expandNodeId);
+      }
+
+      console.log('OptimizedNeo4jGraph: Fetching data from:', url.toString());
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        if (!controller.signal.aborted) {
+          controller.abort();
+        }
+      }, 15000); // 15s timeout
+      
+      const response = await fetch(url.toString(), {
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('OptimizedNeo4jGraph: API response:', { 
+        success: result.success, 
+        nodeCount: result.data?.nodes?.length,
+        hasMore: result.data?.meta?.hasMore 
+      });
+
+      if (result.success && result.data) {
+        const { nodes, edges, meta, metrics } = result.data;
+        
+        setGraphData(prev => {
+          console.log('OptimizedNeo4jGraph: Updating graph data, prev nodes:', prev.nodes.size, 'new nodes:', nodes.length);
+          const newNodes = new Map(prev.nodes);
+          const newEdges = new Map(prev.edges);
+
+          // Add new nodes
+          nodes.forEach((node: any) => {
+            newNodes.set(node.id, node);
+          });
+
+          // Add new edges
+          edges.forEach((edge: any) => {
+            newEdges.set(edge.id, edge);
+          });
+
+          return {
+            nodes: newNodes,
+            edges: newEdges,
+            meta: meta,
+            metrics: metrics
+          };
+        });
+
+        setHasMore(meta.hasMore || false);
+        return { success: true, hasMore: meta.hasMore };
+      } else {
+        throw new Error(result.message || 'Failed to load data');
+      }
+    } catch (err: any) {
+      // Ignore AbortError as it's expected when component unmounts
+      if (err.name === 'AbortError') {
+        console.log('OptimizedNeo4jGraph: Request aborted (component unmounting)');
+        return { success: false, aborted: true };
+      }
+      console.error('OptimizedNeo4jGraph: Error fetching data:', err);
+      throw err;
+    }
+  }, [initialLimit, minImportance, enableMetrics]);
+
+  // Load more data
+  const loadMore = useCallback(async () => {
+    console.log('OptimizedNeo4jGraph: loadMore called');
+    if (loadingMore || !hasMore || !graphData.meta) return;
+    
+    setLoadingMore(true);
+    try {
+      const result = await fetchGraphData(graphData.meta.nextCursor, undefined, true);
+      if (result && result.aborted) {
+        return; // Don't update state if request was aborted
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setError(err.message);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, graphData.meta]);
+
+  // Expand specific node
+  const expandNode = useCallback(async (nodeId: string) => {
+    if (expandedNodes.has(nodeId)) return;
+    
+    setLoadingMore(true);
+    try {
+      const result = await fetchGraphData(0, nodeId, true);
+      if (result && !result.aborted) {
+        setExpandedNodes(prev => new Set([...prev, nodeId]));
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setError(err.message);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [expandedNodes]);
+
+  // Initial load
+  useEffect(() => {
+    let isMounted = true;
+    let abortController: AbortController | null = null;
+
+    const loadInitialData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Small delay to ensure component is fully mounted
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        if (!isMounted) return; // Check if component is still mounted after delay
+        
+        // Create abort controller for this specific request
+        abortController = new AbortController();
+        
+        const url = new URL('/api/neo4j/graph-data-optimized', window.location.origin);
+        url.searchParams.set('limit', initialLimit.toString());
+        url.searchParams.set('minImportance', minImportance.toString());
+        url.searchParams.set('cursor', '0');
+        url.searchParams.set('includeMetrics', enableMetrics.toString());
+
+        console.log('OptimizedNeo4jGraph: Fetching data from:', url.toString());
+        
+        const response = await fetch(url.toString(), {
+          signal: abortController.signal,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        if (!isMounted) return; // Component unmounted during fetch
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('OptimizedNeo4jGraph: API response:', { 
+          success: result.success, 
+          nodeCount: result.data?.nodes?.length,
+          hasMore: result.data?.meta?.hasMore 
+        });
+
+        if (!isMounted) return; // Component unmounted during processing
+
+        if (result.success && result.data) {
+          const { nodes, edges, meta, metrics } = result.data;
+          
+          setGraphData(prev => {
+            const newNodes = new Map(prev.nodes);
+            const newEdges = new Map(prev.edges);
+
+            // Add new nodes
+            nodes.forEach((node: any) => {
+              newNodes.set(node.id, node);
+            });
+
+            // Add new edges
+            edges.forEach((edge: any) => {
+              newEdges.set(edge.id, edge);
+            });
+
+            return {
+              nodes: newNodes,
+              edges: newEdges,
+              meta: meta,
+              metrics: metrics
+            };
+          });
+          setHasMore(meta.hasMore || false);
+          setLoading(false);
+        } else {
+          throw new Error(result.message || 'Failed to load data');
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          if (err.name === 'AbortError') {
+            console.log('OptimizedNeo4jGraph: Request aborted (component unmounting)');
+            return;
+          }
+          console.error('OptimizedNeo4jGraph: Error loading data:', err);
+          setError(err.message);
+          setLoading(false);
+        }
+      }
+    };
+
+    loadInitialData();
+
+    return () => {
+      isMounted = false;
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+  }, []); // Empty dependency array for initial load only
+
+  // Memoized node styling functions
+  const getNodeColor = useCallback((node: any) => {
+    const props = node.properties;
+    if (props.is_internal) return '#dc2626'; // Red for internal
+    if (props.is_portfolio) return '#059669'; // Green for portfolio
+    if (props.is_pipeline) return '#f59e0b'; // Yellow for pipeline
+    if (props.linkedin_first_degree) return '#7c3aed'; // Purple for LinkedIn 1st degree
+    return '#3b82f6'; // Blue for others
+  }, []);
+
+  const getNodeSize = useCallback((importance: number) => {
+    return Math.max(15, Math.min(50, 15 + importance * 25));
+  }, []);
+
+  const getEdgeColor = useCallback((edge: any) => {
+    const kind = edge.properties.kind;
+    switch (kind) {
+      case 'founder': return '#ef4444';
+      case 'works_at': return '#3b82f6';
+      case 'owner': return '#059669';
+      case 'deal_team': return '#f59e0b';
+      default: return '#848484';
+    }
+  }, []);
+
+  const getEdgeWidth = useCallback((weight: number) => {
+    return Math.max(1, Math.min(5, weight * 5));
+  }, []);
+
+  const getNodeTooltip = useCallback((node: any) => {
+    const props = node.properties;
+    let tooltip = `<strong>${node.label}</strong><br/>`;
+    tooltip += `Type: ${props.type || 'Unknown'}<br/>`;
+    tooltip += `Importance: ${(props.importance || 0).toFixed(2)}<br/>`;
+    
+    if (props.is_internal) tooltip += 'Internal Owner<br/>';
+    if (props.is_portfolio) tooltip += 'Portfolio Company<br/>';
+    if (props.is_pipeline) tooltip += `Pipeline: ${props.pipeline_stage || 'Unknown'}<br/>`;
+    if (props.linkedin_first_degree) tooltip += 'LinkedIn 1st Degree<br/>';
+    if (props.industry) tooltip += `Industry: ${props.industry}<br/>`;
+    if (props.domain) tooltip += `Domain: ${props.domain}<br/>`;
+    
+    return tooltip;
+  }, []);
+
+  const getEdgeTooltip = useCallback((edge: any) => {
+    const props = edge.properties;
+    return `${props.kind || edge.label}<br/>Strength: ${(props.strength_score || 0).toFixed(2)}`;
+  }, []);
+
+  // Memoized network options
+  const networkOptions = useMemo(() => ({
+    nodes: {
+      shape: 'dot',
+      font: {
+        size: 14,
+        color: '#000000',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      borderWidth: 2,
+      shadow: true
+    },
+    edges: {
+      width: 2,
+      color: { color: '#848484', highlight: '#ff0000' },
+      smooth: {
+        enabled: true,
+        type: 'continuous',
+        forceDirection: 'none',
+        roundness: 0.4
+      },
+      arrows: {
+        to: { enabled: true, scaleFactor: 0.5 }
+      },
+      font: {
+        size: 10,
+        color: '#343434',
+        background: 'rgba(255,255,255,0.7)'
+      }
+    },
+    physics: {
+      enabled: true,
+      stabilization: { 
+        enabled: true, 
+        iterations: 200,
+        updateInterval: 50,
+        fit: true
+      },
+      barnesHut: {
+        gravitationalConstant: -4000,
+        centralGravity: 0.1,
+        springLength: 200,
+        springConstant: 0.04,
+        damping: 0.7,
+        avoidOverlap: 0.5
+      },
+      solver: 'barnesHut',
+      maxVelocity: 20,
+      minVelocity: 0.1,
+      timestep: 0.35
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      hideEdgesOnDrag: false,
+      selectConnectedEdges: true,
+      dragView: true,
+      zoomView: true,
+      keyboard: {
+        enabled: false
+      }
+    },
+    layout: {
+      improvedLayout: false
+    }
+  }), []);
+
+  // Create network once when data is first loaded
+  useEffect(() => {
+    if (loading || graphData.nodes.size === 0 || !containerRef.current || networkRef.current) return;
+
+    console.log('OptimizedNeo4jGraph: Creating network with', graphData.nodes.size, 'nodes and', graphData.edges.size, 'edges');
+
+    try {
+      const visNodes = new DataSet(Array.from(graphData.nodes.values()).map(node => ({
+        id: node.id,
+        label: node.label,
+        group: node.group,
+        color: getNodeColor(node),
+        size: getNodeSize(node.properties.importance || 0.5),
+        font: {
+          size: 14,
+          color: '#000000',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        title: getNodeTooltip(node),
+        properties: node.properties
+      })));
+
+      const visEdges = new DataSet(Array.from(graphData.edges.values()).map(edge => ({
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+        label: edge.label,
+        color: getEdgeColor(edge),
+        width: getEdgeWidth(edge.properties.weight || 0.5),
+        title: getEdgeTooltip(edge),
+        properties: edge.properties
+      })));
+
+      const data = { nodes: visNodes, edges: visEdges };
+      
+      // Create new network
+      console.log('OptimizedNeo4jGraph: Creating new network');
+      networkRef.current = new Network(containerRef.current, data, networkOptions);
+      setNetworkReady(true);
+
+      // Add event listeners
+      networkRef.current.on('click', (params) => {
+        if (params.nodes.length > 0 && onNodeClickRef.current) {
+          const nodeId = params.nodes[0];
+          const nodeData = graphData.nodes.get(nodeId);
+          setSelectedNode(nodeId);
+          onNodeClickRef.current(nodeId, nodeData);
+          
+          // Expand node on double-click
+          if (params.event.detail === 2) {
+            expandNode(nodeId);
+          }
+        }
+      });
+
+      networkRef.current.on('hoverNode', (params) => {
+        if (onNodeHoverRef.current) {
+          const nodeId = params.node;
+          const nodeData = graphData.nodes.get(nodeId);
+          onNodeHoverRef.current(nodeId, nodeData);
+        }
+      });
+
+      // Track user interactions to prevent data updates during zoom/pan
+      networkRef.current.on('zoom', () => {
+        setIsInteracting(true);
+        setTimeout(() => setIsInteracting(false), 500);
+      });
+
+      networkRef.current.on('dragStart', () => {
+        setIsInteracting(true);
+      });
+
+      networkRef.current.on('dragEnd', () => {
+        setTimeout(() => setIsInteracting(false), 500);
+      });
+    } catch (err: any) {
+      console.error('OptimizedNeo4jGraph: Error creating network:', err);
+      setError(err.message);
+    }
+  }, [loading, graphData.nodes.size, graphData.edges.size]);
+
+  // Update network data when graphData changes (without recreating the network)
+  useEffect(() => {
+    if (!networkRef.current || !networkReady || graphData.nodes.size === 0 || isInteracting) return;
+
+    // Check if the network is properly initialized
+    if (!networkRef.current || !(networkRef.current as any).body) {
+      console.log('OptimizedNeo4jGraph: Network not properly initialized, skipping update');
+      return;
+    }
+
+    // Check if the data has actually changed to avoid unnecessary updates
+    const currentNodes = networkRef.current.getNodes();
+    const currentEdges = networkRef.current.getEdges();
+    
+    if (currentNodes.length === graphData.nodes.size && currentEdges.length === graphData.edges.size) {
+      console.log('OptimizedNeo4jGraph: Data unchanged, skipping update');
+      return;
+    }
+
+    console.log('OptimizedNeo4jGraph: Updating network data with', graphData.nodes.size, 'nodes and', graphData.edges.size, 'edges');
+
+    try {
+      const visNodes = new DataSet(Array.from(graphData.nodes.values()).map(node => ({
+        id: node.id,
+        label: node.label,
+        group: node.group,
+        color: getNodeColor(node),
+        size: getNodeSize(node.properties.importance || 0.5),
+        font: {
+          size: 14,
+          color: '#000000',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        title: getNodeTooltip(node),
+        properties: node.properties
+      })));
+
+      const visEdges = new DataSet(Array.from(graphData.edges.values()).map(edge => ({
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+        label: edge.label,
+        color: getEdgeColor(edge),
+        width: getEdgeWidth(edge.properties.weight || 0.5),
+        title: getEdgeTooltip(edge),
+        properties: edge.properties
+      })));
+
+      const data = { nodes: visNodes, edges: visEdges };
+      networkRef.current.setData(data);
+    } catch (err: any) {
+      console.error('OptimizedNeo4jGraph: Error updating network data:', err);
+      setError(err.message);
+    }
+  }, [graphData, isInteracting, networkReady]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (networkRef.current) {
+        console.log('OptimizedNeo4jGraph: Destroying network on unmount');
+        networkRef.current.destroy();
+        networkRef.current = null;
+        setNetworkReady(false);
+      }
+    };
+  }, []);
+
+  // Handle selected node styling
+  useEffect(() => {
+    if (!networkRef.current || !selectedNode) return;
+    
+    // Update the selected node styling
+    const nodes = networkRef.current.getNodes();
+    nodes.forEach(nodeId => {
+      const isSelected = nodeId === selectedNode;
+      networkRef.current?.updateNode(nodeId, { chosen: isSelected });
+    });
+  }, [selectedNode]);
+
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        ref={containerRef}
+        className="w-full h-full min-h-[600px] bg-gray-50 rounded-lg"
+        style={{ minHeight: '600px' }}
+      />
+      
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-600">Loading optimized graph...</p>
+          </div>
+        </div>
+      )}
+      
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-50">
+          <div className="text-center p-4">
+            <p className="text-red-600 font-medium">Error: {error}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Load More Button - Temporarily disabled */}
+      {false && hasMore && !loading && (
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shadow-lg"
+          >
+            {loadingMore ? 'Loading...' : `Load More (${graphData.meta?.totalAvailable || 0} total)`}
+          </button>
+        </div>
+      )}
+
+      {/* Stats Panel */}
+      {graphData.meta && (
+        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 text-xs">
+          <div className="font-semibold mb-1">Graph Stats</div>
+          <div>Nodes: {graphData.nodes.size}</div>
+          <div>Edges: {graphData.edges.size}</div>
+          <div>Expanded: {expandedNodes.size}</div>
+          {hasMore && <div className="text-blue-600">More available</div>}
+          {graphData.metrics && (
+            <div className="mt-1 text-gray-500">
+              Metrics: {graphData.metrics.length} nodes
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Instructions */}
+      <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-3 text-xs max-w-xs">
+        <div className="font-semibold mb-1">Instructions</div>
+        <div>• Click: Select node</div>
+        <div>• Double-click: Expand neighbors</div>
+        <div>• Drag: Move nodes</div>
+        <div>• Scroll: Zoom in/out</div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,2 @@
+import { serverClient, getJWT } from "./supabase.ts";
+export async function requireUser(req: Request){ const supabase=serverClient(); const jwt=getJWT(req); if(!jwt) return { error: new Response("Unauthorized", { status: 401 }) }; const { data, error } = await supabase.auth.getUser(jwt); if(error || !data?.user) return { error: new Response("Unauthorized", { status: 401 }) }; let org_id: string | null = null; try{ const claims = JSON.parse(atob(jwt.split('.')[1])); org_id = claims?.org_id ?? null; }catch{} return { supabase, user: data.user, org_id }; }

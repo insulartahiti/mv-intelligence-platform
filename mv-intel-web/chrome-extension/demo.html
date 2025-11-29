@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence - Extension Demo</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #0B0B0C;
+      color: #EDEDED;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .header h1 {
+      color: #D1B172;
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #BDBDBD;
+      font-size: 1.1rem;
+    }
+
+    .demo-section {
+      background: #121214;
+      border: 1px solid #1B1C1E;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .demo-section h2 {
+      color: #D1B172;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+
+    .demo-content {
+      background: #1B1C1E;
+      border: 1px solid #2A2B2E;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .demo-content h3 {
+      color: #EDEDED;
+      margin-top: 0;
+    }
+
+    .demo-content p {
+      color: #BDBDBD;
+      line-height: 1.6;
+    }
+
+    .demo-content ul {
+      color: #BDBDBD;
+      line-height: 1.6;
+    }
+
+    .demo-content li {
+      margin-bottom: 8px;
+    }
+
+    .highlight {
+      background: #D1B172;
+      color: #0B0B0C;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .note {
+      background: #2A2B2E;
+      border-left: 4px solid #D1B172;
+      padding: 16px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .note strong {
+      color: #D1B172;
+    }
+
+    .steps {
+      counter-reset: step-counter;
+    }
+
+    .step {
+      counter-increment: step-counter;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #1B1C1E;
+      border-radius: 8px;
+      border: 1px solid #2A2B2E;
+    }
+
+    .step::before {
+      content: counter(step-counter);
+      background: #D1B172;
+      color: #0B0B0C;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      margin-right: 12px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      padding: 20px;
+      border-top: 1px solid #1B1C1E;
+      color: #BDBDBD;
+    }
+
+    .footer a {
+      color: #D1B172;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>MV Intelligence</h1>
+      <p>Chrome Extension Demo & Testing</p>
+    </div>
+
+    <div class="demo-section">
+      <h2>🎯 What This Extension Does</h2>
+      <div class="demo-content">
+        <h3>Slide Capture & Analysis</h3>
+        <p>
+          The MV Intelligence Chrome extension allows you to capture slides from various platforms 
+          and compile them into comprehensive decks with AI-powered analysis.
+        </p>
+        
+        <h3>Supported Platforms</h3>
+        <ul>
+          <li><strong>Figma:</strong> Capture design frames and pages</li>
+          <li><strong>Notion:</strong> Capture page content and blocks</li>
+          <li><strong>Google Docs:</strong> Capture document content</li>
+        </ul>
+
+        <h3>Key Features</h3>
+        <ul>
+          <li>📸 <strong>Screenshot Capture:</strong> High-quality screenshots of current views</li>
+          <li>📚 <strong>Deck Compilation:</strong> Combine multiple slides into organized decks</li>
+          <li>🤖 <strong>AI Analysis:</strong> Extract text, identify content, and generate summaries</li>
+          <li>🚀 <strong>Affinity Integration:</strong> Push completed decks directly to CRM</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>🧪 Testing the Extension</h2>
+      <div class="demo-content">
+        <h3>Installation Steps</h3>
+        <div class="steps">
+          <div class="step">
+            <strong>Load Extension:</strong> Go to <span class="highlight">chrome://extensions/</span> and enable Developer mode
+          </div>
+          <div class="step">
+            <strong>Select Folder:</strong> Click "Load unpacked" and select the <span class="highlight">build</span> folder
+          </div>
+          <div class="step">
+            <strong>Verify Installation:</strong> The MV Intelligence extension should appear in your toolbar
+          </div>
+        </div>
+
+        <div class="note">
+          <strong>Note:</strong> This demo page simulates the content that would be captured from 
+          Figma, Notion, or Google Docs. In real usage, the extension would inject its capture UI 
+          into those platforms.
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>📱 Extension UI Preview</h2>
+      <div class="demo-content">
+        <h3>Popup Interface</h3>
+        <p>
+          Click the extension icon in your toolbar to see the popup interface. It shows:
+        </p>
+        <ul>
+          <li>Current slide count and deck status</li>
+          <li>Capture, compile, and push buttons</li>
+          <li>List of captured slides</li>
+          <li>Quick access to the dashboard</li>
+        </ul>
+
+        <h3>Content Script UI</h3>
+        <p>
+          When on supported platforms, the extension injects a capture button in the top-right corner:
+        </p>
+        <ul>
+          <li>📄 <strong>Capture Slide:</strong> Captures the current view</li>
+          <li>📊 <strong>Status Display:</strong> Shows capture progress and results</li>
+          <li>🎨 <strong>Dark Theme:</strong> Consistent with MV Intelligence design</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>🔧 Development & Testing</h2>
+      <div class="demo-content">
+        <h3>Building the Extension</h3>
+        <p>
+          Use the build script to create development and production versions:
+        </p>
+        <div class="note">
+          <code>./build.sh</code> - Creates build folder with all necessary files
+        </div>
+
+        <h3>Testing Workflow</h3>
+        <ol>
+          <li>Make changes to extension files</li>
+          <li>Run <code>./build.sh</code> to rebuild</li>
+          <li>Refresh the extension in Chrome</li>
+          <li>Test on supported platforms</li>
+        </ol>
+
+        <h3>Debugging</h3>
+        <ul>
+          <li><strong>Popup Debug:</strong> Right-click extension icon → Inspect popup</li>
+          <li><strong>Background Script:</strong> Check extension management page</li>
+          <li><strong>Content Script:</strong> Use browser DevTools on target pages</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>🚀 Next Steps</h2>
+      <div class="demo-content">
+        <h3>Integration Testing</h3>
+        <p>
+          To fully test the extension, you'll need:
+        </p>
+        <ul>
+          <li>✅ <strong>Supabase Project:</strong> Running Edge Functions</li>
+          <li>✅ <strong>Chrome Extension:</strong> Loaded in development mode</li>
+          <li>✅ <strong>Test Platforms:</strong> Figma, Notion, or Google Docs accounts</li>
+          <li>✅ <strong>Affinity CRM:</strong> For testing push functionality</li>
+        </ul>
+
+        <h3>Production Deployment</h3>
+        <p>
+          When ready for production:
+        </p>
+        <ul>
+          <li>Generate proper PNG icons from the SVG</li>
+          <li>Update Supabase URLs and keys</li>
+          <li>Test on all supported platforms</li>
+          <li>Package for Chrome Web Store distribution</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>
+        Built for <a href="https://masterventures.com" target="_blank">Master Ventures</a> | 
+        <a href="https://github.com/your-repo" target="_blank">View Source</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

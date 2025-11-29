@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence</title>
+  <style>
+    body {
+      width: 320px;
+      min-height: 400px;
+      margin: 0;
+      padding: 0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #0B0B0C;
+      color: #EDEDED;
+    }
+
+    .header {
+      background: #121214;
+      padding: 16px;
+      border-bottom: 1px solid #1B1C1E;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #D1B172;
+    }
+
+    .header p {
+      margin: 4px 0 0 0;
+      font-size: 12px;
+      color: #BDBDBD;
+    }
+
+    .content {
+      padding: 16px;
+    }
+
+    .status-card {
+      background: #1B1C1E;
+      border: 1px solid #2A2B2E;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .status-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #EDEDED;
+    }
+
+    .status-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #D1B172;
+      margin-bottom: 4px;
+    }
+
+    .status-subtitle {
+      font-size: 12px;
+      color: #BDBDBD;
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn {
+      background: #D1B172;
+      color: #0B0B0C;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+
+    .btn:hover {
+      background: #B89A5F;
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      background: #2A2B2E;
+      color: #6B6C6E;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: #D1B172;
+      border: 1px solid #D1B172;
+    }
+
+    .btn-secondary:hover {
+      background: #D1B172;
+      color: #0B0B0C;
+    }
+
+    .slide-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    .slide-item {
+      background: #121214;
+      border: 1px solid #1B1C1E;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .slide-title {
+      font-weight: 600;
+      color: #EDEDED;
+      margin-bottom: 4px;
+    }
+
+    .slide-meta {
+      color: #BDBDBD;
+      font-size: 11px;
+    }
+
+    .footer {
+      padding: 16px;
+      border-top: 1px solid #1B1C1E;
+      text-align: center;
+    }
+
+    .footer a {
+      color: #D1B172;
+      text-decoration: none;
+      font-size: 12px;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>MV Intelligence</h1>
+    <p>Deck Capture & Analysis</p>
+  </div>
+
+  <div class="content">
+    <div class="status-card">
+      <div class="status-title">Captured Slides</div>
+      <div class="status-value" id="slide-count">0</div>
+      <div class="status-subtitle">Ready to compile</div>
+    </div>
+
+    <div class="status-card" id="deck-status" style="display: none;">
+      <div class="status-title">Current Deck</div>
+      <div class="status-value" id="deck-title">-</div>
+      <div class="status-subtitle" id="deck-meta">-</div>
+    </div>
+
+    <div class="action-buttons">
+      <button class="btn" id="capture-btn">
+        📄 Capture Current Slide
+      </button>
+      
+      <button class="btn btn-secondary" id="upload-btn">
+        📁 Upload File
+      </button>
+      
+      <button class="btn" id="compile-btn" disabled>
+        📚 Compile Deck
+      </button>
+      
+      <button class="btn btn-secondary" id="push-btn" disabled>
+        🚀 Push to Affinity
+      </button>
+      
+      <button class="btn btn-secondary" id="clear-btn">
+        🗑️ Clear All
+      </button>
+    </div>
+
+    <div class="slide-list" id="slide-list" style="display: none;">
+      <!-- Slides will be populated here -->
+    </div>
+
+    <!-- Hidden file input for uploads -->
+    <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.ppt,.pptx" style="display: none;">
+  </div>
+  </div>
+
+  <div class="footer">
+    <a href="#" id="dashboard-link">Open Dashboard</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

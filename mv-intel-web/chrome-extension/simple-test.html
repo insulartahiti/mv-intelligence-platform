@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence - Simple Test</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 40px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      color: #D1B172;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .test-section {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+
+    .test-section h2 {
+      color: #495057;
+      margin-top: 0;
+    }
+
+    .test-button {
+      background: #D1B172;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 10px 5px;
+      transition: all 0.2s;
+    }
+
+    .test-button:hover {
+      background: #B89A5F;
+      transform: translateY(-1px);
+    }
+
+    .status {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 16px 0;
+      font-family: monospace;
+    }
+
+    .instructions {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+    }
+
+    .instructions h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 MV Intelligence Extension Test</h1>
+    
+    <div class="instructions">
+      <h3>📋 Testing Instructions</h3>
+      <ol>
+        <li>Load the Chrome extension in <code>chrome://extensions/</code></li>
+        <li>Enable Developer mode and click "Load unpacked"</li>
+        <li>Select the <code>build</code> folder from the extension directory</li>
+        <li>Come back to this page and test the functionality</li>
+      </ol>
+    </div>
+
+    <div class="test-section">
+      <h2>🔍 Extension Status Check</h2>
+      <p>Check if the extension is loaded and working:</p>
+      <button class="test-button" onclick="checkExtension()">Check Extension Status</button>
+      <div id="extension-status" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>📸 Slide Capture Test</h2>
+      <p>Test the slide capture functionality:</p>
+      <button class="test-button" onclick="testSlideCapture()">Test Slide Capture</button>
+      <div id="capture-status" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>💾 Storage Test</h2>
+      <p>Test local storage functionality:</p>
+      <button class="test-button" onclick="testStorage()">Test Storage</button>
+      <button class="test-button" onclick="clearStorage()">Clear Storage</button>
+      <div id="storage-status" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>🔧 Debug Information</h2>
+      <p>View debug information:</p>
+      <button class="test-button" onclick="showDebugInfo()">Show Debug Info</button>
+      <div id="debug-info" class="status" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    // Test functions
+    function checkExtension() {
+      const statusDiv = document.getElementById('extension-status');
+      statusDiv.style.display = 'block';
+      
+      try {
+        // Check if extension is available
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          statusDiv.innerHTML = `
+            <strong>✅ Extension Loaded Successfully</strong><br>
+            Extension ID: ${chrome.runtime.id}<br>
+            Manifest Version: ${chrome.runtime.getManifest().manifest_version}<br>
+            Extension Name: ${chrome.runtime.getManifest().name}
+          `;
+          statusDiv.style.background = '#d4edda';
+          statusDiv.style.borderColor = '#28a745';
+        } else {
+          statusDiv.innerHTML = '<strong>❌ Extension Not Available</strong><br>Chrome extension APIs not found.';
+          statusDiv.style.background = '#f8d7da';
+          statusDiv.style.borderColor = '#dc3545';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = `<strong>❌ Error Checking Extension</strong><br>${error.message}`;
+        statusDiv.style.background = '#f8d7da';
+        statusDiv.style.borderColor = '#dc3545';
+      }
+    }
+
+    function testSlideCapture() {
+      const statusDiv = document.getElementById('capture-status');
+      statusDiv.style.display = 'block';
+      
+      try {
+        // Simulate slide capture
+        const testSlide = {
+          type: 'test',
+          title: 'Test Slide',
+          timestamp: new Date().toISOString(),
+          url: window.location.href
+        };
+        
+        statusDiv.innerHTML = `
+          <strong>📸 Slide Capture Test</strong><br>
+          Slide Type: ${testSlide.type}<br>
+          Title: ${testSlide.title}<br>
+          Timestamp: ${testSlide.timestamp}<br>
+          URL: ${testSlide.url}
+        `;
+        statusDiv.style.background = '#d4edda';
+        statusDiv.style.borderColor = '#28a745';
+        
+        // Try to send message to extension
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          chrome.runtime.sendMessage({
+            action: 'captureSlide',
+            data: testSlide
+          }, (response) => {
+            if (response && response.success) {
+              statusDiv.innerHTML += '<br><strong>✅ Message sent to extension successfully!</strong>';
+            } else {
+              statusDiv.innerHTML += '<br><strong>⚠️ Extension response: ' + (response?.error || 'No response') + '</strong>';
+            }
+          });
+        }
+      } catch (error) {
+        statusDiv.innerHTML = `<strong>❌ Error Testing Slide Capture</strong><br>${error.message}`;
+        statusDiv.style.background = '#f8d7da';
+        statusDiv.style.borderColor = '#dc3545';
+      }
+    }
+
+    function testStorage() {
+      const statusDiv = document.getElementById('storage-status');
+      statusDiv.style.display = 'block';
+      
+      try {
+        // Test localStorage as a fallback
+        const testData = {
+          testKey: 'testValue',
+          timestamp: new Date().toISOString()
+        };
+        
+        localStorage.setItem('mv-test', JSON.stringify(testData));
+        const retrieved = JSON.parse(localStorage.getItem('mv-test'));
+        
+        statusDiv.innerHTML = `
+          <strong>💾 Storage Test</strong><br>
+          Test Data Stored: ${JSON.stringify(testData)}<br>
+          Test Data Retrieved: ${JSON.stringify(retrieved)}<br>
+          Storage Working: ${JSON.stringify(testData) === JSON.stringify(retrieved) ? '✅ Yes' : '❌ No'}
+        `;
+        statusDiv.style.background = '#d4edda';
+        statusDiv.style.borderColor = '#28a745';
+        
+        // Try chrome.storage if available
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          chrome.storage.local.set({ 'mv-test-chrome': testData }, () => {
+            chrome.storage.local.get(['mv-test-chrome'], (result) => {
+              statusDiv.innerHTML += '<br><strong>Chrome Storage:</strong> ' + 
+                (result['mv-test-chrome'] ? '✅ Working' : '❌ Not Working');
+            });
+          });
+        }
+      } catch (error) {
+        statusDiv.innerHTML = `<strong>❌ Error Testing Storage</strong><br>${error.message}`;
+        statusDiv.style.background = '#f8d7da';
+        statusDiv.style.borderColor = '#dc3545';
+      }
+    }
+
+    function clearStorage() {
+      const statusDiv = document.getElementById('storage-status');
+      statusDiv.style.display = 'block';
+      
+      try {
+        localStorage.removeItem('mv-test');
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          chrome.storage.local.remove(['mv-test-chrome']);
+        }
+        
+        statusDiv.innerHTML = '<strong>🗑️ Storage Cleared</strong><br>Test data has been removed.';
+        statusDiv.style.background = '#fff3cd';
+        statusDiv.style.borderColor = '#ffc107';
+      } catch (error) {
+        statusDiv.innerHTML = `<strong>❌ Error Clearing Storage</strong><br>${error.message}`;
+        statusDiv.style.background = '#f8d7da';
+        statusDiv.style.borderColor = '#dc3545';
+      }
+    }
+
+    function showDebugInfo() {
+      const statusDiv = document.getElementById('debug-info');
+      statusDiv.style.display = 'block';
+      
+      const debugInfo = {
+        userAgent: navigator.userAgent,
+        chromeVersion: navigator.userAgent.match(/Chrome\/(\d+)/)?.[1] || 'Unknown',
+        extensionAvailable: typeof chrome !== 'undefined',
+        runtimeAvailable: typeof chrome !== 'undefined' && !!chrome.runtime,
+        storageAvailable: typeof chrome !== 'undefined' && !!chrome.storage,
+        contextMenusAvailable: typeof chrome !== 'undefined' && !!chrome.contextMenus,
+        currentUrl: window.location.href,
+        timestamp: new Date().toISOString()
+      };
+      
+      statusDiv.innerHTML = `
+        <strong>🔧 Debug Information</strong><br>
+        User Agent: ${debugInfo.userAgent}<br>
+        Chrome Version: ${debugInfo.chromeVersion}<br>
+        Extension Available: ${debugInfo.extensionAvailable ? '✅ Yes' : '❌ No'}<br>
+        Runtime Available: ${debugInfo.runtimeAvailable ? '✅ Yes' : '❌ No'}<br>
+        Storage Available: ${debugInfo.storageAvailable ? '✅ Yes' : '❌ No'}<br>
+        Context Menus Available: ${debugInfo.contextMenusAvailable ? '✅ Yes' : '❌ No'}<br>
+        Current URL: ${debugInfo.currentUrl}<br>
+        Timestamp: ${debugInfo.timestamp}
+      `;
+      statusDiv.style.background = '#e3f2fd';
+      statusDiv.style.borderColor = '#2196f3';
+    }
+
+    // Auto-check extension status when page loads
+    window.addEventListener('load', () => {
+      setTimeout(checkExtension, 1000);
+    });
+  </script>
+</body>
+</html>

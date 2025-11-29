@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "MV Intelligence — Deck Capture",
+  "version": "0.1.0",
+  "description": "Capture slides from web decks and compile PDFs via Supabase Edge Functions.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MV Deck Capture"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "activeTab",
+    "downloads",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "mv-capture-deck": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      },
+      "description": "Capture deck on current tab"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["jsPDF.min.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

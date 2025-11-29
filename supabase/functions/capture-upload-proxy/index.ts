@@ -1,0 +1,21 @@
+import { requireUser } from "../_shared/auth.ts";
+const BUCKET = "deck-assets";
+Deno.serve(async (req) => {
+  const check = await requireUser(req);
+  if ("error" in check) return check.error;
+  const { supabase, org_id } = check;
+  const url = new URL(req.url);
+  const artifactId = url.searchParams.get("artifactId") || "";
+  const slideIndex = url.searchParams.get("slideIndex") || "";
+  if (!artifactId || !slideIndex) return new Response(JSON.stringify({ error:{ message: "artifactId and slideIndex required"}}), { status:400 });
+  const { data: art, error: artErr } = await supabase.from("artifacts").select("id, org_id").eq("id", artifactId).single();
+  if (artErr || !art || art.org_id !== org_id) return new Response("Forbidden", { status: 403 });
+  const form = await req.formData();
+  const file = form.get("file") as File | null;
+  if (!file) return new Response(JSON.stringify({ error:{ message: "file required"}}), { status:400 });
+  const path = `deck-slides/${artifactId}/${String(slideIndex).padStart(4,"0")}.png`;
+  const ab = await file.arrayBuffer();
+  const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, new Uint8Array(ab), { contentType: file.type || "image/png", upsert: true });
+  if (upErr) return new Response(JSON.stringify({ error:{ message: upErr.message }}), { status: 400 });
+  return new Response(JSON.stringify({ storagePath: `${BUCKET}/${path}` }), { headers: { "Content-Type": "application/json" } });
+});

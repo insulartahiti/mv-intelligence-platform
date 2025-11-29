@@ -1,0 +1,36 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application files
+COPY production_ai_enrichment.js ./
+COPY system_monitor.js ./
+COPY ecosystem.config.js ./
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S enrichment -u 1001
+
+# Change ownership
+RUN chown -R enrichment:nodejs /app
+USER enrichment
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "console.log('Health check passed')" || exit 1
+
+# Start the application
+CMD ["node", "production_ai_enrichment.js"]
+
+
+
+

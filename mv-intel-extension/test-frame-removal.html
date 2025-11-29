@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MV Extension Frame Removal Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        .success {
+            border-color: #4CAF50;
+            background: #f1f8e9;
+        }
+        .error {
+            border-color: #f44336;
+            background: #ffebee;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .mv-frame {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 MV Extension Frame Removal Test</h1>
+        <p>This page tests whether the MV Intelligence extension frame is properly removed.</p>
+        
+        <div class="test-section">
+            <h3>Test 1: Create Mock Frame</h3>
+            <p>Click the button below to create a mock MV Intelligence frame, then check if the extension removes it.</p>
+            <button onclick="createMockFrame()">Create Mock Frame</button>
+            <button onclick="checkFrameRemoval()">Check Frame Removal</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>Test 2: Extension Detection</h3>
+            <p>Check if the extension is active and communicating properly.</p>
+            <button onclick="testExtensionCommunication()">Test Extension</button>
+        </div>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        let mockFrame = null;
+        
+        function createMockFrame() {
+            // Remove existing mock frame
+            if (mockFrame) {
+                mockFrame.remove();
+            }
+            
+            // Create new mock frame
+            mockFrame = document.createElement('div');
+            mockFrame.id = 'mv-extension-status';
+            mockFrame.setAttribute('data-mv-extension', 'true');
+            mockFrame.className = 'mv-frame';
+            mockFrame.innerHTML = `
+                <div>🚀 MV Intelligence Extension</div>
+                <div style="font-size: 10px; opacity: 0.7;">v1.0.0</div>
+                <div style="font-size: 10px; opacity: 0.7;">docsend</div>
+            `;
+            
+            document.body.appendChild(mockFrame);
+            updateStatus('Mock frame created. Extension should remove it within 5 seconds.', 'info');
+        }
+        
+        function checkFrameRemoval() {
+            const existingFrames = document.querySelectorAll('#mv-extension-status, [data-mv-extension="true"]');
+            
+            if (existingFrames.length === 0) {
+                updateStatus('✅ SUCCESS: No MV Intelligence frames found! Extension is working correctly.', 'success');
+            } else {
+                updateStatus(`❌ FAILED: Found ${existingFrames.length} MV Intelligence frame(s) still present.`, 'error');
+            }
+        }
+        
+        function testExtensionCommunication() {
+            // Test if extension is responding
+            if (window.mvIntelExtension) {
+                updateStatus('✅ Extension detected via global variable', 'success');
+            } else {
+                updateStatus('⚠️ Extension not detected via global variable', 'error');
+            }
+            
+            // Check localStorage
+            const extensionData = localStorage.getItem('mv-extension-data');
+            if (extensionData) {
+                updateStatus('✅ Extension data found in localStorage', 'success');
+            } else {
+                updateStatus('⚠️ No extension data in localStorage', 'error');
+            }
+        }
+        
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+        }
+        
+        // Auto-check for frame removal every 2 seconds
+        setInterval(() => {
+            const existingFrames = document.querySelectorAll('#mv-extension-status, [data-mv-extension="true"]');
+            if (existingFrames.length === 0 && mockFrame) {
+                updateStatus('✅ SUCCESS: Mock frame was automatically removed by extension!', 'success');
+                mockFrame = null;
+            }
+        }, 2000);
+        
+        // Initial check
+        setTimeout(() => {
+            checkFrameRemoval();
+        }, 1000);
+    </script>
+</body>
+</html>

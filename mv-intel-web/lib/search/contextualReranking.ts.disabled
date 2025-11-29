@@ -1,0 +1,445 @@
+// Enhanced Knowledge Graph Intelligence - Contextual Re-ranking
+// Use LLM to re-rank final results based on query intent and context
+
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export interface SearchResult {
+  id: string;
+  name: string;
+  type: string;
+  similarity: number;
+  textScore?: number;
+  graphCentrality?: number;
+  pagerank?: number;
+  communityId?: number;
+  finalScore?: number;
+  metadata: any;
+  intro_paths?: Array<{
+    path: string[];
+    strength: number;
+    description: string;
+  }>;
+}
+
+export interface RerankingContext {
+  query: string;
+  intent: string;
+  domain: string;
+  userContext?: {
+    previousQueries?: string[];
+    userRole?: string;
+    preferences?: any;
+  };
+  resultCount: number;
+}
+
+/**
+ * Re-rank search results using LLM-based contextual analysis
+ */
+// Temporarily disabled for deployment
+export async function rerankWithContext_DISABLED(
+  query: string,
+  results: SearchResult[],
+  context?: RerankingContext
+): Promise<SearchResult[]> {
+  if (results.length === 0) {
+    return results;
+  }
+
+  try {
+    // Limit to top 20 results for re-ranking (to manage token usage)
+    const topResults = results.slice(0, 20);
+    
+    // Generate re-ranking prompt
+    const prompt = generateRerankingPrompt(query, topResults, context);
+    
+    // Call OpenAI for re-ranking
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert search result re-ranker for a venture capital and startup intelligence platform. 
+          
+Your task is to re-rank search results based on relevance to the user's query, considering:
+1. Semantic relevance to the query
+2. Business context and importance
+3. Relationship strength and network position
+4. Recency and freshness of data
+5. User intent and context
+
+Return a JSON object with the re-ranked results in order of relevance.`
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_tokens: 2000
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No response from OpenAI');
+    }
+
+    const rerankingData = JSON.parse(content);
+    
+    // Apply re-ranking to results
+    const rerankedResults = applyReranking(topResults, rerankingData);
+    
+    // Combine with remaining results
+    const remainingResults = results.slice(20);
+    return [...rerankedResults, ...remainingResults];
+
+  } catch (error) {
+    console.error('Contextual re-ranking error:', error);
+    
+    // Fallback to original ranking
+    return results;
+  }
+}
+
+/**
+ * Generate prompt for LLM-based re-ranking
+ */
+function generateRerankingPrompt(
+  query: string,
+  results: SearchResult[],
+  context?: RerankingContext
+): string {
+  const resultsData = results.map((result, index) => ({
+    rank: index + 1,
+    id: result.id,
+    name: result.name,
+    type: result.type,
+    similarity: result.similarity,
+    centrality: result.graphCentrality || 0,
+    pagerank: result.pagerank || 0,
+    importance: result.metadata?.importance || 0.5,
+    industry: result.metadata?.industry || '',
+    domain: result.metadata?.domain || '',
+    pipeline_stage: result.metadata?.pipeline_stage || '',
+    is_portfolio: result.metadata?.is_portfolio || false,
+    is_internal: result.metadata?.is_internal || false,
+    ai_summary: result.metadata?.ai_summary || '',
+    has_enrichment_data: result.metadata?.has_enrichment_data || false,
+    recent_news: result.metadata?.recent_news || 0
+  }));
+
+  const contextInfo = context ? `
+Context:
+- Intent: ${context.intent}
+- Domain: ${context.domain}
+- User Role: ${context.userContext?.userRole || 'General user'}
+- Previous Queries: ${context.userContext?.previousQueries?.join(', ') || 'None'}
+` : '';
+
+  return `Query: "${query}"
+
+${contextInfo}
+
+Search Results to Re-rank:
+${JSON.stringify(resultsData, null, 2)}
+
+Please re-rank these results based on relevance to the query. Consider:
+
+1. **Semantic Relevance**: How well does the entity match the query intent?
+2. **Business Importance**: Portfolio companies, internal entities, and high-importance entities should rank higher
+3. **Network Position**: Entities with high centrality and PageRank are more influential
+4. **Data Quality**: Entities with enrichment data and recent news are more valuable
+5. **Context Match**: How well does the entity match the user's domain and intent?
+
+Return a JSON object with:
+{
+  "reranked_results": [
+    {
+      "id": "entity_id",
+      "new_rank": 1,
+      "relevance_score": 0.95,
+      "reasoning": "Brief explanation of why this entity is relevant"
+    }
+  ],
+  "summary": "Brief summary of the re-ranking decisions"
+}`;
+}
+
+/**
+ * Apply re-ranking to search results
+ */
+function applyReranking(
+  results: SearchResult[],
+  rerankingData: any
+): SearchResult[] {
+  if (!rerankingData.reranked_results || !Array.isArray(rerankingData.reranked_results)) {
+    return results;
+  }
+
+  // Create a map of re-ranked results
+  const rerankedMap = new Map<string, any>();
+  rerankingData.reranked_results.forEach((item: any) => {
+    rerankedMap.set(item.id, item);
+  });
+
+  // Apply re-ranking
+  const rerankedResults = results
+    .map(result => {
+      const rerankInfo = rerankedMap.get(result.id);
+      if (rerankInfo) {
+        return {
+          ...result,
+          finalScore: rerankInfo.relevance_score || result.finalScore || result.similarity,
+          rerankReason: rerankInfo.reasoning,
+          originalRank: results.indexOf(result) + 1,
+          newRank: rerankInfo.new_rank
+        };
+      }
+      return result;
+    })
+    .sort((a, b) => {
+      const aRank = rerankedMap.get(a.id)?.new_rank || 999;
+      const bRank = rerankedMap.get(b.id)?.new_rank || 999;
+      return aRank - bRank;
+    });
+
+  return rerankedResults;
+}
+
+/**
+ * Re-rank results for specific intents
+ */
+export async function rerankForIntent(
+  query: string,
+  results: SearchResult[],
+  intent: string,
+  context?: RerankingContext
+): Promise<SearchResult[]> {
+  const intentContext: RerankingContext = {
+    ...context,
+    intent,
+    domain: getDomainForIntent(intent),
+    query: context?.query || '',
+    resultCount: context?.resultCount || results.length
+  };
+
+  return rerankWithContext(query, results, intentContext);
+}
+
+/**
+ * Get domain context for specific intent
+ */
+function getDomainForIntent(intent: string): string {
+  const intentDomains: Record<string, string> = {
+    'INTRO_PATH': 'professional networking and introductions',
+    'COMPETITIVE_ANALYSIS': 'market analysis and competitive intelligence',
+    'FUNDING_ANALYSIS': 'investment and funding intelligence',
+    'SIMILARITY_SEARCH': 'entity similarity and pattern matching',
+    'RELATIONSHIP_DISCOVERY': 'professional relationship mapping',
+    'DUE_DILIGENCE': 'investment due diligence and research',
+    'MARKET_INTELLIGENCE': 'market trends and insights',
+    'NETWORK_ANALYSIS': 'network structure and influence analysis',
+    'TREND_ANALYSIS': 'trend identification and analysis'
+  };
+
+  return intentDomains[intent] || 'general business intelligence';
+}
+
+/**
+ * Re-rank with user preferences
+ */
+export async function rerankWithPreferences(
+  query: string,
+  results: SearchResult[],
+  preferences: {
+    preferredIndustries?: string[];
+    preferredEntityTypes?: string[];
+    minImportance?: number;
+    requireEnrichmentData?: boolean;
+    prioritizePortfolio?: boolean;
+    prioritizeInternal?: boolean;
+  },
+  context?: RerankingContext
+): Promise<SearchResult[]> {
+  const enhancedContext: RerankingContext = {
+    ...context,
+    query: context?.query || '',
+    intent: context?.intent || 'general',
+    domain: context?.domain || 'general',
+    resultCount: context?.resultCount || results.length,
+    userContext: {
+      ...context?.userContext,
+      preferences
+    }
+  };
+
+  return rerankWithContext(query, results, enhancedContext);
+}
+
+/**
+ * Re-rank for specific user roles
+ */
+export async function rerankForUserRole(
+  query: string,
+  results: SearchResult[],
+  userRole: 'investor' | 'analyst' | 'founder' | 'general',
+  context?: RerankingContext
+): Promise<SearchResult[]> {
+  const roleContext: RerankingContext = {
+    ...context,
+    query: context?.query || '',
+    intent: context?.intent || 'general',
+    domain: context?.domain || 'general',
+    resultCount: context?.resultCount || results.length,
+    userContext: {
+      ...context?.userContext,
+      userRole
+    }
+  };
+
+  // Apply role-specific preferences
+  const rolePreferences = getUserRolePreferences(userRole);
+  
+  return rerankWithPreferences(query, results, rolePreferences, roleContext);
+}
+
+/**
+ * Get preferences for specific user roles
+ */
+function getUserRolePreferences(userRole: string): any {
+  const rolePreferences: Record<string, any> = {
+    'investor': {
+      prioritizePortfolio: true,
+      preferredEntityTypes: ['organization', 'deal'],
+      minImportance: 0.6,
+      requireEnrichmentData: true
+    },
+    'analyst': {
+      preferredEntityTypes: ['organization', 'person'],
+      requireEnrichmentData: true,
+      minImportance: 0.4
+    },
+    'founder': {
+      preferredEntityTypes: ['person', 'organization'],
+      prioritizeInternal: false,
+      minImportance: 0.3
+    },
+    'general': {
+      minImportance: 0.2
+    }
+  };
+
+  return rolePreferences[userRole] || rolePreferences['general'];
+}
+
+/**
+ * Batch re-rank multiple query results
+ */
+export async function batchRerank(
+  queries: Array<{
+    query: string;
+    results: SearchResult[];
+    context?: RerankingContext;
+  }>
+): Promise<Array<{
+  query: string;
+  results: SearchResult[];
+  rerankSummary?: string;
+}>> {
+  const rerankedQueries = await Promise.all(
+    queries.map(async ({ query, results, context }) => {
+      try {
+        const rerankedResults = await rerankWithContext(query, results, context);
+        return {
+          query,
+          results: rerankedResults
+        };
+      } catch (error) {
+        console.error(`Error re-ranking query "${query}":`, error);
+        return {
+          query,
+          results
+        };
+      }
+    })
+  );
+
+  return rerankedQueries;
+}
+
+/**
+ * Analyze re-ranking quality
+ */
+export function analyzeRerankingQuality(
+  originalResults: SearchResult[],
+  rerankedResults: SearchResult[]
+): {
+  qualityScore: number;
+  improvements: string[];
+  issues: string[];
+} {
+  const improvements: string[] = [];
+  const issues: string[] = [];
+  let qualityScore = 0.5; // Base score
+
+  // Check if re-ranking actually changed the order
+  const orderChanged = originalResults.some((result, index) => 
+    rerankedResults[index]?.id !== result.id
+  );
+
+  if (orderChanged) {
+    qualityScore += 0.2;
+    improvements.push('Result order was optimized');
+  } else {
+    issues.push('Re-ranking did not change result order');
+  }
+
+  // Check if high-importance entities moved up
+  const highImportanceEntities = originalResults.filter(r => 
+    (r.metadata?.importance || 0) > 0.7
+  );
+  
+  const highImportanceMovedUp = highImportanceEntities.some(entity => {
+    const originalIndex = originalResults.findIndex(r => r.id === entity.id);
+    const newIndex = rerankedResults.findIndex(r => r.id === entity.id);
+    return newIndex < originalIndex;
+  });
+
+  if (highImportanceMovedUp) {
+    qualityScore += 0.2;
+    improvements.push('High-importance entities were promoted');
+  }
+
+  // Check if portfolio companies were prioritized
+  const portfolioCompanies = originalResults.filter(r => 
+    r.metadata?.is_portfolio
+  );
+  
+  const portfolioPromoted = portfolioCompanies.some(entity => {
+    const originalIndex = originalResults.findIndex(r => r.id === entity.id);
+    const newIndex = rerankedResults.findIndex(r => r.id === entity.id);
+    return newIndex < originalIndex;
+  });
+
+  if (portfolioPromoted) {
+    qualityScore += 0.1;
+    improvements.push('Portfolio companies were prioritized');
+  }
+
+  // Check for potential issues
+  if (rerankedResults.length !== originalResults.length) {
+    issues.push('Result count changed during re-ranking');
+    qualityScore -= 0.1;
+  }
+
+  return {
+    qualityScore: Math.min(qualityScore, 1.0),
+    improvements,
+    issues
+  };
+}

@@ -1,0 +1,18 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#0B0B0C" stroke="#D1B172" stroke-width="4"/>
+  
+  <!-- MV letters -->
+  <path d="M35 45 L45 75 L55 55 L65 75 L75 45 M35 45 L35 75 M75 45 L75 75" 
+        stroke="#D1B172" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Intelligence elements -->
+  <circle cx="64" cy="85" r="8" fill="#D1B172"/>
+  <path d="M60 85 L68 85 M64 81 L64 89" stroke="#0B0B0C" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Decorative dots -->
+  <circle cx="40" cy="35" r="3" fill="#D1B172"/>
+  <circle cx="88" cy="35" r="3" fill="#D1B172"/>
+  <circle cx="40" cy="95" r="3" fill="#D1B172"/>
+  <circle cx="88" cy="95" r="3" fill="#D1B172"/>
+</svg>

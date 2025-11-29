@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MV Intelligence — Deck Capture</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="mv-glass-container">
+    <!-- Header -->
+    <header class="mv-header">
+      <div class="mv-logo">
+        <div class="mv-logo-icon">🚀</div>
+        <h1>MV Intelligence</h1>
+      </div>
+      <p class="mv-subtitle">Professional Deck Capture & Analysis</p>
+    </header>
+
+    <!-- Auth Section -->
+    <section class="mv-section">
+      <h2 class="mv-section-title">
+        <span class="mv-icon">🔐</span>
+        Authentication
+      </h2>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Email</label>
+        <input id="email" type="email" placeholder="you@company.com" class="mv-input">
+      </div>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Password</label>
+        <input id="password" type="password" placeholder="••••••••" class="mv-input">
+      </div>
+      
+      <div class="mv-button-group">
+        <button id="loginBtn" class="mv-button mv-button-primary">
+          <span class="mv-icon">🔑</span>
+          Sign In
+        </button>
+        <button id="signOutBtn" class="mv-button mv-button-secondary">
+          <span class="mv-icon">🚪</span>
+          Sign Out
+        </button>
+      </div>
+      
+      <div id="user" class="mv-user-info"></div>
+    </section>
+
+    <!-- Capture Section -->
+    <section class="mv-section">
+      <h2 class="mv-section-title">
+        <span class="mv-icon">📸</span>
+        Deck Capture
+      </h2>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Page Email (optional)</label>
+        <input id="gateEmail" type="text" placeholder="page gate email" class="mv-input">
+      </div>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Passcode (optional)</label>
+        <input id="gatePass" type="text" placeholder="page passcode" class="mv-input">
+      </div>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Max Slides</label>
+        <input id="maxSlides" type="number" value="50" min="1" max="200" class="mv-input">
+      </div>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Company Name (optional)</label>
+        <input id="companyName" type="text" placeholder="ACME Inc." class="mv-input">
+      </div>
+      
+      <div class="mv-form-group">
+        <label class="mv-label">Company Domain (optional)</label>
+        <input id="companyDomain" type="text" placeholder="acme.com" class="mv-input">
+      </div>
+      
+      <div class="mv-button-group">
+        <button id="testBtn" class="mv-button mv-button-secondary">
+          <span class="mv-icon">🧪</span>
+          Test Connection
+        </button>
+        <button id="captureBtn" class="mv-button mv-button-primary mv-button-large">
+          <span class="mv-icon">🚀</span>
+          Capture + Process
+        </button>
+      </div>
+      
+      <button id="copyLogsBtn" class="mv-button mv-button-utility" style="display: none;">
+        <span class="mv-icon">📋</span>
+        Copy Error Logs
+      </button>
+      
+      <div id="status" class="mv-status"></div>
+    </section>
+
+    <!-- Extension Status -->
+    <section class="mv-section">
+      <h2 class="mv-section-title">
+        <span class="mv-icon">📊</span>
+        Extension Status
+      </h2>
+      
+      <div class="mv-status-grid">
+        <div class="mv-status-item">
+          <span class="mv-status-label">Version</span>
+          <span class="mv-status-value">1.0.0</span>
+        </div>
+        <div class="mv-status-item">
+          <span class="mv-status-label">Status</span>
+          <span class="mv-status-value mv-status-active">Active</span>
+        </div>
+        <div class="mv-status-item">
+          <span class="mv-status-label">Connection</span>
+          <span class="mv-status-value mv-status-connected">Connected</span>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

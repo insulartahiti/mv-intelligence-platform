@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MV Extension Communication Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007cba;
+            background: #f0f8ff;
+        }
+        .success { border-left-color: #28a745; background: #f8fff9; }
+        .warning { border-left-color: #ffc107; background: #fffbf0; }
+        .error { border-left-color: #dc3545; background: #fff5f5; }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #005a87; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .extension-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MV Intelligence Extension Communication Test</h1>
+        
+        <div class="status" id="extensionStatus">
+            <strong>Extension Status:</strong> Checking...
+        </div>
+        
+        <div class="status" id="communicationStatus">
+            <strong>Communication Status:</strong> Waiting for extension...
+        </div>
+        
+        <h2>Test Controls</h2>
+        <button onclick="sendPing()">Send Ping</button>
+        <button onclick="getStatus()">Get Status</button>
+        <button onclick="checkPresence()">Check Presence</button>
+        <button onclick="clearLog()">Clear Log</button>
+        
+        <h2>Extension Detection Methods</h2>
+        <div id="detectionResults"></div>
+        
+        <h2>Communication Log</h2>
+        <div class="log" id="communicationLog"></div>
+        
+        <h2>Instructions</h2>
+        <ol>
+            <li>Make sure your MV Intelligence extension is installed and enabled</li>
+            <li>Refresh this page to see if the extension is detected</li>
+            <li>Use the test buttons to verify communication</li>
+            <li>Check the browser console for detailed logs</li>
+        </ol>
+    </div>
+
+    <script>
+        let messageCount = 0;
+        
+        // Log communication events
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('communicationLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span style="color: #666;">[${timestamp}]</span> ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Check extension presence using multiple methods
+        function checkPresence() {
+            log('🔍 Checking extension presence...');
+            
+            const results = {
+                'DOM Elements': document.querySelectorAll('[data-mv-extension]').length > 0,
+                'localStorage': !!localStorage.getItem('mv-intel-extension-data'),
+                'Global Variable': !!(window.mvIntelExtension),
+                'Helper Function': !!(window.mvIntelExtensionHelper)
+            };
+            
+            const resultsDiv = document.getElementById('detectionResults');
+            resultsDiv.innerHTML = '';
+            
+            Object.entries(results).forEach(([method, detected]) => {
+                const status = detected ? '✅ Detected' : '❌ Not Found';
+                const color = detected ? 'green' : 'red';
+                resultsDiv.innerHTML += `<div style="color: ${color}; margin: 5px 0;"><strong>${method}:</strong> ${status}</div>`;
+            });
+            
+            log(`Presence check complete: ${Object.values(results).filter(Boolean).length}/${Object.keys(results).length} methods detected extension`);
+            
+            // Update status display
+            const detected = Object.values(results).some(Boolean);
+            updateExtensionStatus(detected);
+        }
+        
+        // Update extension status display
+        function updateExtensionStatus(detected) {
+            const statusDiv = document.getElementById('extensionStatus');
+            if (detected) {
+                statusDiv.className = 'status success';
+                statusDiv.innerHTML = '<strong>Extension Status:</strong> ✅ Detected and Active';
+            } else {
+                statusDiv.className = 'status error';
+                statusDiv.innerHTML = '<strong>Extension Status:</strong> ❌ Not Detected';
+            }
+        }
+        
+        // Send ping to extension
+        function sendPing() {
+            log('📤 Sending ping to extension...');
+            
+            const message = {
+                target: 'mv-intel-extension',
+                action: 'ping',
+                timestamp: new Date().toISOString()
+            };
+            
+            // Try multiple communication methods
+            window.postMessage(message, '*');
+            log('Ping sent via postMessage');
+            
+            // Also try custom event
+            const event = new CustomEvent('webappMessage', { detail: message });
+            window.dispatchEvent(event);
+            log('Ping sent via custom event');
+        }
+        
+        // Get status from extension
+        function getStatus() {
+            log('📤 Requesting status from extension...');
+            
+            const message = {
+                target: 'mv-intel-extension',
+                action: 'getStatus',
+                timestamp: new Date().toISOString()
+            };
+            
+            window.postMessage(message, '*');
+            log('Status request sent');
+        }
+        
+        // Clear communication log
+        function clearLog() {
+            document.getElementById('communicationLog').innerHTML = '';
+            log('Log cleared');
+        }
+        
+        // Listen for messages from extension
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.source === 'mv-intel-extension') {
+                log(`📥 Received message from extension: ${event.data.type}`, 'success');
+                log(`Payload: ${JSON.stringify(event.data.payload, null, 2)}`);
+                
+                if (event.data.type === 'status') {
+                    updateCommunicationStatus('✅ Extension responded with status');
+                } else if (event.data.type === 'pong') {
+                    updateCommunicationStatus('✅ Extension responded to ping');
+                }
+            }
+        });
+        
+        // Listen for custom events from extension
+        window.addEventListener('extensionStatus', (event) => {
+            if (event.detail && event.detail.source === 'mv-intel-extension') {
+                log(`📥 Received custom event from extension: ${event.detail.type}`, 'success');
+                log(`Payload: ${JSON.stringify(event.detail.payload, null, 2)}`);
+                updateCommunicationStatus('✅ Extension sent status via custom event');
+            }
+        });
+        
+        // Update communication status
+        function updateCommunicationStatus(message) {
+            const statusDiv = document.getElementById('communicationStatus');
+            statusDiv.className = 'status success';
+            statusDiv.innerHTML = `<strong>Communication Status:</strong> ${message}`;
+        }
+        
+        // Check for extension data in localStorage
+        function checkLocalStorage() {
+            const extensionData = localStorage.getItem('mv-intel-extension-data');
+            if (extensionData) {
+                try {
+                    const data = JSON.parse(extensionData);
+                    log(`📥 Found extension data in localStorage: ${JSON.stringify(data, null, 2)}`, 'success');
+                    updateExtensionStatus(true);
+                    updateCommunicationStatus('✅ Extension data found in localStorage');
+                } catch (error) {
+                    log(`❌ Failed to parse localStorage data: ${error.message}`, 'error');
+                }
+            }
+        }
+        
+        // Check for global extension variable
+        function checkGlobalVariable() {
+            if (window.mvIntelExtension) {
+                log(`📥 Found extension global variable: ${JSON.stringify(window.mvIntelExtension, null, 2)}`, 'success');
+                updateExtensionStatus(true);
+                updateCommunicationStatus('✅ Extension global variable found');
+            }
+        }
+        
+        // Initialize test page
+        function init() {
+            log('🚀 Test page initialized');
+            log('Checking for extension...');
+            
+            // Check for extension using multiple methods
+            setTimeout(() => {
+                checkPresence();
+                checkLocalStorage();
+                checkGlobalVariable();
+            }, 1000);
+            
+            // Check periodically
+            setInterval(() => {
+                checkPresence();
+            }, 10000);
+        }
+        
+        // Start when page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+</html>
+

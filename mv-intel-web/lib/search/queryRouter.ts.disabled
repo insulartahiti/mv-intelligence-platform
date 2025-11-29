@@ -1,0 +1,593 @@
+// Enhanced Knowledge Graph Intelligence - Query Router
+// Direct queries to specialized search functions based on intent
+
+import { classifyIntent, QueryIntentType, QueryIntent } from './intentClassifier';
+import { multiHopSearch, findSimilarEntities, findIntroductionPaths } from './multiHopSearch';
+import { rerankWithContext, rerankForIntent, rerankForUserRole } from './contextualReranking';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
+
+export interface SearchResult {
+  id: string;
+  name: string;
+  type: string;
+  similarity: number;
+  textScore?: number;
+  graphCentrality?: number;
+  pagerank?: number;
+  communityId?: number;
+  finalScore?: number;
+  metadata: any;
+  intro_paths?: Array<{
+    path: string[];
+    strength: number;
+    description: string;
+  }>;
+}
+
+export interface SearchOptions {
+  limit?: number;
+  filters?: any;
+  userRole?: 'investor' | 'analyst' | 'founder' | 'general';
+  userContext?: {
+    previousQueries?: string[];
+    preferences?: any;
+  };
+  enableReranking?: boolean;
+  enableMultiHop?: boolean;
+}
+
+export interface SearchFunctions {
+  entitySearch: (query: string, filters?: any) => Promise<SearchResult[]>;
+  introPathSearch: (entities: string[]) => Promise<SearchResult[]>;
+  competitiveAnalysis: (companies: string[]) => Promise<SearchResult[]>;
+  similaritySearch: (targetEntity: string) => Promise<SearchResult[]>;
+  relationshipDiscovery: (query: string, filters?: any) => Promise<SearchResult[]>;
+  fundingAnalysis: (query: string, filters?: any) => Promise<SearchResult[]>;
+  multiHopSearch: (query: string, options?: any) => Promise<SearchResult[]>;
+}
+
+/**
+ * Main query router - directs queries to appropriate search functions
+ */
+// Temporarily disabled for deployment
+export async function routeQuery_DISABLED(
+  query: string,
+  options: SearchOptions = {}
+): Promise<{
+  results: SearchResult[];
+  intent: QueryIntentType;
+  searchStrategy: string;
+  executionTime: number;
+  rerankApplied: boolean;
+}> {
+  const startTime = Date.now();
+  
+  try {
+    // 1. Classify query intent
+    const intentResult = await classifyIntent(query);
+    const intent = intentResult.type;
+    console.log('Query intent classified:', intent);
+
+    // 2. Route to appropriate search function
+    let results: SearchResult[] = [];
+    let searchStrategy = 'default';
+
+    switch (intent) {
+      case 'INTRO_PATH':
+        results = await handleIntroPathQuery(query, intentResult, options);
+        searchStrategy = 'intro_path';
+        break;
+
+      case 'SIMILARITY_SEARCH':
+        results = await handleSimilarityQuery(query, intentResult, options);
+        searchStrategy = 'similarity';
+        break;
+
+      case 'COMPETITIVE_ANALYSIS':
+        results = await handleCompetitiveAnalysisQuery(query, intentResult, options);
+        searchStrategy = 'competitive_analysis';
+        break;
+
+      case 'RELATIONSHIP_DISCOVERY':
+        results = await handleRelationshipDiscoveryQuery(query, intentResult, options);
+        searchStrategy = 'relationship_discovery';
+        break;
+
+      case 'FUNDING_ANALYSIS':
+        results = await handleFundingAnalysisQuery(query, intentResult, options);
+        searchStrategy = 'funding_analysis';
+        break;
+
+      case 'NETWORK_ANALYSIS':
+        results = await handleNetworkAnalysisQuery(query, intentResult, options);
+        searchStrategy = 'network_analysis';
+        break;
+
+      case 'MULTI_HOP':
+        results = await handleMultiHopQuery(query, intentResult, options);
+        searchStrategy = 'multi_hop';
+        break;
+
+      case 'ENTITY_SEARCH':
+      case 'MARKET_INTELLIGENCE':
+      case 'DUE_DILIGENCE':
+      case 'TREND_ANALYSIS':
+      default:
+        results = await handleGeneralSearchQuery(query, intentResult, options);
+        searchStrategy = 'general_search';
+        break;
+    }
+
+    // 3. Apply contextual re-ranking if enabled
+    let rerankApplied = false;
+    if (options.enableReranking !== false && results.length > 0) {
+      try {
+        if (options.userRole) {
+          results = await rerankForUserRole(query, results, options.userRole);
+        } else {
+          results = await rerankForIntent(query, results, intent);
+        }
+        rerankApplied = true;
+      } catch (error) {
+        console.error('Re-ranking failed:', error);
+      }
+    }
+
+    const executionTime = Date.now() - startTime;
+
+    return {
+      results,
+      intent,
+      searchStrategy,
+      executionTime,
+      rerankApplied
+    };
+
+  } catch (error) {
+    console.error('Query routing error:', error);
+    
+    // Fallback to general search
+    const fallbackResults = await handleGeneralSearchQuery(query, {
+      type: 'ENTITY_SEARCH',
+      confidence: 0.3,
+      extractedEntities: [],
+      extractedCompanies: [],
+      extractedPeople: [],
+      searchStrategy: 'broad',
+      filters: {},
+      context: 'Fallback search due to routing error'
+    }, options);
+
+    return {
+      results: fallbackResults,
+      intent: 'ENTITY_SEARCH',
+      searchStrategy: 'fallback',
+      executionTime: Date.now() - startTime,
+      rerankApplied: false
+    };
+  }
+}
+
+/**
+ * Handle introduction path queries
+ */
+async function handleIntroPathQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  const targetEntities = intent.extractedEntities.length > 0 
+    ? intent.extractedEntities 
+    : intent.extractedPeople;
+
+  if (targetEntities.length === 0) {
+    return [];
+  }
+
+  // Find Harsh Govil as the source
+  const { data: harshData } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('id, name')
+    .eq('name', 'Harsh Govil')
+    .eq('type', 'person')
+    .limit(1);
+
+  if (!harshData || harshData.length === 0) {
+    return [];
+  }
+
+  const harshId = harshData[0].id;
+  const results: SearchResult[] = [];
+
+  // Find intro paths to each target entity
+  for (const targetEntity of targetEntities) {
+    // First, find entities matching the target name
+    const { data: targetEntities } = await supabase
+      .schema('graph')
+      .from('entities')
+      .select('id, name, type')
+      .or(`name.ilike.%${targetEntity}%`)
+      .limit(3);
+
+    if (targetEntities && targetEntities.length > 0) {
+      for (const target of targetEntities) {
+        const introPaths = await findIntroductionPaths(
+          harshId,
+          target.id,
+          {
+            maxHops: 3,
+            minPathStrength: 0.3,
+            limit: 3
+          }
+        );
+
+        if (introPaths.length > 0) {
+          // Get details of connecting people
+          for (const path of introPaths) {
+            for (const entity of path.entities) {
+              if (entity.id !== harshId && entity.id !== target.id) {
+                const { data: entityDetails } = await supabase
+                  .schema('graph')
+                  .from('entities')
+                  .select('*')
+                  .eq('id', entity.id)
+                  .single();
+
+                if (entityDetails) {
+                  results.push({
+                    id: entityDetails.id,
+                    name: entityDetails.name,
+                    type: entityDetails.type,
+                    similarity: path.strength,
+                    finalScore: path.strength,
+                    metadata: {
+                      domain: entityDetails.domain,
+                      industry: entityDetails.industry,
+                      pipeline_stage: entityDetails.pipeline_stage,
+                      fund: entityDetails.fund,
+                      taxonomy: entityDetails.taxonomy,
+                      internal_owner: entityDetails.is_internal,
+                      is_portfolio: entityDetails.is_portfolio,
+                      is_pipeline: entityDetails.is_pipeline,
+                      importance: entityDetails.importance
+                    },
+                    intro_paths: [{
+                      path: path.path,
+                      strength: path.strength,
+                      description: path.description
+                    }]
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Remove duplicates and sort by strength
+  const uniqueResults = results.reduce((acc, current) => {
+    const existing = acc.find(item => item.id === current.id);
+    if (!existing || current.similarity > existing.similarity) {
+      return acc.filter(item => item.id !== current.id).concat([current]);
+    }
+    return acc;
+  }, [] as SearchResult[]);
+
+  return uniqueResults
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, options.limit || 20);
+}
+
+/**
+ * Handle similarity search queries
+ */
+async function handleSimilarityQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  const targetEntity = intent.extractedEntities[0] || intent.extractedCompanies[0];
+  
+  if (!targetEntity) {
+    return [];
+  }
+
+  // Find the target entity
+  const { data: targetEntities } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('id, name, type')
+    .or(`name.ilike.%${targetEntity}%`)
+    .limit(1);
+
+  if (!targetEntities || targetEntities.length === 0) {
+    return [];
+  }
+
+  const targetId = targetEntities[0].id;
+  
+  // Find similar entities using multi-hop search
+  return await findSimilarEntities(targetId, {
+    maxHops: 2,
+    minSimilarity: 0.6,
+    limit: options.limit || 20
+  });
+}
+
+/**
+ * Handle competitive analysis queries
+ */
+async function handleCompetitiveAnalysisQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  const companies = intent.extractedCompanies;
+  
+  if (companies.length === 0) {
+    return [];
+  }
+
+  // Search for each company and their competitors
+  const results: SearchResult[] = [];
+
+  for (const company of companies) {
+    // Find the company
+    const { data: companyEntities } = await supabase
+      .schema('graph')
+      .from('entities')
+      .select('*')
+      .eq('type', 'organization')
+      .or(`name.ilike.%${company}%`)
+      .limit(1);
+
+    if (companyEntities && companyEntities.length > 0) {
+      const companyEntity = companyEntities[0];
+      
+      // Find competitors using multi-hop search
+      const competitors = await findSimilarEntities(companyEntity.id, {
+        maxHops: 2,
+        minSimilarity: 0.5,
+        limit: 10
+      });
+
+      results.push(...competitors);
+    }
+  }
+
+  // Remove duplicates and sort
+  const uniqueResults = results.reduce((acc, current) => {
+    const existing = acc.find(item => item.id === current.id);
+    if (!existing || current.similarity > existing.similarity) {
+      return acc.filter(item => item.id !== current.id).concat([current]);
+    }
+    return acc;
+  }, [] as SearchResult[]);
+
+  return uniqueResults
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, options.limit || 20);
+}
+
+/**
+ * Handle relationship discovery queries
+ */
+async function handleRelationshipDiscoveryQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  // Use multi-hop search to find relationships
+  return await multiHopSearch(query, {
+    maxHops: 2,
+    minPathStrength: 0.4,
+    limit: options.limit || 20
+  });
+}
+
+/**
+ * Handle funding analysis queries
+ */
+async function handleFundingAnalysisQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  // Search for entities related to funding
+  const { data: results, error } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('*')
+    .or(`name.ilike.%${query}%,industry.ilike.%${query}%,pipeline_stage.ilike.%${query}%`)
+    .in('type', ['organization', 'deal'])
+    .limit(options.limit || 20);
+
+  if (error) {
+    console.error('Funding analysis search error:', error);
+    return [];
+  }
+
+  return (results || []).map((entity: any) => ({
+    id: entity.id,
+    name: entity.name,
+    type: entity.type,
+    similarity: 0.7, // Placeholder
+    finalScore: 0.7,
+    metadata: {
+      domain: entity.domain,
+      industry: entity.industry,
+      pipeline_stage: entity.pipeline_stage,
+      fund: entity.fund,
+      taxonomy: entity.taxonomy,
+      internal_owner: entity.is_internal,
+      is_portfolio: entity.is_portfolio,
+      is_pipeline: entity.is_pipeline,
+      importance: entity.importance
+    }
+  }));
+}
+
+/**
+ * Handle network analysis queries
+ */
+async function handleNetworkAnalysisQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  // Use multi-hop search with focus on network structure
+  return await multiHopSearch(query, {
+    maxHops: 3,
+    minPathStrength: 0.3,
+    limit: options.limit || 20
+  });
+}
+
+/**
+ * Handle multi-hop queries
+ */
+async function handleMultiHopQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  return await multiHopSearch(query, {
+    maxHops: 3,
+    minPathStrength: 0.3,
+    limit: options.limit || 20
+  });
+}
+
+/**
+ * Handle general search queries
+ */
+async function handleGeneralSearchQuery(
+  query: string,
+  intent: QueryIntent,
+  options: SearchOptions
+): Promise<SearchResult[]> {
+  // Use the enhanced semantic search
+  try {
+    const response = await fetch('/api/graph/enhanced-semantic-search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        filters: intent.filters,
+        limit: options.limit || 20
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results || [];
+
+  } catch (error) {
+    console.error('General search error:', error);
+    return [];
+  }
+}
+
+/**
+ * Batch route multiple queries
+ */
+export async function batchRouteQueries(
+  queries: Array<{
+    query: string;
+    options?: SearchOptions;
+  }>
+): Promise<Array<{
+  query: string;
+  results: SearchResult[];
+  intent: QueryIntent;
+  searchStrategy: string;
+  executionTime: number;
+  rerankApplied: boolean;
+}>> {
+  const results = await Promise.all(
+    queries.map(async ({ query, options }) => {
+      try {
+        return await routeQuery(query, options);
+      } catch (error) {
+        console.error(`Error routing query "${query}":`, error);
+        return {
+          results: [],
+          intent: {
+            type: 'ENTITY_SEARCH',
+            confidence: 0.1,
+            extractedEntities: [],
+            extractedCompanies: [],
+            extractedPeople: [],
+            searchStrategy: 'broad',
+            filters: {},
+            context: 'Error in query routing'
+          },
+          searchStrategy: 'error',
+          executionTime: 0,
+          rerankApplied: false
+        };
+      }
+    })
+  );
+
+  return results;
+}
+
+/**
+ * Get search statistics
+ */
+export function getSearchStatistics(
+  results: Array<{
+    query: string;
+    results: SearchResult[];
+    intent: QueryIntent;
+    searchStrategy: string;
+    executionTime: number;
+    rerankApplied: boolean;
+  }>
+): {
+  totalQueries: number;
+  averageResults: number;
+  averageExecutionTime: number;
+  rerankRate: number;
+  strategyDistribution: Record<string, number>;
+  intentDistribution: Record<string, number>;
+} {
+  const totalQueries = results.length;
+  const totalResults = results.reduce((sum, r) => sum + r.results.length, 0);
+  const totalExecutionTime = results.reduce((sum, r) => sum + r.executionTime, 0);
+  const rerankedQueries = results.filter(r => r.rerankApplied).length;
+
+  const strategyDistribution: Record<string, number> = {};
+  const intentDistribution: Record<string, number> = {};
+
+  results.forEach(result => {
+    strategyDistribution[result.searchStrategy] = 
+      (strategyDistribution[result.searchStrategy] || 0) + 1;
+    intentDistribution[result.intent.type] = 
+      (intentDistribution[result.intent.type] || 0) + 1;
+  });
+
+  return {
+    totalQueries,
+    averageResults: totalQueries > 0 ? totalResults / totalQueries : 0,
+    averageExecutionTime: totalQueries > 0 ? totalExecutionTime / totalQueries : 0,
+    rerankRate: totalQueries > 0 ? rerankedQueries / totalQueries : 0,
+    strategyDistribution,
+    intentDistribution
+  };
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Graph Test</title>
+    <script src="https://unpkg.com/graphology@0.25.4/dist/graphology.min.js"></script>
+    <script src="https://unpkg.com/sigma@2.4.0/dist/sigma.min.js"></script>
+</head>
+<body>
+    <div id="graph-container" style="width: 800px; height: 600px; border: 1px solid #ccc;"></div>
+    
+    <script>
+        // Test data
+        const testData = {
+            nodes: [
+                { id: "1", label: "Node 1", x: 0, y: 0 },
+                { id: "2", label: "Node 2", x: 100, y: 100 },
+                { id: "3", label: "Node 3", x: -100, y: 100 }
+            ],
+            edges: [
+                { id: "e1", source: "1", target: "2" },
+                { id: "e2", source: "1", target: "3" }
+            ]
+        };
+
+        // Create graph
+        const graph = new graphology.Graph();
+        
+        // Add nodes with positions
+        testData.nodes.forEach(node => {
+            graph.addNode(node.id, {
+                label: node.label,
+                x: node.x,
+                y: node.y,
+                size: 10,
+                color: '#ff0000'
+            });
+        });
+        
+        // Add edges
+        testData.edges.forEach(edge => {
+            graph.addEdge(edge.source, edge.target, {
+                size: 2,
+                color: '#000000'
+            });
+        });
+        
+        // Render with Sigma
+        const container = document.getElementById('graph-container');
+        const renderer = new sigma(graph, container);
+        
+        console.log('Graph test completed successfully');
+    </script>
+</body>
+</html>

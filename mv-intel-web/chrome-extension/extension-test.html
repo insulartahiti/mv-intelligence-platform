@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence Extension Test - Figma Simulation</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #0B0B0C;
+      color: #FFFFFF;
+    }
+
+    .header {
+      background: #1B1C1E;
+      padding: 16px 24px;
+      border-bottom: 1px solid #2A2B2E;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: #D1B172;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .tool-btn {
+      background: #2A2B2E;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .tool-btn:hover {
+      background: #3A3B3E;
+    }
+
+    .main-content {
+      padding: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .canvas-area {
+      background: #FFFFFF;
+      border-radius: 8px;
+      padding: 40px;
+      margin: 24px 0;
+      min-height: 600px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide-frame {
+      border: 2px solid #D1B172;
+      border-radius: 8px;
+      padding: 24px;
+      margin: 20px;
+      background: #F8F9FA;
+      color: #000;
+      position: relative;
+    }
+
+    .slide-frame h2 {
+      color: #D1B172;
+      margin-top: 0;
+    }
+
+    .slide-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .slide-text {
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .slide-image {
+      width: 100%;
+      height: 200px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+    }
+
+    .slide-selector {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: #1B1C1E;
+      border: 1px solid #2A2B2E;
+      border-radius: 8px;
+      padding: 16px;
+      color: white;
+    }
+
+    .slide-selector h3 {
+      margin-top: 0;
+      color: #D1B172;
+    }
+
+    .slide-btn {
+      background: #D1B172;
+      color: #0B0B0C;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      margin: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .slide-btn:hover {
+      background: #B89A5F;
+    }
+
+    .slide-btn.active {
+      background: #4BB37A;
+    }
+
+    .instructions {
+      background: #1B1C1E;
+      border: 1px solid #2A2B2E;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+    }
+
+    .instructions h3 {
+      color: #D1B172;
+      margin-top: 0;
+    }
+
+    .instructions ol {
+      line-height: 1.8;
+    }
+
+    .instructions code {
+      background: #2A2B2E;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    .status-indicator {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: #1B1C1E;
+      border: 1px solid #2A2B2E;
+      border-radius: 8px;
+      padding: 12px;
+      color: white;
+      font-size: 14px;
+      z-index: 1000;
+    }
+
+    .status-indicator.success {
+      border-color: #4BB37A;
+      background: #1B1C1E;
+    }
+
+    .status-indicator.error {
+      border-color: #E25555;
+      background: #1B1C1E;
+    }
+
+    .status-indicator.capturing {
+      border-color: #D1B172;
+      background: #1B1C1E;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🎨 Figma Simulation</div>
+    <div class="toolbar">
+      <button class="tool-btn">Frame</button>
+      <button class="tool-btn">Text</button>
+      <button class="tool-btn">Shape</button>
+      <button class="tool-btn">Image</button>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="instructions">
+      <h3>🧪 Extension Testing Instructions</h3>
+      <ol>
+        <li><strong>Load Extension:</strong> Go to <code>chrome://extensions/</code>, enable Developer mode, click "Load unpacked", select the <code>build</code> folder</li>
+        <li><strong>Test Extension:</strong> Click the extension icon in your toolbar</li>
+        <li><strong>Capture Slides:</strong> Use the "Capture Slide" button in the extension popup</li>
+        <li><strong>Switch Slides:</strong> Use the slide selector on the right to test different content</li>
+        <li><strong>Check Console:</strong> Open DevTools to see extension communication logs</li>
+      </ol>
+    </div>
+
+    <div class="canvas-area">
+      <div class="slide-frame" id="slide-1">
+        <h2>Welcome to MV Intelligence</h2>
+        <div class="slide-content">
+          <div class="slide-text">
+            <p>This is a simulated Figma environment to test the Chrome extension.</p>
+            <p>The extension should be able to capture this slide content and send it to the background script.</p>
+            <p>Check the browser console for detailed logs of the capture process.</p>
+          </div>
+          <div class="slide-image">📊 Chart Placeholder</div>
+        </div>
+      </div>
+
+      <div class="slide-frame" id="slide-2" style="display: none;">
+        <h2>Slide 2: Technical Architecture</h2>
+        <div class="slide-content">
+          <div class="slide-text">
+            <p>This slide demonstrates the technical architecture of the MV Intelligence platform.</p>
+            <p>It includes Chrome extension, Supabase database, and Edge Functions.</p>
+            <p>The extension captures slides and processes them through the backend.</p>
+          </div>
+          <div class="slide-image">🏗️ Architecture Diagram</div>
+        </div>
+      </div>
+
+      <div class="slide-frame" id="slide-3" style="display: none;">
+        <h2>Slide 3: Data Flow</h2>
+        <div class="slide-content">
+          <div class="slide-text">
+            <p>Data flows from the Chrome extension to Supabase Edge Functions.</p>
+            <p>Slides are processed, compiled into PDFs, and pushed to Affinity CRM.</p>
+            <p>This creates a seamless workflow for deck analysis and sharing.</p>
+          </div>
+          <div class="slide-image">🔄 Data Flow</div>
+        </div>
+      </div>
+
+      <div class="slide-selector">
+        <h3>Select Slide</h3>
+        <button class="slide-btn active" onclick="showSlide(1)">Slide 1</button>
+        <button class="slide-btn" onclick="showSlide(2)">Slide 2</button>
+        <button class="slide-btn" onclick="showSlide(3)">Slide 3</button>
+      </div>
+    </div>
+
+    <div class="instructions">
+      <h3>🔍 What to Test</h3>
+      <ul>
+        <li><strong>Extension Loading:</strong> Extension should load without errors in console</li>
+        <li><strong>Content Script:</strong> Should inject UI and be ready to receive messages</li>
+        <li><strong>Slide Capture:</strong> Clicking "Capture Slide" should work and show success</li>
+        <li><strong>Communication:</strong> Messages should flow between popup → content script → background script</li>
+        <li><strong>Storage:</strong> Captured slides should be stored in extension storage</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="status-indicator" id="status-indicator" style="display: none;">
+    Ready to test extension
+  </div>
+
+  <script>
+    let currentSlide = 1;
+
+    function showSlide(slideNumber) {
+      // Hide all slides
+      document.querySelectorAll('.slide-frame').forEach(slide => {
+        slide.style.display = 'none';
+      });
+      
+      // Show selected slide
+      document.getElementById(`slide-${slideNumber}`).style.display = 'block';
+      
+      // Update button states
+      document.querySelectorAll('.slide-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      currentSlide = slideNumber;
+      console.log(`Switched to slide ${slideNumber}`);
+    }
+
+    function showStatus(message, type = 'info') {
+      const indicator = document.getElementById('status-indicator');
+      indicator.textContent = message;
+      indicator.className = `status-indicator ${type}`;
+      indicator.style.display = 'block';
+      
+      setTimeout(() => {
+        indicator.style.display = 'none';
+      }, 3000);
+    }
+
+    // Simulate Figma-like environment
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🎨 Figma simulation environment loaded');
+      console.log('📱 Extension should inject content script here');
+      
+      // Add some Figma-like data attributes
+      document.body.setAttribute('data-figma-simulation', 'true');
+      document.querySelector('.canvas-area').setAttribute('data-figma-canvas', 'true');
+      
+      showStatus('Figma simulation ready - load extension to test', 'success');
+    });
+
+    // Listen for extension messages (for testing)
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        console.log('🎯 Main page received message:', request);
+        
+        if (request.action === 'testConnection') {
+          sendResponse({ success: true, message: 'Connection test successful' });
+        }
+      });
+    }
+  </script>
+</body>
+</html>

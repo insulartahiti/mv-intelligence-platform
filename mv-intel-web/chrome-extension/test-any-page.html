@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence - Test Any Page</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 40px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      color: #D1B172;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .test-section {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+
+    .test-section h2 {
+      color: #495057;
+      margin-top: 0;
+    }
+
+    .instructions {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+    }
+
+    .instructions h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+
+    .status {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 16px 0;
+      font-family: monospace;
+    }
+
+    .success {
+      background: #d4edda;
+      border-color: #28a745;
+    }
+
+    .error {
+      background: #f8d7da;
+      border-color: #dc3545;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border-color: #ffc107;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 MV Intelligence Extension Test</h1>
+    
+    <div class="instructions">
+      <h3>📋 Testing Instructions</h3>
+      <ol>
+        <li><strong>Load Extension:</strong> Go to <code>chrome://extensions/</code>, enable Developer mode, click "Load unpacked", select the <code>build</code> folder</li>
+        <li><strong>Test Extension:</strong> Click the extension icon in your toolbar</li>
+        <li><strong>Test Slide Capture:</strong> Use "Capture Current Slide" button</li>
+        <li><strong>Test File Upload:</strong> Use "Upload File" button to test with real files</li>
+        <li><strong>Check Console:</strong> Open DevTools to see extension communication logs</li>
+      </ol>
+    </div>
+
+    <div class="test-section">
+      <h2>🔍 Extension Status</h2>
+      <p>Check if the extension is loaded and working:</p>
+      <button onclick="checkExtension()" style="background: #D1B172; color: #fff; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer;">Check Extension Status</button>
+      <div id="extension-status" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>📸 Test Content</h2>
+      <p>This page contains various content types to test the extension's content extraction:</p>
+      
+      <h3>Headings and Text</h3>
+      <p>This is a paragraph with meaningful content that the extension should be able to extract. It contains information about testing the MV Intelligence platform and its capabilities.</p>
+      
+      <h3>Lists and Structure</h3>
+      <ul>
+        <li>Chrome Extension for slide capture</li>
+        <li>Supabase integration for data storage</li>
+        <li>Edge Functions for processing</li>
+        <li>File upload capabilities</li>
+      </ul>
+      
+      <h3>Code and Technical Details</h3>
+      <p>The extension uses <code>chrome.tabs.captureVisibleTab</code> for screenshots and communicates with Supabase Edge Functions for data processing.</p>
+    </div>
+
+    <div class="test-section">
+      <h2>📁 File Upload Test</h2>
+      <p>Test the extension's file upload functionality:</p>
+      <ul>
+        <li><strong>PDFs:</strong> Upload presentation files</li>
+        <li><strong>Images:</strong> Upload slide images</li>
+        <li><strong>Documents:</strong> Upload Word/PowerPoint files</li>
+      </ul>
+      <p><em>Note: File processing is handled by the extension's background script and Supabase Edge Functions.</em></p>
+    </div>
+
+    <div class="test-section">
+      <h2>🔧 Debug Information</h2>
+      <p>Current page information:</p>
+      <div id="debug-info" class="status">
+        <strong>Page URL:</strong> <span id="page-url"></span><br>
+        <strong>Page Title:</strong> <span id="page-title"></span><br>
+        <strong>Content Elements:</strong> <span id="content-count"></span><br>
+        <strong>Extension Ready:</strong> <span id="extension-ready">Checking...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Update debug info
+    document.getElementById('page-url').textContent = window.location.href;
+    document.getElementById('page-title').textContent = document.title;
+    document.getElementById('content-count').textContent = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, li').length;
+
+    function checkExtension() {
+      const statusDiv = document.getElementById('extension-status');
+      statusDiv.style.display = 'block';
+      
+      try {
+        // Check if extension is available
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          statusDiv.innerHTML = `
+            <strong>✅ Extension Loaded Successfully</strong><br>
+            Extension ID: ${chrome.runtime.id}<br>
+            Manifest Version: ${chrome.runtime.getManifest().manifest_version}<br>
+            Extension Name: ${chrome.runtime.getManifest().name}<br>
+            <br><strong>🎯 Ready to test slide capture and file upload!</strong>
+          `;
+          statusDiv.className = 'status success';
+          document.getElementById('extension-ready').textContent = '✅ Yes';
+        } else {
+          statusDiv.innerHTML = `
+            <strong>❌ Extension Not Available</strong><br>
+            Chrome extension APIs not found.<br>
+            <br>Make sure you've loaded the extension in chrome://extensions/
+          `;
+          statusDiv.className = 'status error';
+          document.getElementById('extension-ready').textContent = '❌ No';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = `
+          <strong>❌ Error Checking Extension</strong><br>
+          ${error.message}<br>
+          <br>Check the console for more details.
+        `;
+        statusDiv.className = 'status error';
+        document.getElementById('extension-ready').textContent = '❌ Error';
+      }
+    }
+
+    // Auto-check extension status when page loads
+    window.addEventListener('load', () => {
+      setTimeout(checkExtension, 1000);
+    });
+
+    // Listen for extension messages (for testing)
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        console.log('🎯 Test page received message:', request);
+        
+        if (request.action === 'testConnection') {
+          sendResponse({ success: true, message: 'Test page connection successful' });
+        }
+      });
+    }
+
+    console.log('🧪 MV Intelligence test page loaded');
+    console.log('📱 Extension should be able to capture this page content');
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+

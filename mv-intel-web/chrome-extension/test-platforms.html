@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MV Intelligence - Platform Testing</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+    }
+
+    .platform-tabs {
+      display: flex;
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .platform-tab {
+      flex: 1;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .platform-tab.active {
+      border-bottom-color: #D1B172;
+      background: #fafafa;
+    }
+
+    .platform-tab:hover {
+      background: #f5f5f5;
+    }
+
+    .platform-content {
+      display: none;
+      padding: 40px;
+      min-height: 80vh;
+    }
+
+    .platform-content.active {
+      display: block;
+    }
+
+    /* Figma Simulation */
+    .figma-content {
+      background: #2c2c2c;
+      color: #fff;
+    }
+
+    .figma-frame {
+      background: #1e1e1e;
+      border: 1px solid #3c3c3c;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      position: relative;
+    }
+
+    .figma-frame.selected {
+      border-color: #D1B172;
+      box-shadow: 0 0 0 2px rgba(209, 177, 114, 0.3);
+    }
+
+    .figma-frame[data-selected="true"] {
+      border-color: #D1B172;
+    }
+
+    .figma-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #D1B172;
+    }
+
+    /* Notion Simulation */
+    .notion-content {
+      background: #fff;
+      color: #37352f;
+    }
+
+    .notion-page {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .notion-block {
+      margin: 8px 0;
+      padding: 8px 0;
+    }
+
+    .notion-block[data-block-id] {
+      border-left: 3px solid transparent;
+      padding-left: 16px;
+    }
+
+    .notion-block[data-block-id]:hover {
+      border-left-color: #D1B172;
+      background: #f8f8f8;
+    }
+
+    /* Google Docs Simulation */
+    .gdocs-content {
+      background: #fff;
+      color: #202124;
+    }
+
+    .gdocs-editor {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      min-height: 600px;
+    }
+
+    .gdocs-toolbar {
+      background: #f8f9fa;
+      border-bottom: 1px solid #dadce0;
+      padding: 8px 16px;
+      margin-bottom: 20px;
+    }
+
+    .gdocs-toolbar button {
+      background: #fff;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      padding: 6px 12px;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+
+    .gdocs-toolbar button:hover {
+      background: #f1f3f4;
+    }
+
+    /* Common Elements */
+    .content-area {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+
+    .instructions {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+    }
+
+    .instructions h3 {
+      margin-top: 0;
+      color: #1976d2;
+    }
+
+    .test-button {
+      background: #D1B172;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 10px 5px;
+      transition: all 0.2s;
+    }
+
+    .test-button:hover {
+      background: #B89A5F;
+      transform: translateY(-1px);
+    }
+
+    .status {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 16px 0;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="platform-tabs">
+    <div class="platform-tab active" data-platform="figma">Figma</div>
+    <div class="platform-tab" data-platform="notion">Notion</div>
+    <div class="platform-tab" data-platform="gdocs">Google Docs</div>
+  </div>
+
+  <!-- Figma Simulation -->
+  <div class="platform-content figma-content active" id="figma-content">
+    <div class="instructions">
+      <h3>🎨 Figma Simulation</h3>
+      <p>This simulates a Figma design file. The Chrome extension should inject a capture button in the top-right corner.</p>
+      <button class="test-button" onclick="selectFrame('frame1')">Select Frame 1</button>
+      <button class="test-button" onclick="selectFrame('frame2')">Select Frame 2</button>
+      <button class="test-button" onclick="selectFrame('frame3')">Select Frame 3</button>
+    </div>
+
+    <div class="figma-frame" data-testid="frame" data-selected="false" id="frame1">
+      <div class="figma-title">Hero Section</div>
+      <div class="content-area">
+        <h2>Welcome to Our Platform</h2>
+        <p>This is a hero section with compelling copy and a call-to-action button.</p>
+        <button class="test-button">Get Started</button>
+      </div>
+    </div>
+
+    <div class="figma-frame" data-testid="frame" data-selected="false" id="frame2">
+      <div class="figma-title">Features Grid</div>
+      <div class="content-area">
+        <h3>Key Features</h3>
+        <ul>
+          <li>Feature 1: Amazing capability</li>
+          <li>Feature 2: Revolutionary technology</li>
+          <li>Feature 3: Industry-leading solution</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="figma-frame" data-testid="frame" data-selected="false" id="frame3">
+      <div class="figma-title">Pricing Table</div>
+      <div class="content-area">
+        <h3>Choose Your Plan</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+          <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+            <h4>Basic</h4>
+            <p>$9/month</p>
+          </div>
+          <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+            <h4>Pro</h4>
+            <p>$29/month</p>
+          </div>
+          <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+            <h4>Enterprise</h4>
+            <p>Contact us</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notion Simulation -->
+  <div class="platform-content notion-content" id="notion-content">
+    <div class="instructions">
+      <h3>📝 Notion Simulation</h3>
+      <p>This simulates a Notion page. The Chrome extension should inject a capture button in the top-right corner.</p>
+      <button class="test-button" onclick="addNotionBlock()">Add New Block</button>
+    </div>
+
+    <div class="notion-page">
+      <h1>Project Planning Document</h1>
+      
+      <div class="notion-block" data-block-id="block1" data-block-type="text">
+        <p>This is the main project overview. We're building an amazing platform that will revolutionize how teams collaborate.</p>
+      </div>
+
+      <div class="notion-block" data-block-id="block2" data-block-type="heading">
+        <h2>Project Goals</h2>
+      </div>
+
+      <div class="notion-block" data-block-id="block3" data-block-type="list">
+        <ul>
+          <li>Improve team productivity by 50%</li>
+          <li>Reduce communication overhead</li>
+          <li>Streamline project workflows</li>
+        </ul>
+      </div>
+
+      <div class="notion-block" data-block-id="block4" data-block-type="text">
+        <p>We'll achieve these goals through careful planning, user research, and iterative development.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Docs Simulation -->
+  <div class="platform-content gdocs-content" id="gdocs-content">
+    <div class="instructions">
+      <h3>📄 Google Docs Simulation</h3>
+      <p>This simulates a Google Docs document. The Chrome extension should inject a capture button in the top-right corner.</p>
+      <button class="test-button" onclick="editDocument()">Edit Document</button>
+    </div>
+
+    <div class="gdocs-editor">
+      <div class="gdocs-toolbar">
+        <button>B</button>
+        <button><em>I</em></button>
+        <button><u>U</u></button>
+        <button>Aa</button>
+        <button>📊</button>
+        <button>🔗</button>
+      </div>
+
+      <div class="kix-appview-editor">
+        <h1>Business Proposal</h1>
+        <p>Dear Stakeholders,</p>
+        <p>I'm writing to propose a new initiative that will significantly improve our company's operational efficiency and market position.</p>
+        
+        <h2>Executive Summary</h2>
+        <p>Our current processes are working, but there's significant room for improvement. By implementing the proposed changes, we estimate a 30% increase in productivity and a 25% reduction in operational costs.</p>
+        
+        <h2>Market Analysis</h2>
+        <p>The market is evolving rapidly, and we need to adapt to stay competitive. Our competitors are already implementing similar solutions, and we risk falling behind if we don't act now.</p>
+        
+        <h2>Implementation Plan</h2>
+        <p>We propose a phased approach:</p>
+        <ul>
+          <li>Phase 1: Research and planning (Month 1-2)</li>
+          <li>Phase 2: Development and testing (Month 3-6)</li>
+          <li>Phase 3: Rollout and training (Month 7-8)</li>
+        </ul>
+        
+        <h2>Budget Requirements</h2>
+        <p>Total investment required: $500,000</p>
+        <p>Expected ROI: 200% within 18 months</p>
+        
+        <p>I look forward to discussing this proposal in detail and answering any questions you may have.</p>
+        
+        <p>Best regards,<br>
+        [Your Name]<br>
+        [Your Title]</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Platform tab switching
+    document.querySelectorAll('.platform-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remove active class from all tabs and content
+        document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.platform-content').forEach(c => c.classList.remove('active'));
+        
+        // Add active class to clicked tab
+        tab.classList.add('active');
+        
+        // Show corresponding content
+        const platform = tab.dataset.platform;
+        document.getElementById(`${platform}-content`).classList.add('active');
+      });
+    });
+
+    // Figma frame selection
+    function selectFrame(frameId) {
+      // Remove selection from all frames
+      document.querySelectorAll('.figma-frame').forEach(frame => {
+        frame.dataset.selected = 'false';
+        frame.classList.remove('selected');
+      });
+      
+      // Select the clicked frame
+      const frame = document.getElementById(frameId);
+      frame.dataset.selected = 'true';
+      frame.classList.add('selected');
+    }
+
+    // Notion block addition
+    function addNotionBlock() {
+      const page = document.querySelector('.notion-page');
+      const newBlock = document.createElement('div');
+      newBlock.className = 'notion-block';
+      newBlock.dataset.blockId = `block${Date.now()}`;
+      newBlock.dataset.blockType = 'text';
+      newBlock.innerHTML = '<p>New block added at ' + new Date().toLocaleTimeString() + '</p>';
+      page.appendChild(newBlock);
+    }
+
+    // Google Docs editing simulation
+    function editDocument() {
+      const editor = document.querySelector('.kix-appview-editor');
+      const newParagraph = document.createElement('p');
+      newParagraph.innerHTML = 'Document edited at ' + new Date().toLocaleTimeString() + '. This simulates real-time editing in Google Docs.';
+      editor.appendChild(newParagraph);
+    }
+
+    // Simulate page title changes for Google Docs
+    document.title = 'Business Proposal - Google Docs';
+
+    // Add some interactive elements
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('MV Intelligence Test Platform Loaded');
+      console.log('This page simulates Figma, Notion, and Google Docs for testing the Chrome extension');
+      console.log('The extension should inject capture UI into each platform simulation');
+    });
+  </script>
+</body>
+</html>
