@@ -35,7 +35,10 @@ async function runSync() {
     }
 
     // Default list name
-    const stats = await service.syncPipelineList("Motive Ventures Pipeline", { limit });
+    const stats = await service.syncPipelineList("Motive Ventures Pipeline", { 
+        limit,
+        concurrency: 20 // Optimize for speed (tested safe)
+    });
 
     console.log('\n📊 Sync Complete:');
     console.log(`   - Companies Processed: ${stats.companiesProcessed}`);
