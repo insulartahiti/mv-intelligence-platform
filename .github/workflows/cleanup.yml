@@ -1,0 +1,48 @@
+name: Data Maintenance
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Runs weekly on Sunday at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mv-intel-web/package-lock.json
+          
+      - name: Install Dependencies
+        working-directory: ./mv-intel-web
+        run: npm ci
+        
+      - name: Run Systematic Cleanup
+        working-directory: ./mv-intel-web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/systematic_cleanup.js
+
+      - name: Refresh Stale Data (Optional)
+        working-directory: ./mv-intel-web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+        # Only run if the script exists and is intended for automation
+        run: |
+          if [ -f "scripts/refresh_stale_data.ts" ]; then
+            npx tsx scripts/refresh_stale_data.ts
+          else
+            echo "Refresh script not found, skipping."
+          fi
+

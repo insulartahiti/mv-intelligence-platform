@@ -22,18 +22,25 @@ const openai = new OpenAI({ apiKey: openaiApiKey });
 // Configuration
 const DRY_RUN = process.argv.includes('--dry-run');
 const CONFIDENCE_THRESHOLD = 0.95;
+const BATCH_LIMIT = process.argv.includes('--full') ? 1000 : 50; // Default small batch for safety
 
 async function checkDataAssurance() {
-    console.log(`🛡️ Starting Intelligent Data Assurance (Dry Run: ${DRY_RUN})...`);
+    console.log(`🛡️ Starting Intelligent Data Assurance (Dry Run: ${DRY_RUN}, Limit: ${BATCH_LIMIT})...`);
 
-    // 1. Fetch Candidates: Entities with parentheses or suspected type mismatches
-    // We fetch a batch to process
+    // 1. Fetch Candidates: Entities with issues OR general audit
+    // We prioritize "risky" entities first
     const { data: candidates, error } = await supabase
         .schema('graph')
         .from('entities')
-        .select('id, name, type, description, taxonomy')
-        .or('name.ilike.%(%),name.ilike.%stealth%') // Initial filter for obvious issues
-        .limit(50);
+        .select('id, name, type, description, taxonomy, domain, updated_at')
+        // Filter for specific issues to prioritize:
+        // - Parentheses in name
+        // - Missing taxonomy
+        // - Stale (> 6 months)
+        // - "Stealth" in name
+        .or('name.ilike.%(%),name.ilike.%stealth%,taxonomy.is.null,updated_at.lt.2025-06-01') 
+        .order('updated_at', { ascending: true }) // Oldest first
+        .limit(BATCH_LIMIT);
 
     if (error) {
         console.error('Error fetching candidates:', error);
@@ -42,33 +49,109 @@ async function checkDataAssurance() {
 
     console.log(`🔍 Analyzing ${candidates.length} candidates...`);
 
+    let stats = { merged: 0, retyped: 0, retax: 0, badUrls: 0, stale: 0 };
+
     for (const entity of candidates) {
-        console.log(`\n🧐 Analyzing: ${entity.name} [${entity.type}]`);
+        console.log(`\n🧐 Analyzing: ${entity.name} [${entity.type}] (ID: ${entity.id.substring(0,8)}...)`);
 
-        // Check 1: Parenthetical / Duplicate Check
-        if (entity.name.includes('(')) {
-            const cleanName = entity.name.replace(/\s*\(.*?\)\s*/g, '').trim();
-            if (cleanName.length > 2) {
-                // Find potential canonical match
-                const { data: matches } = await supabase
-                    .schema('graph')
-                    .from('entities')
-                    .select('id, name, type, description')
-                    .ilike('name', cleanName) // Exact match on clean name
-                    .neq('id', entity.id); // Not self
-
-                if (matches && matches.length > 0) {
-                    const target = matches[0]; // Take best match
-                    await evaluateMerge(entity, target);
-                    continue; // Skip other checks if merging
-                }
+        // Check 1: Parenthetical / Duplicate Check (Merge)
+        if (entity.name.includes('(') || entity.name.toLowerCase().includes('stealth')) {
+            const merged = await checkDuplicateAndMerge(entity);
+            if (merged) {
+                stats.merged++;
+                continue; // Entity deleted/merged, skip other checks
             }
         }
 
-        // Check 2: Type Verification (Is Org actually Person?)
-        await verifyType(entity);
+        // Check 2: Type Verification
+        const retyped = await verifyType(entity);
+        if (retyped) stats.retyped++;
+
+        // Check 3: Taxonomy Validation
+        const retax = await validateTaxonomy(entity);
+        if (retax) stats.retax++;
+
+        // Check 4: Broken URLs
+        const badUrl = await checkUrl(entity);
+        if (badUrl) stats.badUrls++;
+
+        // Check 5: Stale Data
+        const stale = await checkStale(entity);
+        if (stale) stats.stale++;
     }
+
+    console.log('\n📊 Assurance Summary:', stats);
 }
+
+async function checkDuplicateAndMerge(entity) {
+    const cleanName = entity.name.replace(/\s*\(.*?\)\s*/g, '').replace(/\s*\(?stealth\)?/gi, '').trim();
+    
+    if (cleanName.length > 2 && cleanName.toLowerCase() !== entity.name.toLowerCase()) {
+        const { data: matches } = await supabase
+            .schema('graph')
+            .from('entities')
+            .select('id, name, type, description')
+            .ilike('name', cleanName)
+            .neq('id', entity.id);
+
+        if (matches && matches.length > 0) {
+            const target = matches[0];
+            return await evaluateMerge(entity, target);
+        }
+    }
+    return false;
+}
+
+async function validateTaxonomy(entity) {
+    if (!entity.taxonomy || entity.taxonomy === 'Other' || !entity.taxonomy.includes('.')) {
+        // Only re-classify organizations
+        if (entity.type !== 'organization') return false;
+
+        console.log(`   🏷️ Invalid Taxonomy: "${entity.taxonomy}". Re-classifying...`);
+        if (DRY_RUN) return false;
+
+        try {
+            const completion = await openai.chat.completions.create({
+                model: "gpt-5.1",
+                messages: [
+                    { role: "system", content: "Classify into IFT taxonomy (e.g. IFT.PAY.B2B). Return JSON: { taxonomy: string }" },
+                    { role: "user", content: `Entity: ${entity.name}\nDesc: ${entity.description || 'Unknown'}` }
+                ],
+                response_format: { type: "json_object" }
+            });
+            const result = JSON.parse(completion.choices[0].message.content);
+            if (result.taxonomy && result.taxonomy.includes('.')) {
+                await supabase.schema('graph').from('entities').update({ taxonomy: result.taxonomy }).eq('id', entity.id);
+                console.log(`      ✅ Updated Taxonomy to ${result.taxonomy}`);
+                return true;
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+    return false;
+}
+
+async function checkUrl(entity) {
+    if (entity.domain && !entity.domain.includes('.')) {
+        console.log(`   🔗 Invalid Domain format: ${entity.domain}`);
+        return true;
+    }
+    return false;
+}
+
+async function checkStale(entity) {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    
+    if (new Date(entity.updated_at) < sixMonthsAgo) {
+        console.log(`   🕰️ Stale Data (Last updated: ${entity.updated_at}). Flagging for refresh.`);
+        // In real run, we would trigger re-enrichment here or add to a queue
+        return true;
+    }
+    return false;
+}
+
 
 async function evaluateMerge(source, target) {
     console.log(`   👉 Potential Merge: "${source.name}" -> "${target.name}"`);
@@ -116,9 +199,33 @@ async function evaluateMerge(source, target) {
 }
 
 async function verifyType(entity) {
-    // Skip if LLM check is expensive, maybe sample?
-    // prompt: Is "${entity.name}" likely a ${entity.type}?
-    // For now, let's skip to save tokens unless requested.
+    // Only check suspicious cases
+    const isPersonName = (n) => !n.includes('Inc') && !n.includes('Ltd') && !n.includes('LLC') && !n.includes('Technologies');
+    
+    if (entity.type === 'organization' && isPersonName(entity.name)) {
+        // Potential misclassification
+        console.log(`   🤔 Type Mismatch? "${entity.name}" is marked as Organization.`);
+        if (DRY_RUN) return false;
+        
+        // Ask LLM
+        try {
+            const completion = await openai.chat.completions.create({
+                model: "gpt-5.1",
+                messages: [
+                    { role: "system", content: "Is this entity a 'person' or 'organization'? Return JSON: { type: 'person' | 'organization' }" },
+                    { role: "user", content: `Name: ${entity.name}\nDesc: ${entity.description || ''}` }
+                ],
+                response_format: { type: "json_object" }
+            });
+            const result = JSON.parse(completion.choices[0].message.content);
+            if (result.type !== entity.type) {
+                console.log(`      ✏️ Changing type to ${result.type}`);
+                await supabase.schema('graph').from('entities').update({ type: result.type }).eq('id', entity.id);
+                return true;
+            }
+        } catch(e) {}
+    }
+    return false;
 }
 
 async function executeMerge(keep, remove) {
