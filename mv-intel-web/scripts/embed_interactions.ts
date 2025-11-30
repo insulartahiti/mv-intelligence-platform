@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import fs from 'fs';
 
 // Robust Env Loading
 const __filename = fileURLToPath(import.meta.url);
@@ -18,7 +19,6 @@ const envPaths = [
 
 let envLoaded = false;
 for (const p of envPaths) {
-    const fs = await import('fs');
     if (fs.existsSync(p)) {
         dotenv.config({ path: p });
         console.log(`[Embed] Loaded env from ${p}`);
@@ -97,4 +97,3 @@ async function embedInteractions() {
 }
 
 embedInteractions();
-

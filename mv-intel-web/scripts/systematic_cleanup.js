@@ -315,6 +315,7 @@ async function main() {
     console.log('✅ Systematic Cleanup Complete.');
   } catch (err) {
     console.error('Cleanup Failed:', err);
+    process.exit(1);
   } finally {
     await driver.close();
   }

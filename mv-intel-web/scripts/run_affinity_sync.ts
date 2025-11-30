@@ -14,7 +14,7 @@ async function runSync() {
     }
 
     const service = new AffinitySyncService();
-    // Default list name from other files seems to be "Motive Ventures Pipeline"
+    // Default list name
     const stats = await service.syncPipelineList("Motive Ventures Pipeline");
 
     console.log('\n📊 Sync Complete:');
@@ -23,11 +23,16 @@ async function runSync() {
     console.log(`   - Notes Processed: ${stats.notesProcessed}`);
     console.log(`   - Notes Enriched: ${stats.notesEnriched}`);
     
-    if (stats.errors.length > 0) {
+    if (stats.errors && stats.errors.length > 0) {
         console.log('\n⚠️ Errors:');
         stats.errors.forEach(e => console.log(`   - ${e}`));
+        
+        // Fail if critical errors occurred
+        process.exit(1);
     }
 }
 
-runSync().catch(console.error);
-
+runSync().catch((err) => {
+    console.error('Fatal Error:', err);
+    process.exit(1);
+});
