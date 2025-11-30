@@ -1,5 +1,4 @@
-
-const { Client } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 const fs = require('fs');
 
@@ -26,18 +25,23 @@ if (!envLoaded) {
 
 const OpenAI = require('openai');
 
+// Initialize Supabase Client (Bypass DNS/PG issues)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Supabase credentials missing!');
+    process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+});
+
 // Initialize OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-// Database connection string
-const DATABASE_URL = process.env.DATABASE_URL;
-
-if (!DATABASE_URL) {
-  console.error('Error: DATABASE_URL environment variable is required.');
-  process.exit(1);
-}
 
 // Configuration
 const BATCH_SIZE = 10;
@@ -103,15 +107,6 @@ const RELATIONSHIP_SCHEMA = {
   }
 };
 
-async function getPgClient() {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
-  await client.connect();
-  return client;
-}
-
 async function extractRelationships(entityName, entityType, businessAnalysis) {
   try {
     const prompt = `
@@ -155,45 +150,63 @@ async function extractRelationships(entityName, entityType, businessAnalysis) {
   }
 }
 
-async function resolveTargetEntity(client, name, type) {
+async function resolveTargetEntity(name, type) {
   // 1. Try exact match
-  const exactRes = await client.query(
-    `SELECT id FROM graph.entities WHERE name ILIKE $1 AND type = $2 LIMIT 1`,
-    [name, type]
-  );
+  const { data: exactRes } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('id')
+    .ilike('name', name)
+    .eq('type', type)
+    .limit(1);
   
-  if (exactRes.rows.length > 0) {
-    return exactRes.rows[0].id;
+  if (exactRes && exactRes.length > 0) {
+    return exactRes[0].id;
   }
 
   // 2. Create placeholder if not found
-  // We mark it as 'pending_enrichment' so the other scripts might pick it up later if we want
-  const insertRes = await client.query(
-    `INSERT INTO graph.entities (name, type, enrichment_source, created_at, updated_at)
-     VALUES ($1, $2, 'relationship_inference', NOW(), NOW())
-     RETURNING id`,
-    [name, type]
-  );
+  const { data: insertRes, error } = await supabase
+    .schema('graph')
+    .from('entities')
+    .insert({
+        name, 
+        type, 
+        enrichment_source: 'relationship_inference', 
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    })
+    .select('id')
+    .single();
+  
+  if (error) {
+      console.error(`Error creating placeholder entity ${name}:`, error.message);
+      return null;
+  }
   
   console.log(`   + Created new inferred entity: ${name} (${type})`);
-  return insertRes.rows[0].id;
+  return insertRes.id;
 }
 
-async function processBatch(client) {
+async function processBatch() {
   // Fetch entities that have analysis but no extraction timestamp
-  const res = await client.query(`
-    SELECT id, name, type, business_analysis 
-    FROM graph.entities 
-    WHERE business_analysis IS NOT NULL 
-      AND relationships_extracted_at IS NULL
-    LIMIT $1
-  `, [BATCH_SIZE]);
+  const { data: entities, error } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('id, name, type, business_analysis')
+    .not('business_analysis', 'is', null)
+    .is('relationships_extracted_at', null)
+    .limit(BATCH_SIZE);
 
-  if (res.rows.length === 0) return 0;
+  if (error) {
+      console.error('Error fetching batch:', error);
+      return 0;
+  }
 
-  console.log(`Processing batch of ${res.rows.length} entities...`);
+  if (!entities || entities.length === 0) return 0;
 
-  for (const entity of res.rows) {
+  console.log(`Processing batch of ${entities.length} entities...`);
+
+  for (const entity of entities) {
     console.log(`> Extracting for: ${entity.name}`);
     
     const extraction = await extractRelationships(entity.name, entity.type, entity.business_analysis);
@@ -226,35 +239,24 @@ async function processBatch(client) {
       }
 
       try {
-        const targetId = await resolveTargetEntity(client, rel.target_name, rel.target_type);
+        const targetId = await resolveTargetEntity(rel.target_name, rel.target_type);
         
-        // Insert Edge with correct schema
-        await client.query(`
-          INSERT INTO graph.edges (
-            source, target, kind, 
-            confidence_score, 
-            strength_score,
-            relationship_context,
-            source_type,
-            created_at, updated_at
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, NOW(), NOW()
-          )
-          ON CONFLICT (source, target, kind) 
-          DO UPDATE SET 
-            confidence_score = EXCLUDED.confidence_score,
-            strength_score = EXCLUDED.strength_score,
-            relationship_context = EXCLUDED.relationship_context,
-            updated_at = NOW()
-        `, [
-          entity.id,
-          targetId,
-          dbKind,
-          rel.confidence,
-          rel.confidence, // Use confidence as strength score for AI edges
-          rel.evidence,
-          'ai_inference'
-        ]);
+        if (targetId) {
+            // Upsert Edge
+            await supabase
+                .schema('graph')
+                .from('edges')
+                .upsert({
+                    source: entity.id,
+                    target: targetId,
+                    kind: dbKind,
+                    confidence_score: rel.confidence,
+                    strength_score: rel.confidence,
+                    relationship_context: rel.evidence,
+                    source_type: 'ai_inference',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'source,target,kind' });
+        }
         
       } catch (err) {
         console.error(`  ! Failed to link ${entity.name} -> ${rel.target_name}: ${err.message}`);
@@ -262,23 +264,23 @@ async function processBatch(client) {
     }
 
     // Mark as processed
-    await client.query(
-      `UPDATE graph.entities SET relationships_extracted_at = NOW() WHERE id = $1`,
-      [entity.id]
-    );
+    await supabase
+        .schema('graph')
+        .from('entities')
+        .update({ relationships_extracted_at: new Date().toISOString() })
+        .eq('id', entity.id);
   }
 
-  return res.rows.length;
+  return entities.length;
 }
 
 async function main() {
-  const client = await getPgClient();
   const runOnce = process.argv.includes('--run-once');
   
   try {
     let processed = 0;
     while (true) {
-      const count = await processBatch(client);
+      const count = await processBatch();
       if (count === 0) {
         if (runOnce) {
             console.log('No more entities. Exiting (--run-once mode).');
@@ -294,10 +296,7 @@ async function main() {
     }
   } catch (err) {
     console.error('Fatal error:', err);
-  } finally {
-    await client.end();
   }
 }
 
 main();
-

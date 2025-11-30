@@ -1,12 +1,42 @@
-require('dotenv').config({ path: '.env.local' })
-const { Pool } = require('pg')
+// Load Env (Robustly)
+const path = require('path')
+// fs not needed for files unless loading something local, but path is used.
+
+const envPaths = [
+  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(__dirname, '.env.local'),
+  path.resolve(__dirname, '../.env.local')
+];
+
+let envLoaded = false;
+const fsSync = require('fs');
+for (const p of envPaths) {
+  if (fsSync.existsSync(p)) {
+    require('dotenv').config({ path: p });
+    envLoaded = true;
+    break;
+  }
+}
+
+if (!envLoaded) {
+    console.warn('⚠️ No .env.local found! Relying on process.env');
+}
+
+const { createClient } = require('@supabase/supabase-js')
 const OpenAI = require('openai')
 const pLimit = require('p-limit') // concurrency helper
 
-// Initialize Postgres Pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+// Initialize Supabase Client (Bypass DNS/PG issues)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Supabase credentials missing!');
+    process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
 })
 
 // Initialize OpenAI client (Enterprise plan – high rate limits)
@@ -22,11 +52,11 @@ const perplexity = new OpenAI({
 
 class EnhancedPersonEmbeddingGenerator {
   constructor() {
-    this.batchSize = 20               // Slightly larger batch for people (less text usually)
-    this.concurrency = 15             // Higher concurrency (no web scraping needed)
-    this.delayMs = 0                  // no artificial pause needed
-    this.maxRetries = 3               // retry attempts for transient errors
-    this.retryBaseDelay = 1000         // base back‑off in ms
+    this.batchSize = 10               // Reduced for stability
+    this.concurrency = 5              // Reduced concurrency
+    this.delayMs = 100                  
+    this.maxRetries = 3               
+    this.retryBaseDelay = 1000         
     this.limit = pLimit(this.concurrency)
   }
 
@@ -47,8 +77,6 @@ class EnhancedPersonEmbeddingGenerator {
 
   // ---------------------------------------------------------------------
   // Generate Expertise Analysis
-  // Primary: Perplexity (Live Search)
-  // Fallback: GPT-5.1 (Local Data)
   // ---------------------------------------------------------------------
   async generateExpertiseAnalysis(entity) {
     // Strategy 1: Perplexity Live Search (Primary)
@@ -61,28 +89,35 @@ class EnhancedPersonEmbeddingGenerator {
       if (entity.domain) {
         context = ` from ${entity.domain}`;
       } else if (!employer) {
-        // Try to find network context (e.g. works_at, owner, deal_team edge)
+        // Try to find network context using Supabase
         try {
-           const neighbors = await pool.query(`
-             SELECT t.name, t.domain, e.kind
-             FROM graph.edges e 
-             JOIN graph.entities t ON e.target = t.id 
-             WHERE e.source = $1 
-               AND t.type = 'organization'
-               AND e.kind IN ('works_at', 'founder', 'board_member', 'advisor', 'partner', 'deal_team', 'owner', 'invests_in')
-             LIMIT 3
-           `, [entity.id]);
-           
-           if (neighbors.rows.length > 0) {
-             // Prioritize 'works_at' or 'founder' if available, otherwise list them all
-             const orgs = neighbors.rows.map(r => r.name).join(', ');
-             const domains = neighbors.rows.filter(r => r.domain).map(r => r.domain).join(', ');
-             context = ` associated with organizations: ${orgs}`;
-             if (domains) context += ` (${domains})`;
+           const { data: edges } = await supabase
+             .schema('graph')
+             .from('edges')
+             .select('target, kind')
+             .eq('source', entity.id)
+             .in('kind', ['works_at', 'founder', 'board_member', 'advisor', 'partner', 'deal_team', 'owner', 'invests_in'])
+             .limit(5);
+
+           if (edges && edges.length > 0) {
+             const targetIds = edges.map(e => e.target);
+             const { data: targets } = await supabase
+                .schema('graph')
+                .from('entities')
+                .select('id, name, domain, type')
+                .eq('type', 'organization')
+                .in('id', targetIds);
              
-             // Specific override for investors
-             if (neighbors.rows.some(r => ['deal_team', 'owner', 'invests_in'].includes(r.kind))) {
-                context += ". Likely an Investor/VC or Private Equity professional.";
+             if (targets && targets.length > 0) {
+                 const orgs = targets.map(r => r.name).join(', ');
+                 const domains = targets.filter(r => r.domain).map(r => r.domain).join(', ');
+                 context = ` associated with organizations: ${orgs}`;
+                 if (domains) context += ` (${domains})`;
+                 
+                 // Specific override for investors
+                 if (edges.some(r => ['deal_team', 'owner', 'invests_in'].includes(r.kind))) {
+                    context += ". Likely an Investor/VC or Private Equity professional.";
+                 }
              }
            }
         } catch (err) { /* ignore db error in enrichment loop */ }
@@ -107,19 +142,17 @@ Format: JSON object only.`
 
       const response = await this.retry(async () => {
         return await perplexity.chat.completions.create({
-          model: 'sonar', // Confirmed working model name
+          model: 'llama-3.1-sonar-large-128k-online', // Updated model name for reliability
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1
         })
       })
       
       const content = response.choices[0].message.content
-      // Robust JSON extraction: Find first '{' and last '}'
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         return { data: JSON.parse(jsonMatch[0]), source: 'perplexity' }
       }
-      // If no JSON found (e.g. "I don't know"), throw to trigger fallback
       throw new Error('No JSON object found in Perplexity response')
       
     } catch (pplxErr) {
@@ -133,13 +166,10 @@ Format: JSON object only.`
       
       if (entity.enrichment_data) {
         const e = entity.enrichment_data
-        
-        // standard fields
         if (e.title) profileText += `Current Title: ${e.title}\n`
         if (e.bio) profileText += `Bio: ${e.bio}\n`
         if (e.current_employer) profileText += `Employer: ${e.current_employer}\n`
         
-        // Handle nested web_search_data which is often a stringified JSON
         if (e.web_search_data) {
           try {
             const webData = typeof e.web_search_data === 'string' 
@@ -152,9 +182,7 @@ Format: JSON object only.`
                 if (result.snippet) profileText += `${result.snippet}\n`
               })
             }
-          } catch (parseErr) {
-            // ignore parsing error
-          }
+          } catch (parseErr) {}
         }
       }
       
@@ -189,7 +217,7 @@ Format: JSON object.`
 
       const response = await this.retry(async () => {
         return await openai.chat.completions.create({
-          model: 'gpt-5.1',
+          model: 'gpt-4o',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
           temperature: 0.2
@@ -231,7 +259,7 @@ Format: JSON object.`
       const response = await openai.embeddings.create({
         model: 'text-embedding-3-large',
         input: text,
-        dimensions: 2000
+        dimensions: 2000 // Using consistent dimensionality
       })
       return response.data[0].embedding
     })
@@ -247,7 +275,6 @@ Format: JSON object.`
     let enrichmentSource = result?.source || 'minimal_fallback'
     
     if (!analysis) {
-      // Fallback to prevent failure
       console.warn(`Analysis failed for ${entity.name}, using fallback.`)
       analysis = {
         functional_expertise: [],
@@ -275,7 +302,8 @@ Format: JSON object.`
       richEmb, 
       taxEmb, 
       analysis,
-      enrichmentSource
+      enrichmentSource,
+      name: entity.name
     }
   }
 
@@ -284,12 +312,21 @@ Format: JSON object.`
   // ---------------------------------------------------------------------
   async updateEntityData({ id, richEmb, taxEmb, analysis, enrichmentSource }) {
     return this.retry(async () => {
-      await pool.query(
-        `UPDATE graph.entities 
-         SET embedding = $1, taxonomy_embedding = $2, business_analysis = $3, taxonomy = 'PERSON', taxonomy_confidence = 1.0, enrichment_source = $4
-         WHERE id = $5`,
-        [JSON.stringify(richEmb), JSON.stringify(taxEmb), analysis, enrichmentSource, id]
-      )
+      const { error } = await supabase
+        .schema('graph')
+        .from('entities')
+        .update({
+             embedding: richEmb,
+             taxonomy_embedding: taxEmb,
+             business_analysis: analysis,
+             ai_summary: analysis.key_achievements, // Ensure legacy field is updated with fresh data
+             taxonomy: 'PERSON',
+             taxonomy_confidence: 1.0,
+             enrichment_source: enrichmentSource
+        })
+        .eq('id', id)
+      
+      if (error) throw error
     })
   }
 
@@ -297,13 +334,18 @@ Format: JSON object.`
   // Progress tracking
   // ---------------------------------------------------------------------
   async recordStatus(id, status, attempts = 0, errorMsg = null) {
-    await pool.query(
-      `INSERT INTO embedding_status (entity_id, last_attempt, status, attempts, error_message)
-       VALUES ($1, NOW(), $2, $3, $4)
-       ON CONFLICT (entity_id) 
-       DO UPDATE SET last_attempt = NOW(), status = $2, attempts = $3, error_message = $4`,
-      [id, status, attempts, errorMsg]
-    )
+    try {
+        await supabase
+            .schema('graph')
+            .from('embedding_status')
+            .upsert({ 
+                entity_id: id, 
+                last_attempt: new Date().toISOString(), 
+                status: status, 
+                attempts: attempts, 
+                error_message: errorMsg 
+            }, { onConflict: 'entity_id' });
+    } catch(e) {}
   }
 
   // ---------------------------------------------------------------------
@@ -333,39 +375,60 @@ Format: JSON object.`
   // Main driver
   // ---------------------------------------------------------------------
   async generateAllPeopleEmbeddings({ incremental = false, limit = null } = {}) {
-    console.log('Starting AI-driven Person Embedding generation...')
+    console.log('Starting AI-driven Person Embedding generation (Supabase Mode)...')
 
-    // Optimized: Fetch IDs first to avoid timeouts with large datasets
-    let sql = `SELECT id FROM graph.entities WHERE type = 'person'`
+    // Fetch IDs first to avoid timeouts with large datasets
+    let query = supabase.schema('graph').from('entities').select('id').eq('type', 'person');
     
     if (incremental) {
-      sql += ` AND business_analysis IS NULL`
+       query = query.is('business_analysis', null);
     }
     
     if (limit) {
-      sql += ` LIMIT ${limit}`
+       query = query.limit(parseInt(limit));
     }
-
-    console.log('Fetching candidate IDs...')
-    const { rows: idRows } = await pool.query(sql)
-    console.log(`Found ${idRows.length} people to process`)
     
-    for (let i = 0; i < idRows.length; i += this.batchSize) {
-      const batchIds = idRows.slice(i, i + this.batchSize).map(r => r.id)
+    // Pagination loop to fetch IDs
+    console.log('Fetching candidate IDs...')
+    let allIds = [];
+    let page = 0;
+    const pageSize = 1000;
+    
+    while(true) {
+        const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error || !data || data.length === 0) break;
+        allIds = allIds.concat(data.map(d => d.id));
+        if (limit && allIds.length >= parseInt(limit)) break;
+        page++;
+        // Safety break
+        if (page > 100) break;
+    }
+    
+    if (limit) allIds = allIds.slice(0, parseInt(limit));
+
+    console.log(`Found ${allIds.length} people to process`)
+    
+    for (let i = 0; i < allIds.length; i += this.batchSize) {
+      const batchIds = allIds.slice(i, i + this.batchSize)
       
       // Fetch full details for this batch only
-      const { rows: batch } = await pool.query(
-        `SELECT * FROM graph.entities WHERE id = ANY($1::uuid[])`,
-        [batchIds]
-      )
+      const { data: batch, error } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('*')
+        .in('id', batchIds)
       
-      console.log(`Processing batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(idRows.length / this.batchSize)}...`)
+      if (error) {
+          console.error('Error fetching batch details:', error);
+          continue;
+      }
+      
+      console.log(`Processing batch ${Math.floor(i / this.batchSize) + 1}/${Math.ceil(allIds.length / this.batchSize)}...`)
       await this.processBatch(batch)
       // Small pause
       await new Promise(r => setTimeout(r, 500))
     }
     console.log('Person generation completed')
-    await pool.end()
   }
 }
 

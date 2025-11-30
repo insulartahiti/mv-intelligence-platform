@@ -1,4 +1,4 @@
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const neo4j = require('neo4j-driver');
 const fs = require('fs');
 const path = require('path');
@@ -17,10 +17,11 @@ for (const p of envPaths) {
   }
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// Use Supabase Client instead of PG Pool to bypass DNS/Direct Connection issues
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 const driver = neo4j.driver(
   process.env.NEO4J_URI,
@@ -29,19 +30,22 @@ const driver = neo4j.driver(
 
 async function cleanGarbage() {
   console.log('🗑️  Starting Garbage Cleanup...');
-  const client = await pool.connect();
   const session = driver.session();
 
   try {
     // 1. Delete Merged Names (Email artifacts)
-    const mergedResult = await client.query(`
-      DELETE FROM graph.entities 
-      WHERE name LIKE '%;%' 
-         OR name LIKE '%<%' 
-         OR name LIKE '%>%'
-      RETURNING id, name
-    `);
-    console.log(`   - Deleted ${mergedResult.rowCount} merged/email artifact entities from Postgres.`);
+    const { data: mergedDeleted, error: mergedError } = await supabase
+      .schema('graph')
+      .from('entities')
+      .delete()
+      .or('name.like.%;%,name.like.%<%,name.like.%>%,name.like.%|%')
+      .select('id, name');
+
+    if (mergedError) {
+        console.error('Error deleting merged names:', mergedError);
+    } else {
+        console.log(`   - Deleted ${mergedDeleted ? mergedDeleted.length : 0} merged/email artifact entities from Postgres.`);
+    }
 
     // 2. Delete Generic/Job Title Nodes
     const garbageNames = [
@@ -52,16 +56,25 @@ async function cleanGarbage() {
         'PhD', 'MBA', 'CFA', 'CPA', 'JD', 'MD'
     ];
     
-    // Use regex for Postgres
-    const genericResult = await client.query(`
-        DELETE FROM graph.entities
-        WHERE name = ANY($1)
-           OR name ILIKE '%CEO)%'
-           OR name ILIKE '%Advisor)%'
-           OR name ILIKE '%Manager)%'
-        RETURNING id, name
-    `, [garbageNames]);
-    console.log(`   - Deleted ${genericResult.rowCount} generic title entities from Postgres.`);
+    // Deleting via Supabase is trickier with "ANY" array logic, so we iterate or use simplified logic
+    // We'll fetch candidates first then delete by ID to be safe and use client-side logic
+    const { data: candidates } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('id, name');
+
+    if (candidates) {
+        const toDelete = candidates.filter(c => {
+            if (garbageNames.includes(c.name)) return true;
+            if (c.name.includes('CEO)') || c.name.includes('Advisor)') || c.name.includes('Manager)')) return true;
+            return false;
+        }).map(c => c.id);
+
+        if (toDelete.length > 0) {
+            const { error: delError } = await supabase.schema('graph').from('entities').delete().in('id', toDelete);
+            if (!delError) console.log(`   - Deleted ${toDelete.length} generic title entities.`);
+        }
+    }
 
     // 3. Neo4j Cleanup (Mirror Postgres)
     await session.run(`
@@ -76,41 +89,49 @@ async function cleanGarbage() {
     console.log(`   - Synced cleanup with Neo4j.`);
 
   } finally {
-    client.release();
     await session.close();
   }
 }
 
 async function deduplicatePeople() {
   console.log('👯 Starting Person Deduplication...');
-  const client = await pool.connect();
-
+  
   try {
-    // Find duplicates by name
-    const duplicates = await client.query(`
-      SELECT lower(name) as lname, count(*) as cnt
-      FROM graph.entities
-      WHERE type = 'person'
-      GROUP BY lower(name)
-      HAVING count(*) > 1
-    `);
+    // Find duplicates by name using RPC or raw client logic (Supabase doesn't support GROUP BY easily in client)
+    // We'll fetch all people and group in memory (not ideal for huge datasets but works for <50k entities)
+    // OR: We define an RPC function. Let's try memory first for simplicity since we want to avoid migrations if possible.
+    
+    // Fetch limited fields for all people
+    let allPeople = [];
+    let page = 0;
+    const pageSize = 1000;
+    
+    while(true) {
+        const { data, error } = await supabase
+            .schema('graph')
+            .from('entities')
+            .select('id, name, business_analysis, domain, enriched, enrichment_source')
+            .eq('type', 'person')
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+            
+        if (error || !data || data.length === 0) break;
+        allPeople = allPeople.concat(data);
+        page++;
+    }
 
-    console.log(`   - Found ${duplicates.rowCount} names with duplicates.`);
+    const grouped = {};
+    allPeople.forEach(p => {
+        const key = p.name ? p.name.toLowerCase() : 'unknown';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(p);
+    });
 
-    for (const row of duplicates.rows) {
-      const name = row.lname;
-      
-      // Fetch all entities for this name
-      const entities = await client.query(`
-        SELECT id, name, business_analysis, domain, enriched, enrichment_source
-        FROM graph.entities
-        WHERE lower(name) = $1 AND type = 'person'
-      `, [name]);
+    const duplicates = Object.values(grouped).filter(g => g.length > 1);
+    console.log(`   - Found ${duplicates.length} names with duplicates.`);
 
-      if (entities.rows.length < 2) continue;
-
+    for (const group of duplicates) {
       // Score them
-      const scored = await Promise.all(entities.rows.map(async (e) => {
+      const scored = await Promise.all(group.map(async (e) => {
         let score = 0;
         
         // Valid Analysis
@@ -124,9 +145,14 @@ async function deduplicatePeople() {
         // Enriched
         if (e.enriched) score += 2;
 
-        // Edge count (check DB)
-        const edges = await client.query('SELECT count(*) FROM graph.edges WHERE source = $1 OR target = $1', [e.id]);
-        score += parseInt(edges.rows[0].count);
+        // Edge count 
+        const { count } = await supabase
+            .schema('graph')
+            .from('edges')
+            .select('*', { count: 'exact', head: true })
+            .or(`source.eq.${e.id},target.eq.${e.id}`);
+            
+        score += (count || 0);
 
         return { ...e, score };
       }));
@@ -141,44 +167,37 @@ async function deduplicatePeople() {
 
       // Merge Edges from Losers to Winner
       for (const loser of losers) {
-        // 1. Handle Outgoing Edges (Source = Loser)
-        const outEdges = await client.query('SELECT id, target, kind FROM graph.edges WHERE source = $1', [loser.id]);
-        for (const edge of outEdges.rows) {
-            // Check if Winner already has this edge
-            const existing = await client.query(
-                'SELECT id FROM graph.edges WHERE source = $1 AND target = $2 AND kind = $3',
-                [winner.id, edge.target, edge.kind]
-            );
-            
-            if (existing.rows.length > 0) {
-                // Winner has it, delete duplicate from loser
-                await client.query('DELETE FROM graph.edges WHERE id = $1', [edge.id]);
-            } else {
-                // Winner doesn't have it, move it to winner
-                await client.query('UPDATE graph.edges SET source = $1 WHERE id = $2', [winner.id, edge.id]);
+        // Move Edges
+        // 1. Outgoing
+        const { data: outEdges } = await supabase.schema('graph').from('edges').select('*').eq('source', loser.id);
+        if (outEdges) {
+            for (const edge of outEdges) {
+                // Check if exists
+                const { data: existing } = await supabase.schema('graph').from('edges').select('id').match({ source: winner.id, target: edge.target, kind: edge.kind });
+                if (existing && existing.length > 0) {
+                     await supabase.schema('graph').from('edges').delete().eq('id', edge.id);
+                } else {
+                     await supabase.schema('graph').from('edges').update({ source: winner.id }).eq('id', edge.id);
+                }
             }
         }
 
-        // 2. Handle Incoming Edges (Target = Loser)
-        const inEdges = await client.query('SELECT id, source, kind FROM graph.edges WHERE target = $1', [loser.id]);
-        for (const edge of inEdges.rows) {
-            // Check if Winner already has this edge
-            const existing = await client.query(
-                'SELECT id FROM graph.edges WHERE source = $1 AND target = $2 AND kind = $3',
-                [edge.source, winner.id, edge.kind]
-            );
-            
-            if (existing.rows.length > 0) {
-                // Winner has it, delete duplicate from loser
-                await client.query('DELETE FROM graph.edges WHERE id = $1', [edge.id]);
-            } else {
-                // Winner doesn't have it, move it to winner
-                await client.query('UPDATE graph.edges SET target = $1 WHERE id = $2', [winner.id, edge.id]);
+        // 2. Incoming
+        const { data: inEdges } = await supabase.schema('graph').from('edges').select('*').eq('target', loser.id);
+        if (inEdges) {
+            for (const edge of inEdges) {
+                // Check if exists
+                const { data: existing } = await supabase.schema('graph').from('edges').select('id').match({ source: edge.source, target: winner.id, kind: edge.kind });
+                if (existing && existing.length > 0) {
+                     await supabase.schema('graph').from('edges').delete().eq('id', edge.id);
+                } else {
+                     await supabase.schema('graph').from('edges').update({ target: winner.id }).eq('id', edge.id);
+                }
             }
         }
 
         // Delete Loser Entity
-        await client.query('DELETE FROM graph.entities WHERE id = $1', [loser.id]);
+        await supabase.schema('graph').from('entities').delete().eq('id', loser.id);
         
         // Delete from Neo4j
         const session = driver.session();
@@ -189,103 +208,92 @@ async function deduplicatePeople() {
         }
       }
     }
-  } finally {
-    client.release();
+  } catch(e) {
+      console.error(e);
   }
 }
 
 async function deduplicateOrganizations() {
   console.log('🏢 Starting Organization Deduplication...');
-  const client = await pool.connect();
-
+  
   try {
-    // Find duplicates by name
-    const duplicates = await client.query(`
-      SELECT lower(name) as lname, count(*) as cnt
-      FROM graph.entities
-      WHERE type = 'organization'
-      GROUP BY lower(name)
-      HAVING count(*) > 1
-    `);
+    // Fetch all orgs
+    let allOrgs = [];
+    let page = 0;
+    const pageSize = 1000;
+    
+    while(true) {
+        const { data, error } = await supabase
+            .schema('graph')
+            .from('entities')
+            .select('id, name, business_analysis, domain, enriched, enrichment_source')
+            .eq('type', 'organization')
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+            
+        if (error || !data || data.length === 0) break;
+        allOrgs = allOrgs.concat(data);
+        page++;
+    }
 
-    console.log(`   - Found ${duplicates.rowCount} organization names with duplicates.`);
+    const grouped = {};
+    allOrgs.forEach(p => {
+        const key = p.name ? p.name.toLowerCase() : 'unknown';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(p);
+    });
 
-    for (const row of duplicates.rows) {
-      const name = row.lname;
-      
-      // Fetch all entities for this name
-      const entities = await client.query(`
-        SELECT id, name, business_analysis, domain, enriched, enrichment_source
-        FROM graph.entities
-        WHERE lower(name) = $1 AND type = 'organization'
-      `, [name]);
+    const duplicates = Object.values(grouped).filter(g => g.length > 1);
+    console.log(`   - Found ${duplicates.length} organization names with duplicates.`);
 
-      if (entities.rows.length < 2) continue;
-
-      // Score them
-      const scored = await Promise.all(entities.rows.map(async (e) => {
+    for (const group of duplicates) {
+      const scored = await Promise.all(group.map(async (e) => {
         let score = 0;
-        
-        // Valid Analysis
-        if (e.business_analysis && !JSON.stringify(e.business_analysis).includes('Unknown')) {
-            score += 10;
-        }
-        
-        // Domain present
+        if (e.business_analysis && !JSON.stringify(e.business_analysis).includes('Unknown')) score += 10;
         if (e.domain) score += 5;
-        
-        // Enriched
         if (e.enriched) score += 2;
-
-        // Edge count (check DB)
-        const edges = await client.query('SELECT count(*) FROM graph.edges WHERE source = $1 OR target = $1', [e.id]);
-        score += parseInt(edges.rows[0].count);
+        
+        const { count } = await supabase.schema('graph').from('edges').select('*', { count: 'exact', head: true }).or(`source.eq.${e.id},target.eq.${e.id}`);
+        score += (count || 0);
 
         return { ...e, score };
       }));
 
-      // Sort desc by score
       scored.sort((a, b) => b.score - a.score);
-
       const winner = scored[0];
       const losers = scored.slice(1);
 
       console.log(`   Processing "${winner.name}": Keeping ID ${winner.id} (Score ${winner.score}), removing ${losers.length} others.`);
 
-      // Merge Edges from Losers to Winner
       for (const loser of losers) {
-        // 1. Handle Outgoing Edges (Source = Loser)
-        const outEdges = await client.query('SELECT id, target, kind FROM graph.edges WHERE source = $1', [loser.id]);
-        for (const edge of outEdges.rows) {
-            const existing = await client.query(
-                'SELECT id FROM graph.edges WHERE source = $1 AND target = $2 AND kind = $3',
-                [winner.id, edge.target, edge.kind]
-            );
-            if (existing.rows.length > 0) {
-                await client.query('DELETE FROM graph.edges WHERE id = $1', [edge.id]);
-            } else {
-                await client.query('UPDATE graph.edges SET source = $1 WHERE id = $2', [winner.id, edge.id]);
+        // 1. Outgoing
+        const { data: outEdges } = await supabase.schema('graph').from('edges').select('*').eq('source', loser.id);
+        if (outEdges) {
+            for (const edge of outEdges) {
+                const { data: existing } = await supabase.schema('graph').from('edges').select('id').match({ source: winner.id, target: edge.target, kind: edge.kind });
+                if (existing && existing.length > 0) {
+                     await supabase.schema('graph').from('edges').delete().eq('id', edge.id);
+                } else {
+                     await supabase.schema('graph').from('edges').update({ source: winner.id }).eq('id', edge.id);
+                }
             }
         }
 
-        // 2. Handle Incoming Edges (Target = Loser)
-        const inEdges = await client.query('SELECT id, source, kind FROM graph.edges WHERE target = $1', [loser.id]);
-        for (const edge of inEdges.rows) {
-            const existing = await client.query(
-                'SELECT id FROM graph.edges WHERE source = $1 AND target = $2 AND kind = $3',
-                [edge.source, winner.id, edge.kind]
-            );
-            if (existing.rows.length > 0) {
-                await client.query('DELETE FROM graph.edges WHERE id = $1', [edge.id]);
-            } else {
-                await client.query('UPDATE graph.edges SET target = $1 WHERE id = $2', [winner.id, edge.id]);
+        // 2. Incoming
+        const { data: inEdges } = await supabase.schema('graph').from('edges').select('*').eq('target', loser.id);
+        if (inEdges) {
+            for (const edge of inEdges) {
+                const { data: existing } = await supabase.schema('graph').from('edges').select('id').match({ source: edge.source, target: winner.id, kind: edge.kind });
+                if (existing && existing.length > 0) {
+                     await supabase.schema('graph').from('edges').delete().eq('id', edge.id);
+                } else {
+                     await supabase.schema('graph').from('edges').update({ target: winner.id }).eq('id', edge.id);
+                }
             }
         }
 
-        // Delete Loser Entity
-        await client.query('DELETE FROM graph.entities WHERE id = $1', [loser.id]);
+        // Delete Loser
+        await supabase.schema('graph').from('entities').delete().eq('id', loser.id);
         
-        // Delete from Neo4j
         const session = driver.session();
         try {
             await session.run('MATCH (n) WHERE n.id = $id DETACH DELETE n', { id: loser.id });
@@ -294,8 +302,8 @@ async function deduplicateOrganizations() {
         }
       }
     }
-  } finally {
-    client.release();
+  } catch (e) {
+      console.error(e);
   }
 }
 
@@ -308,7 +316,6 @@ async function main() {
   } catch (err) {
     console.error('Cleanup Failed:', err);
   } finally {
-    await pool.end();
     await driver.close();
   }
 }

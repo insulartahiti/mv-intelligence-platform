@@ -1,6 +1,5 @@
 import { AffinityClient } from './client';
 import { createClient } from '@supabase/supabase-js';
-import { Pool } from 'pg';
 import { generateEmbedding } from '../search/postgres-vector'; // Re-use embedding function
 import { enrichNoteWithAI } from '../enrichment/notes'; // New note enrichment
 
@@ -10,17 +9,30 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Initialize Postgres Pool for direct DB operations (if needed for complex transactions)
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
-
 export class AffinitySyncService {
     private affinityClient: AffinityClient;
 
-    constructor(affinityApiKey: string) {
+    private syncLogId: string | undefined = process.env.SYNC_LOG_ID;
+
+    constructor(affinityApiKey: string = process.env.AFFINITY_API_KEY!) {
         this.affinityClient = new AffinityClient(affinityApiKey);
+    }
+
+    // Helper to update progress in DB
+    private async updateSyncProgress(count: number) {
+        if (!this.syncLogId) return;
+        try {
+            await supabase
+                .schema('graph')
+                .from('sync_state')
+                .update({ 
+                    entities_synced: count,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', this.syncLogId);
+        } catch (e) {
+            // Ignore update errors to not block sync
+        }
     }
 
     async getAffinityListId(listName: string): Promise<number | null> {
@@ -56,13 +68,30 @@ export class AffinitySyncService {
         if (rawEntry.status) newData.pipeline_stage = rawEntry.status; // Example
         // valuation_amount would come from custom fields, ignored for now unless passed explicitly
 
-        // 3. Upsert Entity
-        const { data: upserted, error } = await supabase
-            .schema('graph')
-            .from('entities')
-            .upsert(newData, { onConflict: type === 'organization' ? 'affinity_org_id' : 'affinity_person_id' })
-            .select('id, pipeline_stage, valuation_amount') // Select potentially updated fields
-            .single();
+        // 3. Upsert Entity (Manual implementation to avoid ON CONFLICT constraint issues)
+        let upserted;
+        let error;
+
+        if (existing) {
+             const result = await supabase
+                .schema('graph')
+                .from('entities')
+                .update(newData)
+                .eq('id', existing.id)
+                .select('id, pipeline_stage, valuation_amount')
+                .single();
+             upserted = result.data;
+             error = result.error;
+        } else {
+             const result = await supabase
+                .schema('graph')
+                .from('entities')
+                .insert(newData)
+                .select('id, pipeline_stage, valuation_amount')
+                .single();
+             upserted = result.data;
+             error = result.error;
+        }
 
         if (error) {
             console.error(`Error upserting ${type} ${entityData.name}:`, error);
@@ -116,18 +145,23 @@ export class AffinitySyncService {
 
         if (!listId) {
             console.error(`❌ Affinity list "${listName}" not found.`);
-            return;
+            return { companiesProcessed: 0, companiesUpserted: 0, notesProcessed: 0, notesEnriched: 0, errors: [`List "${listName}" not found`] };
         }
 
         console.log(`📋 Found List ID: ${listId}. Fetching entries...`);
 
         let pageToken: string | undefined = undefined;
-        let companiesProcessed = 0;
-        let companiesUpserted = 0;
-        let notesProcessed = 0;
-        let emailsProcessed = 0;
-        let meetingsProcessed = 0;
-        let remindersProcessed = 0;
+        // Shared counters
+        const stats = {
+            companiesProcessed: 0,
+            companiesUpserted: 0,
+            notesProcessed: 0,
+            emailsProcessed: 0,
+            meetingsProcessed: 0,
+            remindersProcessed: 0,
+            filesProcessed: 0,
+            notesEnriched: 0
+        };
         
         const errors: string[] = [];
 
@@ -141,132 +175,170 @@ export class AffinitySyncService {
                     break;
                 }
 
-                for (const entry of entries) {
-                    const entityType = entry.entity_type === 1 ? 'organization' : 'person';
-                    let entityDbId: string | null = null;
+                console.log(`Processing batch of ${entries.length} entries...`);
 
-                    try {
-                        // Pass 'entry' as rawEntry to extract status etc.
-                        entityDbId = await this.upsertEntity(entry.entity, entityType, entry);
-                        companiesUpserted++;
-                    } catch (e: any) {
-                        errors.push(`Failed to upsert entity ${entry.entity.name}: ${e.message}`);
-                        continue;
-                    }
-                    companiesProcessed++;
+                // OPTIMIZATION: Process in chunks to respect rate limits but improve speed
+                const CHUNK_SIZE = 5; 
+                for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+                    const chunk = entries.slice(i, i + CHUNK_SIZE);
+                    console.log(`   Processing chunk ${i} to ${i + CHUNK_SIZE}...`);
+                    
+                    await Promise.all(chunk.map(async (entry) => {
+                        const entityType = entry.entity_type === 1 ? 'organization' : 'person';
+                        let entityDbId: string | null = null;
 
-                    // 1. NOTES
-                    try {
-                        const notesResponse = await this.affinityClient.getNotes(entityType, entry.entity_id);
-                        for (const note of notesResponse.notes) {
-                            notesProcessed++;
-                            if (await this.isInteractionSynced(note.id)) continue;
-                            
-                            const enriched = await enrichNoteWithAI(note.content);
-                            const embedding = await generateEmbedding(enriched.ai_summary || note.content);
-
-                            await this.upsertInteraction({
-                                affinity_interaction_id: note.id,
-                                entity_id: entityDbId,
-                                interaction_type: 'note',
-                                subject: note.content.substring(0, 100),
-                                content_full: note.content,
-                                content_preview: enriched.ai_summary || note.content.substring(0, 250),
-                                company_id: entityType === 'organization' ? entityDbId : null,
-                                started_at: note.posted_at,
-                                ended_at: note.updated_at,
-                                ai_summary: enriched.ai_summary,
-                                ai_sentiment: enriched.ai_sentiment,
-                                ai_key_points: enriched.ai_key_points,
-                                ai_action_items: enriched.ai_action_items,
-                                ai_risk_flags: enriched.ai_risk_flags,
-                                ai_themes: enriched.ai_themes,
-                                embedding: embedding,
-                            });
+                        try {
+                            // Pass 'entry' as rawEntry to extract status etc.
+                            entityDbId = await this.upsertEntity(entry.entity, entityType, entry);
+                            stats.companiesUpserted++;
+                        } catch (e: any) {
+                            errors.push(`Failed to upsert entity ${entry.entity.name}: ${e.message}`);
+                            return; // Skip rest for this entity
                         }
-                    } catch (e: any) {
-                        errors.push(`Failed notes for ${entry.entity.name}: ${e.message}`);
-                    }
+                        stats.companiesProcessed++;
 
-                    // 2. EMAILS
-                    try {
-                        const emailsResponse = await this.affinityClient.getEmails(entityType, entry.entity_id);
-                        for (const email of emailsResponse.emails) {
-                            emailsProcessed++;
-                            if (await this.isInteractionSynced(email.id)) continue;
+                        // 1. NOTES
+                        try {
+                            const notesResponse = await this.affinityClient.getNotes(entityType, entry.entity_id);
+                            for (const note of notesResponse.notes) {
+                                stats.notesProcessed++;
+                                if (await this.isInteractionSynced(note.id)) continue;
+                                
+                                const enriched = await enrichNoteWithAI(note.content);
+                                stats.notesEnriched++;
+                                const embedding = await generateEmbedding(enriched.ai_summary || note.content);
 
-                            // Emails are often long, might skip deep AI enrichment to save cost/time or limit to subject+snippet
-                            const content = `${email.subject}\n${email.body}`;
-                            const embedding = await generateEmbedding(content.substring(0, 8000)); // Limit for OpenAI
-
-                            await this.upsertInteraction({
-                                affinity_interaction_id: email.id,
-                                entity_id: entityDbId,
-                                interaction_type: 'email',
-                                subject: email.subject,
-                                content_full: email.body,
-                                content_preview: email.body.substring(0, 250),
-                                company_id: entityType === 'organization' ? entityDbId : null,
-                                started_at: email.sent_at,
-                                embedding: embedding,
-                                // Could add AI enrichment for emails later
-                            });
+                                await this.upsertInteraction({
+                                    affinity_interaction_id: note.id,
+                                    entity_id: entityDbId,
+                                    interaction_type: 'note',
+                                    subject: note.content.substring(0, 100),
+                                    content_full: note.content,
+                                    content_preview: enriched.ai_summary || note.content.substring(0, 250),
+                                    company_id: entityType === 'organization' ? entityDbId : null,
+                                    started_at: note.posted_at,
+                                    ended_at: note.updated_at,
+                                    ai_summary: enriched.ai_summary,
+                                    ai_sentiment: enriched.ai_sentiment,
+                                    ai_key_points: enriched.ai_key_points,
+                                    ai_action_items: enriched.ai_action_items,
+                                    ai_risk_flags: enriched.ai_risk_flags,
+                                    ai_themes: enriched.ai_themes,
+                                    embedding: embedding,
+                                });
+                            }
+                        } catch (e: any) {
+                            errors.push(`Failed notes for ${entry.entity.name}: ${e.message}`);
                         }
-                    } catch (e: any) {
-                        errors.push(`Failed emails for ${entry.entity.name}: ${e.message}`);
-                    }
 
-                    // 3. MEETINGS
-                    try {
-                        const meetingsResponse = await this.affinityClient.getMeetings(entityType, entry.entity_id);
-                        for (const meeting of meetingsResponse.meetings) {
-                            meetingsProcessed++;
-                            if (await this.isInteractionSynced(meeting.id)) continue;
+                        // 2. EMAILS
+                        try {
+                            const emailsResponse = await this.affinityClient.getEmails(entityType, entry.entity_id);
+                            for (const email of emailsResponse.emails) {
+                                stats.emailsProcessed++;
+                                if (await this.isInteractionSynced(email.id)) continue;
 
-                            const title = meeting.title || 'Untitled Meeting';
-                            const embedding = await generateEmbedding(title);
+                                const content = `${email.subject}\n${email.body}`;
+                                const embedding = await generateEmbedding(content.substring(0, 8000));
 
-                            await this.upsertInteraction({
-                                affinity_interaction_id: meeting.id,
-                                entity_id: entityDbId,
-                                interaction_type: 'meeting',
-                                subject: title,
-                                content_full: title, // Meetings often have no agenda in API, just title
-                                company_id: entityType === 'organization' ? entityDbId : null,
-                                started_at: meeting.start_time,
-                                ended_at: meeting.end_time,
-                                embedding: embedding,
-                            });
+                                await this.upsertInteraction({
+                                    affinity_interaction_id: email.id,
+                                    entity_id: entityDbId,
+                                    interaction_type: 'email',
+                                    subject: email.subject,
+                                    content_full: email.body,
+                                    content_preview: email.body.substring(0, 250),
+                                    company_id: entityType === 'organization' ? entityDbId : null,
+                                    started_at: email.sent_at,
+                                    embedding: embedding,
+                                });
+                            }
+                        } catch (e: any) {
+                            errors.push(`Failed emails for ${entry.entity.name}: ${e.message}`);
                         }
-                    } catch (e: any) {
-                        errors.push(`Failed meetings for ${entry.entity.name}: ${e.message}`);
-                    }
 
-                    // 4. REMINDERS
-                    try {
-                        const remindersResponse = await this.affinityClient.getReminders(entityType, entry.entity_id);
-                        for (const reminder of remindersResponse.reminders) {
-                            remindersProcessed++;
-                            if (await this.isInteractionSynced(reminder.id)) continue;
+                        // 3. MEETINGS
+                        try {
+                            const meetingsResponse = await this.affinityClient.getMeetings(entityType, entry.entity_id);
+                            for (const meeting of meetingsResponse.meetings) {
+                                stats.meetingsProcessed++;
+                                if (await this.isInteractionSynced(meeting.id)) continue;
 
-                            const embedding = await generateEmbedding(reminder.content);
+                                const title = meeting.title || 'Untitled Meeting';
+                                const embedding = await generateEmbedding(title);
 
-                            await this.upsertInteraction({
-                                affinity_interaction_id: reminder.id,
-                                entity_id: entityDbId,
-                                interaction_type: 'reminder',
-                                subject: 'Reminder',
-                                content_full: reminder.content,
-                                company_id: entityType === 'organization' ? entityDbId : null,
-                                started_at: reminder.created_at, // or due_date
-                                ended_at: reminder.due_date,
-                                embedding: embedding,
-                                ai_summary: reminder.completed ? 'Completed' : 'Pending'
-                            });
+                                await this.upsertInteraction({
+                                    affinity_interaction_id: meeting.id,
+                                    entity_id: entityDbId,
+                                    interaction_type: 'meeting',
+                                    subject: title,
+                                    content_full: title,
+                                    company_id: entityType === 'organization' ? entityDbId : null,
+                                    started_at: meeting.start_time,
+                                    ended_at: meeting.end_time,
+                                    embedding: embedding,
+                                });
+                            }
+                        } catch (e: any) {
+                            errors.push(`Failed meetings for ${entry.entity.name}: ${e.message}`);
                         }
-                    } catch (e: any) {
-                        errors.push(`Failed reminders for ${entry.entity.name}: ${e.message}`);
-                    }
+
+                        // 4. REMINDERS
+                        try {
+                            const remindersResponse = await this.affinityClient.getReminders(entityType, entry.entity_id);
+                            for (const reminder of remindersResponse.reminders) {
+                                stats.remindersProcessed++;
+                                if (await this.isInteractionSynced(reminder.id)) continue;
+
+                                const embedding = await generateEmbedding(reminder.content);
+
+                                await this.upsertInteraction({
+                                    affinity_interaction_id: reminder.id,
+                                    entity_id: entityDbId,
+                                    interaction_type: 'reminder',
+                                    subject: 'Reminder',
+                                    content_full: reminder.content,
+                                    company_id: entityType === 'organization' ? entityDbId : null,
+                                    started_at: reminder.created_at,
+                                    ended_at: reminder.due_date,
+                                    embedding: embedding,
+                                    ai_summary: reminder.completed ? 'Completed' : 'Pending'
+                                });
+                            }
+                        } catch (e: any) {
+                            errors.push(`Failed reminders for ${entry.entity.name}: ${e.message}`);
+                        }
+
+                        // 5. FILES
+                        try {
+                            const filesResponse = await this.affinityClient.getFiles(entityType, entry.entity_id);
+                            for (const file of filesResponse.entity_files) {
+                                stats.filesProcessed++;
+                                const { data: existing } = await supabase
+                                    .schema('graph')
+                                    .from('affinity_files')
+                                    .select('id')
+                                    .eq('affinity_file_id', file.id)
+                                    .single();
+
+                                if (existing) continue;
+
+                                await supabase.schema('graph').from('affinity_files').insert({
+                                    entity_id: entityDbId,
+                                    affinity_file_id: file.id,
+                                    name: file.name,
+                                    size_bytes: file.size,
+                                    url: this.affinityClient.getDownloadUrl(file.id),
+                                    created_at: file.created_at
+                                });
+                            }
+                        } catch (e: any) {
+                             // Ignore file errors
+                        }
+                    }));
+                    
+                    // Update progress after each chunk
+                    await this.updateSyncProgress(stats.companiesProcessed);
                 }
 
                 console.log(`   - Fetched ${entries.length} entries.`);
@@ -277,15 +349,18 @@ export class AffinitySyncService {
             errors.push(`Global sync error: ${e.message}`);
         } finally {
             console.log('\n📊 Sync Complete:');
-            console.log(`   - Companies: ${companiesProcessed}`);
-            console.log(`   - Notes: ${notesProcessed}`);
-            console.log(`   - Emails: ${emailsProcessed}`);
-            console.log(`   - Meetings: ${meetingsProcessed}`);
-            console.log(`   - Reminders: ${remindersProcessed}`);
+            console.log(`   - Companies: ${stats.companiesProcessed}`);
+            console.log(`   - Notes: ${stats.notesProcessed}`);
+            console.log(`   - Emails: ${stats.emailsProcessed}`);
+            console.log(`   - Meetings: ${stats.meetingsProcessed}`);
+            console.log(`   - Reminders: ${stats.remindersProcessed}`);
+            console.log(`   - Files: ${stats.filesProcessed}`);
             if (errors.length > 0) {
                 console.log('⚠️ Errors:');
                 errors.forEach(err => console.error(`   - ${err}`));
             }
+            // Return collected stats
+            return { ...stats, errors };
         }
     }
 

@@ -14,7 +14,8 @@ async function runSync() {
     }
 
     const service = new AffinitySyncService();
-    const stats = await service.syncPipelineList();
+    // Default list name from other files seems to be "Motive Ventures Pipeline"
+    const stats = await service.syncPipelineList("Motive Ventures Pipeline");
 
     console.log('\n📊 Sync Complete:');
     console.log(`   - Companies Processed: ${stats.companiesProcessed}`);
