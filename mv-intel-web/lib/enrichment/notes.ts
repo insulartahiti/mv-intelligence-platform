@@ -25,7 +25,7 @@ export async function enrichNoteWithAI(content: string): Promise<EnrichedNote> {
 
     try {
         const response = await openai.chat.completions.create({
-            model: "gpt-4-turbo",
+            model: "gpt-5.1",
             messages: [
                 {
                     role: "system",

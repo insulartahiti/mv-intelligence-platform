@@ -43,12 +43,18 @@ export class AffinitySyncService {
 
     async upsertEntity(entityData: any, type: 'person' | 'organization', rawEntry: any = {}): Promise<string> {
         // 1. Fetch existing entity to compare for history
-        const { data: existing } = await supabase
-            .schema('graph')
-            .from('entities')
-            .select('id, pipeline_stage, valuation_amount')
-            .eq(type === 'organization' ? 'affinity_org_id' : 'affinity_person_id', type === 'organization' ? entityData.id : entityData.id)
-            .single();
+        let existing = null;
+        try {
+            const { data } = await supabase
+                .schema('graph')
+                .from('entities')
+                .select('id, pipeline_stage, valuation_amount')
+                .eq(type === 'organization' ? 'affinity_org_id' : 'affinity_person_id', type === 'organization' ? entityData.id : entityData.id)
+                .single();
+            existing = data;
+        } catch (e) {
+            // ignore
+        }
 
         // 2. Prepare new data
         const newData: any = {

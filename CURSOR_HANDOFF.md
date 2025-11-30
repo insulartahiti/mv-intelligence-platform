@@ -89,6 +89,23 @@
       - [x] **Taxonomy View**: Created interactive, searchable hierarchical view of Investment Taxonomy (`/taxonomy`).
       - [x] **Chrome Extension**: Added placeholder page (`/chrome-extension`).
       - [x] **Refactoring**: Extracted core graph logic to `KnowledgeGraphPageContent` for reusability.
+    - [x] **UI Improvements**:
+      - [x] **Spotlight Transition**: Lifted loading state to eliminate empty chat screen flash.
+      - [x] **Result Tags**: Added Industry, Country, Pipeline Stage tags to results list; removed redundant description text.
+      - [x] **Prioritization**: Updated Chat API to sort results by relevance (Portfolio first).
+      - [x] **Graph Legend**: Updated legend to include "Amber" for Highlighted/Cited nodes.
+      - [x] **Home & Branding**: Added Home icon to menu, updated "Motive Intelligence" branding, and added cycling search examples.
+    - [x] **Pipeline Logic Fixes**:
+      - [x] **Portfolio Flag**: Updated `sync.ts` to correctly detect `pipeline_stage` ("Portfolio MVF1", "Motive AAV", etc.) and set `is_portfolio=true`.
+      - [x] **Founder Propagation**: Implemented `fix_portfolio_flags.ts` to automatically tag Founders/Owners of portfolio companies as "Portfolio" entities.
+      - [x] **Official People Sync**: Updated `sync.ts` to fetch Organization details (`GET /organizations/{id}`) and extract `person_ids` to link official contacts, replacing noisy interaction mining.
+    - [x] **Taxonomy & Data Quality (Dec 01, 2025)**:
+      - [x] **Missing Categories**: Added `SAV` (Digital Savings), `ENT` (Enterprise Tech), `MKT` (Market Infrastructure), `CONS` (Consensus), `CAPR` (Capital Raising), and `OPS` (Finance Ops) to frontend.
+      - [x] **Filtering Logic**: Implemented "Blocklist" filter to hide invalid categories (`UNKNOWN`, `UNDEFINED`, `OUT_OF_SCOPE`) and **Low-Count Filter** to hide noisy discovered categories (< 3 entities).
+      - [x] **Pagination**: Updated `/api/taxonomy/entities` to support batch fetching, bypassing Supabase 1000-row limit.
+      - [x] **Cleanup**: Created `fix_taxonomy.js` for reclassification.
+      - [x] **UI**: Added visual grid layout, formatted entity counts with commas, and implemented server-side individual entity refresh.
+      - [x] **Rebranding**: Updated application name from "MV Intelligence Platform" to "**Motive Intelligence**" in web metadata, PWA manifest, and Chrome extension.
 
 ## 2. Active Processes & Monitoring
 
@@ -100,6 +117,8 @@
     - **Execution**: Runs hourly via GitHub Actions (Server-side) or manually via Status Page.
     - **Steps**:
         1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
+            - **Update**: Relaxed error handling to treat partial sync failures (e.g., single note error) as warnings rather than fatal job failures.
+            - **Update**: Switched Note Enrichment to **GPT-5.1**.
         2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
         3.  `summarize_interactions.ts`: Aggregates interaction history.
         4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
@@ -131,3 +150,9 @@
 - **Affinity Files**: We now fetch file metadata and download links (valid for session or redirected) from Affinity.
 - **Interaction Summarization**: Uses **GPT-5.1** to summarize the last 20 interactions per entity into a concise paragraph stored in Postgres.
 - **Latency**: No local data sync required for chat; hybrid search (Postgres + Neo4j) is performant (<2s).
+- **Graph Colors**:
+  - **Blue**: Person
+  - **Violet**: Organization
+  - **Red**: Internal Team (Motive)
+  - **Amber/Orange**: Highlighted Node (Cited in chat response or Search Result)
+  - **Green**: Hovered Node

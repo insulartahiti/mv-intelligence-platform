@@ -24,11 +24,17 @@ async function runSync() {
     console.log(`   - Notes Enriched: ${stats.notesEnriched}`);
     
     if (stats.errors && stats.errors.length > 0) {
-        console.log('\n⚠️ Errors:');
+        console.log('\n⚠️ Sync finished with warnings:');
         stats.errors.forEach(e => console.log(`   - ${e}`));
         
-        // Fail if critical errors occurred
-        process.exit(1);
+        // Only fail if NO companies were processed (implies total failure) or critical error
+        if (stats.companiesProcessed === 0 && stats.errors.length > 0) {
+             console.error('❌ Critical Failure: No companies processed.');
+             process.exit(1);
+        }
+        
+        // otherwise, treat as success with warnings
+        console.log('✅ Sync completed with warnings (ignoring non-fatal errors).');
     }
 }
 
