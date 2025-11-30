@@ -4,6 +4,17 @@ on:
   schedule:
     - cron: '0 0 * * 0' # Runs weekly on Sunday at midnight UTC
   workflow_dispatch:
+    inputs:
+      full_scan:
+        description: 'Run full database scan (ignores date filter)'
+        type: boolean
+        required: false
+        default: false
+      dry_run:
+        description: 'Dry Run (no changes)'
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   maintenance:
@@ -24,7 +35,7 @@ jobs:
         working-directory: ./mv-intel-web
         run: npm ci
         
-      - name: Run Systematic Cleanup
+      - name: Run Systematic Cleanup (Legacy)
         working-directory: ./mv-intel-web
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -33,8 +44,9 @@ jobs:
           NEO4J_USER: ${{ secrets.NEO4J_USER }}
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: node scripts/systematic_cleanup.js
+        continue-on-error: true # Don't fail the whole job if legacy cleanup fails
 
-      - name: Refresh Stale Data (Optional)
+      - name: Run Intelligent Data Assurance
         working-directory: ./mv-intel-web
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -44,10 +56,25 @@ jobs:
           NEO4J_URI: ${{ secrets.NEO4J_URI }}
           NEO4J_USER: ${{ secrets.NEO4J_USER }}
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
-        # Only run if the script exists and is intended for automation
         run: |
+          # Determine flags based on inputs or schedule
+          FLAGS=""
+          
+          # Check for full scan input (manual)
+          if [ "${{ github.event.inputs.full_scan }}" == "true" ]; then
+            FLAGS="$FLAGS --full"
+          fi
+          
+          # Check for dry run (manual input or default for safety)
+          # Default to dry-run for cron unless explicitly changed in code later
+          if [ "${{ github.event_name }}" == "schedule" ] || [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          
+          echo "Running Intelligent Cleanup with flags: $FLAGS"
+          
           if [ -f "scripts/intelligent_cleanup.ts" ]; then
-            npx tsx scripts/intelligent_cleanup.ts --full --dry-run
+            npx tsx scripts/intelligent_cleanup.ts $FLAGS
           else
             echo "Intelligent cleanup script not found, skipping."
           fi
