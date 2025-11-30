@@ -14,14 +14,8 @@ async function runSync() {
     }
 
     const service = new AffinitySyncService();
-    
-    // Check for limit arg
-    const args = process.argv.slice(2);
-    const limitIdx = args.indexOf('--limit');
-    const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : undefined;
-
     // Default list name
-    const stats = await service.syncPipelineList("Motive Ventures Pipeline", { limit });
+    const stats = await service.syncPipelineList("Motive Ventures Pipeline");
 
     console.log('\n📊 Sync Complete:');
     console.log(`   - Companies Processed: ${stats.companiesProcessed}`);
@@ -30,17 +24,11 @@ async function runSync() {
     console.log(`   - Notes Enriched: ${stats.notesEnriched}`);
     
     if (stats.errors && stats.errors.length > 0) {
-        console.log('\n⚠️ Sync finished with warnings:');
+        console.log('\n⚠️ Errors:');
         stats.errors.forEach(e => console.log(`   - ${e}`));
         
-        // Only fail if NO companies were processed (implies total failure) or critical error
-        if (stats.companiesProcessed === 0 && stats.errors.length > 0) {
-             console.error('❌ Critical Failure: No companies processed.');
-             process.exit(1);
-        }
-        
-        // otherwise, treat as success with warnings
-        console.log('✅ Sync completed with warnings (ignoring non-fatal errors).');
+        // Fail if critical errors occurred
+        process.exit(1);
     }
 }
 
