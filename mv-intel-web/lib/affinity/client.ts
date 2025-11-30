@@ -150,7 +150,12 @@ export class AffinityClient {
 
   // Fetch single person details
   async getPerson(personId: number) {
-    return this.request<AffinityEntity>(`/persons/${personId}`);
+    const p = await this.request<any>(`/persons/${personId}`);
+    // Normalize name
+    if (!p.name && (p.first_name || p.last_name)) {
+        p.name = [p.first_name, p.last_name].filter(Boolean).join(' ');
+    }
+    return p as AffinityEntity;
   }
 
   // Fetch organization details (includes person_ids)

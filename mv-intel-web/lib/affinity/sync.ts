@@ -14,8 +14,49 @@ export class AffinitySyncService {
 
     private syncLogId: string | undefined = process.env.SYNC_LOG_ID;
 
+    // Affinity List Field IDs (Motive Ventures Pipeline - 105972)
+    private readonly FIELD_IDS = {
+        STATUS: 1163869,
+        OWNERS: 1163870,
+        INVESTMENT_AMOUNT: 1163871, // Total Investment Amount
+        CURRENT_ROUND_INVESTMENT: 4748207,
+        CLOSE_DATE: 1163872,
+        SOURCED_BY: 2361553,
+        DEAL_TEAM: 2375689,
+        RELATED_DEALS: 2098663,
+        TAXONOMY: 2327530,
+        PASS_LOST_REASON: 2330734,
+        FOUNDER_GENDER: 2322973,
+        SERIES: 2130390,
+        SOURCE_OF_INTRO: 2327529,
+        URGENCY: 2130240,
+        APOLLO_TAXONOMY: 3457370,
+        FUND: 3565025,
+        TAXONOMY_SUBCATEGORY: 4899090,
+        VALUATION: 1163951, // Pre-Money
+        BRIEF_DESCRIPTION: 5374529
+    };
+
+    private personNameCache = new Map<number, string>();
+
     constructor(affinityApiKey: string = process.env.AFFINITY_API_KEY!) {
         this.affinityClient = new AffinityClient(affinityApiKey);
+    }
+
+    private async resolvePersonName(personId: number | null): Promise<string | null> {
+        if (!personId) return null;
+        if (this.personNameCache.has(personId)) return this.personNameCache.get(personId)!;
+        
+        try {
+            const person = await this.affinityClient.getPerson(personId);
+            if (person && person.name) {
+                this.personNameCache.set(personId, person.name);
+                return person.name;
+            }
+        } catch (e) {
+            // ignore
+        }
+        return null;
     }
 
     // Helper to update progress in DB
@@ -41,7 +82,7 @@ export class AffinitySyncService {
         return targetList ? targetList.id : null;
     }
 
-    async upsertEntity(entityData: any, type: 'person' | 'organization', rawEntry: any = {}): Promise<string> {
+    async upsertEntity(entityData: any, type: 'person' | 'organization', rawEntry: any = {}, fieldValues: any[] = []): Promise<string> {
         // 1. Fetch existing entity to compare for history
         let existing = null;
         try {
@@ -56,6 +97,22 @@ export class AffinitySyncService {
             // ignore
         }
 
+        // Helper to extract value from fieldValues
+        const getVal = (id: number) => {
+            const f = fieldValues.find(v => v.field_id === id);
+            // Handle array of values (e.g. owners, sourced_by - Affinity returns array of IDs for person fields)
+            if (f?.value && Array.isArray(f.value)) {
+                 return f.value[0]; 
+            }
+            return f?.value?.text || f?.value || null;
+        };
+
+        const sourcedById = getVal(this.FIELD_IDS.SOURCED_BY);
+        let sourcedByName = null;
+        if (sourcedById && typeof sourcedById === 'number') {
+            sourcedByName = await this.resolvePersonName(sourcedById);
+        }
+
         // 2. Prepare new data
         const newData: any = {
             affinity_org_id: type === 'organization' ? entityData.id : null,
@@ -66,13 +123,28 @@ export class AffinitySyncService {
             is_pipeline: true,
             source: 'affinity_sync',
             updated_at: new Date().toISOString(),
+            
+            // Mapped Fields
+            pipeline_stage: getVal(this.FIELD_IDS.STATUS) || rawEntry.status || null,
+            fund: getVal(this.FIELD_IDS.FUND),
+            taxonomy: getVal(this.FIELD_IDS.TAXONOMY),
+            // taxonomy_subcategory: getVal(this.FIELD_IDS.TAXONOMY_SUBCATEGORY), // Not in table schema yet, skip or add column
+            valuation_amount: parseFloat(getVal(this.FIELD_IDS.VALUATION)) || null,
+            investment_amount: parseFloat(getVal(this.FIELD_IDS.INVESTMENT_AMOUNT)) || parseFloat(getVal(this.FIELD_IDS.CURRENT_ROUND_INVESTMENT)) || null,
+            // year_founded: ... (not in list fields usually, comes from enrichment)
+            // employee_count: ... (enrichment)
+            // location: ... (enrichment or list)
+            urgency: getVal(this.FIELD_IDS.URGENCY),
+            series: getVal(this.FIELD_IDS.SERIES),
+            founder_gender: getVal(this.FIELD_IDS.FOUNDER_GENDER),
+            pass_lost_reason: getVal(this.FIELD_IDS.PASS_LOST_REASON),
+            sourced_by: sourcedByName || (typeof sourcedById === 'string' ? sourcedById : null),
+            // notion_page: ...
+            // related_deals: ... (need array parsing)
+            apollo_taxonomy: getVal(this.FIELD_IDS.APOLLO_TAXONOMY),
+            brief_description: getVal(this.FIELD_IDS.BRIEF_DESCRIPTION),
         };
 
-        // Map Affinity Fields (Generic mapping, adjust based on actual list columns)
-        // Note: In a real implementation, we'd map dynamic field IDs from Affinity.
-        // For now, we assume rawEntry has mapped fields if available, or we trust the basic entity props.
-        if (rawEntry.status) newData.pipeline_stage = rawEntry.status; // Example
-        
         // Check if stage implies Portfolio status
         const stage = (newData.pipeline_stage || '').toLowerCase();
         if (
@@ -301,19 +373,15 @@ export class AffinitySyncService {
 
                         try {
                             // Pass 'entry' as rawEntry to extract status etc.
-                            // NEW: Fetch real status from field values
+                            // NEW: Fetch real field values
+                            let fieldValues: any[] = [];
                             try {
-                                const fieldValues = await this.affinityClient.getFieldValues(entry.id);
-                                const statusField = fieldValues.find((v: any) => v.field_id === 1163869); // Motive Pipeline Status
-                                if (statusField) {
-                                    // Inject status into entry object for upsertEntity to pick up
-                                    (entry as any).status = statusField.value?.text || statusField.value;
-                                }
+                                fieldValues = await this.affinityClient.getFieldValues(entry.id);
                             } catch (fe) {
-                                // ignore field fetch error to not block sync
+                                // ignore field fetch error
                             }
 
-                            entityDbId = await this.upsertEntity(entry.entity, entityType, entry);
+                            entityDbId = await this.upsertEntity(entry.entity, entityType, entry, fieldValues);
                             stats.companiesUpserted++;
 
                             // NEW: Fetch Associated People (Official Link from Org Details)
