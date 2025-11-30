@@ -97,7 +97,8 @@
 - **Example**: "Who are the key investors in Generative AI?" -> Watch the graph highlight relevant nodes.
 
 ### **Pipeline Status**
-- **URL**: `http://localhost:3000/status`
+- **Local/Server**: `http://localhost:3000/status`
+- **GitHub Actions**: `https://github.com/insulartahiti/mv-intelligence-platform/actions` (Hourly Cron)
 - **Features**: Real-time progress tracking, error logs, manual trigger.
 
 ## 4. Next Steps (Handoff)
