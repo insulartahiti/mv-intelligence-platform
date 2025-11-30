@@ -60,16 +60,21 @@ export class AffinitySyncService {
     }
 
     // Helper to update progress in DB
-    private async updateSyncProgress(count: number) {
+    private async updateSyncProgress(count: number, lastError?: string) {
         if (!this.syncLogId) return;
         try {
+            const updatePayload: any = { 
+                entities_synced: count,
+                updated_at: new Date().toISOString()
+            };
+            if (lastError) {
+                updatePayload.error_message = lastError.substring(0, 500); // Truncate to fit
+            }
+
             await supabase
                 .schema('graph')
                 .from('sync_state')
-                .update({ 
-                    entities_synced: count,
-                    updated_at: new Date().toISOString()
-                })
+                .update(updatePayload)
                 .eq('id', this.syncLogId);
         } catch (e) {
             // Ignore update errors to not block sync
@@ -427,7 +432,9 @@ export class AffinitySyncService {
                                 }
                             }
                         } catch (e: any) {
-                            errors.push(`Failed to upsert entity ${entry.entity.name}: ${e.message}`);
+                            const errMsg = `Failed to upsert entity ${entry.entity.name}: ${e.message}`;
+                            errors.push(errMsg);
+                            await this.updateSyncProgress(stats.companiesProcessed, errMsg); // LOG ERROR TO DB
                             return; // Skip rest for this entity
                         }
                         stats.companiesProcessed++;
@@ -464,7 +471,9 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            errors.push(`Failed notes for ${entry.entity.name}: ${e.message}`);
+                            const errMsg = `Failed notes for ${entry.entity.name}: ${e.message}`;
+                            errors.push(errMsg);
+                            await this.updateSyncProgress(stats.companiesProcessed, errMsg); // LOG ERROR
                         }
 
                         // 2. EMAILS
@@ -491,7 +500,9 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            errors.push(`Failed emails for ${entry.entity.name}: ${e.message}`);
+                            const errMsg = `Failed emails for ${entry.entity.name}: ${e.message}`;
+                            errors.push(errMsg);
+                            await this.updateSyncProgress(stats.companiesProcessed, errMsg);
                         }
 
                         // 3. MEETINGS
