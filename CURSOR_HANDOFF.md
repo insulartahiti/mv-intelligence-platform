@@ -1,6 +1,6 @@
 # Cursor Handoff Document
 
-## 1. Current Status (As of Nov 30, 2025)
+## 1. Current Status (As of Dec 01, 2025)
 
 **Objective**: Convert the platform into a "Conversational Knowledge Graph" - where users can chat with the data and see the graph update dynamically.
 
@@ -66,6 +66,11 @@
   - [x] **Update**: Standardized all AI analysis tasks to use **GPT-5.1**.
   - [x] **Fix**: Resolved `fetch failed` error in `migrate-to-neo4j.ts` by adding retry logic with exponential backoff for Supabase fetches.
   - [x] **Resume**: Restored pipeline execution from mid-point (`embed_interactions.ts`) after failures, skipping completed steps.
+  - [x] **Feature**: Implemented robust field mapping for Affinity sync (Status, Fund, Valuation, Sourced By).
+  - [x] **Fix**: Relaxed error handling in `run_affinity_sync.ts` to prevent total pipeline failure on minor sync errors.
+  - [x] **Fix**: Added validation for `--limit` argument in pipeline scripts to prevent NaN errors.
+  - [x] **Fix**: Resolved `PGRST204` schema cache error by forcing a reload and verifying column existence.
+  - [x] **Fix**: Updated `sync.ts` to include `participants: []` for all interaction types to satisfy `NOT NULL` DB constraint.
 - [x] **Affinity Integration**:
   - [x] Backend: Updated `node-details` API.
   - [x] Frontend: Updated `NodeDetailPanel` to display Interactions and Files.
@@ -106,6 +111,17 @@
       - [x] **Cleanup**: Created `fix_taxonomy.js` for reclassification.
       - [x] **UI**: Added visual grid layout, formatted entity counts with commas, and implemented server-side individual entity refresh.
       - [x] **Rebranding**: Updated application name from "MV Intelligence Platform" to "**Motive Intelligence**" in web metadata, PWA manifest, and Chrome extension.
+      - [x] **Pre-loading**: Updated Taxonomy Page to fetch all entities upfront, enabling instant client-side filtering and navigation.
+      - [x] **Payload Optimization**: Modified `/api/taxonomy/entities` to exclude `enrichment_data` column, significantly reducing initial load size.
+      - [x] **Logic Fixes**: Corrected entity count logic to sum all items in a branch recursively.
+      - [x] **Structural Update**: Moved "Consensus & Networks" (`CONS`) from root level to `IFT.CRYP.CONS`. Migrated database entities and updated frontend taxonomy tree.
+    - [x] **Auth & Administration (Dec 01, 2025)**:
+      - [x] **Login System**: Implemented "Spotlight Login" - email-only, magic link authentication, styled with Motive Intelligence aesthetic.
+      - [x] **Route Protection**: Restricted all pages (`/`, `/taxonomy`, `/status`, `/admin`, etc.) to authenticated users only.
+      - [x] **Admin Console**: Created `/admin` page for managing allowed users, restricted to `harsh.govil@motivepartners.com`.
+      - [x] **User Management**: Implemented `allowed_users` table in Supabase and logic to add/delete/verify users.
+      - [x] **Personalization**: Added "Good morning, [Name]" greeting to the main knowledge graph page.
+      - [x] **Client Optimization**: Implemented Singleton pattern for Supabase client to prevent "Multiple GoTrueClient instances" warnings and ensure stable auth state.
 
 ## 2. Active Processes & Monitoring
 
@@ -117,8 +133,9 @@
     - **Execution**: Runs hourly via GitHub Actions (Server-side) or manually via Status Page.
     - **Steps**:
         1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
-            - **Update**: Relaxed error handling to treat partial sync failures (e.g., single note error) as warnings rather than fatal job failures.
-            - **Update**: Switched Note Enrichment to **GPT-5.1**.
+            - **Update**: Relaxed error handling to treat partial sync failures as warnings.
+            - **Update**: Robust field mapping for critical business data (Status, Fund, Valuation).
+            - **Update**: Fixed schema mismatch (`participants` column) to prevent silent sync failures.
         2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
         3.  `summarize_interactions.ts`: Aggregates interaction history.
         4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
@@ -139,11 +156,11 @@
 
 ## 4. Next Steps (Handoff)
 
-1.  **Monitor Sync**: The pipeline is actively running (restarted with fix). `embed_interactions.ts` completed. `migrate-to-neo4j.ts` is in progress (~500/33k entities migrated).
+1.  **Monitor Sync**: Trigger the GitHub Action now that the code is fixed and pushed.
 2.  **Completion Estimate**: ~1.5 hours remaining for full completion (Entity migration -> Edge migration -> Person Enrichment -> Relationships -> Final Cleanup).
 3.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
-3.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
-4.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
+4.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
+5.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
 
 ## 5. Technical Notes
 

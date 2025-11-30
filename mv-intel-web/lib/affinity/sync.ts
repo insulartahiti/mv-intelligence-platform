@@ -393,6 +393,25 @@ export class AffinitySyncService {
                             entityDbId = await this.upsertEntity(entry.entity, entityType, entry, fieldValues);
                             stats.companiesUpserted++;
 
+                            // NEW: Extract Owners, Sourced By, Deal Team from Fields and Link them
+                            if (entityType === 'organization' && entityDbId) {
+                                const getPersonIds = (fieldId: number): number[] => {
+                                    const f = fieldValues.find(v => v.field_id === fieldId);
+                                    if (f?.value && Array.isArray(f.value)) return f.value;
+                                    return [];
+                                };
+
+                                const ownerIds = getPersonIds(this.FIELD_IDS.OWNERS);
+                                const sourcedByIds = getPersonIds(this.FIELD_IDS.SOURCED_BY);
+                                const dealTeamIds = getPersonIds(this.FIELD_IDS.DEAL_TEAM);
+
+                                const allPersonIds = [...new Set([...ownerIds, ...sourcedByIds, ...dealTeamIds])];
+
+                                for (const pid of allPersonIds) {
+                                    await this.upsertPersonFromId(pid, entityDbId);
+                                }
+                            }
+
                             // NEW: Fetch Associated People (Official Link from Org Details)
                             if (entityType === 'organization' && entityDbId) {
                                 try {
@@ -434,6 +453,7 @@ export class AffinitySyncService {
                                     company_id: entityType === 'organization' ? entityDbId : null,
                                     started_at: note.posted_at,
                                     ended_at: note.updated_at,
+                                    participants: [], // Required by DB
                                     ai_summary: enriched.ai_summary,
                                     ai_sentiment: enriched.ai_sentiment,
                                     ai_key_points: enriched.ai_key_points,
@@ -466,6 +486,7 @@ export class AffinitySyncService {
                                     content_preview: email.body.substring(0, 250),
                                     company_id: entityType === 'organization' ? entityDbId : null,
                                     started_at: email.sent_at,
+                                    participants: [], // Required by DB
                                     embedding: embedding,
                                 });
                             }
@@ -492,6 +513,7 @@ export class AffinitySyncService {
                                     company_id: entityType === 'organization' ? entityDbId : null,
                                     started_at: meeting.start_time,
                                     ended_at: meeting.end_time,
+                                    participants: [], // Required by DB
                                     embedding: embedding,
                                 });
                             }
@@ -517,6 +539,7 @@ export class AffinitySyncService {
                                     company_id: entityType === 'organization' ? entityDbId : null,
                                     started_at: reminder.created_at,
                                     ended_at: reminder.due_date,
+                                    participants: [], // Required by DB
                                     embedding: embedding,
                                     ai_summary: reminder.completed ? 'Completed' : 'Pending'
                                 });
