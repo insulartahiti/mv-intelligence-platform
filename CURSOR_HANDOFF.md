@@ -71,6 +71,7 @@
   - [x] **Fix**: Added validation for `--limit` argument in pipeline scripts to prevent NaN errors.
   - [x] **Fix**: Resolved `PGRST204` schema cache error by forcing a reload and verifying column existence.
   - [x] **Fix**: Updated `sync.ts` to include `participants: []` for all interaction types to satisfy `NOT NULL` DB constraint.
+  - [x] **Fix**: Added fallback logic for `started_at` in `sync.ts` to handle null dates from Affinity, fixing `NOT NULL` constraint violations.
 - [x] **Affinity Integration**:
   - [x] Backend: Updated `node-details` API.
   - [x] Frontend: Updated `NodeDetailPanel` to display Interactions and Files.
@@ -125,6 +126,13 @@
       - [x] **Name Formatting**: Updated greeting to format names from email (e.g. "Harsh" instead of "harsh.govil") correctly.
       - [x] **Context Injection**: Connected User Entity from graph (matching by name) to the Chat Agent, enabling personalized answers (e.g. "my deals").
       - [x] **Affinity Sync Fix**: Updated `sync.ts` to extract Owners, Sourced By, and Deal Team fields and create relationship edges in the graph.
+      - [x] **Entity Corrections**: Manually updated "Malte Rau" description to distinguish Pliant from Pleo. Verified "Nelly" founders.
+      - [x] **Chat Accuracy**: Instructed Chat Agent to prioritize specific Founder/Owner names in drafts and avoid hallucinations.
+      - [x] **Portfolio Query Fix**: Implemented `get_user_deals` tool and logic to handle "my portfolio" requests by querying edges where the user is an owner/deal_team member.
+    - [x] **Email & Message Integration**:
+      - [x] **Drafting Tool**: Implemented `draft_message` tool supporting Email, SMS, and WhatsApp.
+      - [x] **UI**: Added conditional buttons ("Draft Email", "Draft Text", "Draft WhatsApp") based on user intent.
+      - [x] **Context**: Chat Agent automatically fetches Phone/Email from graph before drafting.
 
 ## 2. Active Processes & Monitoring
 
@@ -138,6 +146,7 @@
         1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
             - **Update**: Relaxed error handling to treat partial sync failures as warnings.
             - **Update**: Robust field mapping for critical business data (Status, Fund, Valuation).
+            - **Update**: Fixed schema mismatch (`participants` and `started_at` columns) to prevent silent sync failures.
         2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
         3.  `summarize_interactions.ts`: Aggregates interaction history.
         4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
@@ -158,9 +167,9 @@
 
 ## 4. Next Steps (Handoff)
 
-1.  **Verify Sync Script**: The `run_affinity_sync.ts` script with dynamic imports encountered a timeout during local testing. Verify execution in the full environment.
-2.  **Monitor Edge Creation**: Check if the new sync logic correctly creates "contact" or "deal_team" edges for Owners/Sourced By fields.
-3.  **Completion Estimate**: ~1 hour remaining for final verification and cleanup.
+1.  **Monitor Edge Creation**: Check if the new sync logic correctly creates "contact" or "deal_team" edges for Owners/Sourced By fields.
+2.  **Completion Estimate**: ~1 hour remaining for final verification and cleanup.
+3.  **Optimization**: Implement Delta Sync for Affinity to only process entities updated since `last_sync_timestamp`, reducing API load and runtime.
 4.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
 5.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
 6.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
