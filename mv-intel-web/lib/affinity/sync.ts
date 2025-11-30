@@ -458,7 +458,7 @@ export class AffinitySyncService {
                                     content_full: note.content,
                                     content_preview: enriched.ai_summary || note.content.substring(0, 250),
                                     company_id: entityType === 'organization' ? entityDbId : null,
-                                    started_at: note.posted_at,
+                                    started_at: note.posted_at || note.updated_at || new Date().toISOString(),
                                     ended_at: note.updated_at,
                                     participants: [], // Required by DB
                                     ai_summary: enriched.ai_summary,
@@ -494,7 +494,7 @@ export class AffinitySyncService {
                                     content_full: email.body,
                                     content_preview: email.body.substring(0, 250),
                                     company_id: entityType === 'organization' ? entityDbId : null,
-                                    started_at: email.sent_at,
+                                    started_at: email.sent_at || new Date().toISOString(),
                                     participants: [], // Required by DB
                                     embedding: embedding,
                                 });
@@ -522,7 +522,7 @@ export class AffinitySyncService {
                                     subject: title,
                                     content_full: title,
                                     company_id: entityType === 'organization' ? entityDbId : null,
-                                    started_at: meeting.start_time,
+                                    started_at: meeting.start_time || meeting.end_time || new Date().toISOString(),
                                     ended_at: meeting.end_time,
                                     participants: [], // Required by DB
                                     embedding: embedding,
