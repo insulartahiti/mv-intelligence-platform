@@ -187,14 +187,33 @@ class Neo4jMigration {
     let totalMigrated = 0;
 
     while (true) {
-      const { data: entities, error } = await supabase
-        .schema('graph')
-        .from('entities')
-        .select('*')
-        .range(offset, offset + this.batchSize - 1);
+      let retries = 3;
+      let entities = null;
+      let error = null;
+
+      while (retries > 0) {
+        const result = await supabase
+          .schema('graph')
+          .from('entities')
+          .select('*')
+          .range(offset, offset + this.batchSize - 1);
+        
+        if (!result.error) {
+          entities = result.data;
+          break;
+        }
+
+        console.warn(`⚠️ Fetch failed, retrying... (${retries} attempts left): ${result.error.message}`);
+        retries--;
+        await this.delay(2000);
+        
+        if (retries === 0) {
+          error = result.error;
+        }
+      }
 
       if (error) {
-        throw new Error(`Failed to fetch entities: ${error.message}`);
+        throw new Error(`Failed to fetch entities after retries: ${error.message}`);
       }
 
       if (!entities || entities.length === 0) {
@@ -284,14 +303,33 @@ class Neo4jMigration {
     let totalMigrated = 0;
 
     while (true) {
-      const { data: edges, error } = await supabase
-        .schema('graph')
-        .from('edges')
-        .select('*')
-        .range(offset, offset + this.batchSize - 1);
+      let retries = 3;
+      let edges = null;
+      let error = null;
+
+      while (retries > 0) {
+        const result = await supabase
+          .schema('graph')
+          .from('edges')
+          .select('*')
+          .range(offset, offset + this.batchSize - 1);
+        
+        if (!result.error) {
+          edges = result.data;
+          break;
+        }
+
+        console.warn(`⚠️ Fetch failed, retrying... (${retries} attempts left): ${result.error.message}`);
+        retries--;
+        await this.delay(2000); // Wait 2s before retry
+        
+        if (retries === 0) {
+          error = result.error;
+        }
+      }
 
       if (error) {
-        throw new Error(`Failed to fetch edges: ${error.message}`);
+        throw new Error(`Failed to fetch edges after retries: ${error.message}`);
       }
 
       if (!edges || edges.length === 0) {

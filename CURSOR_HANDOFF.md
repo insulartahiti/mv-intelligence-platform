@@ -64,14 +64,31 @@
   - [x] **Fix**: Refactored ALL pipeline scripts (`enhanced_embedding_generator.js`, `enhanced_person_embedding_generator.js`, `summarize_interactions.ts`, `generate_relationships.js`) to use `supabase-js` client, ensuring full pipeline functionality despite server-side DNS issues with direct Postgres connection.
   - [x] **Fix**: Updated Perplexity API model from deprecated `llama-3.1-sonar` to `sonar-pro`.
   - [x] **Update**: Standardized all AI analysis tasks to use **GPT-5.1**.
+  - [x] **Fix**: Resolved `fetch failed` error in `migrate-to-neo4j.ts` by adding retry logic with exponential backoff for Supabase fetches.
+  - [x] **Resume**: Restored pipeline execution from mid-point (`embed_interactions.ts`) after failures, skipping completed steps.
 - [x] **Affinity Integration**:
   - [x] Backend: Updated `node-details` API.
   - [x] Frontend: Updated `NodeDetailPanel` to display Interactions and Files.
-- [x] **Deep RAG (Notes)**:
+  - [x] **People Search Fix**: Updated Chat API to:
+    - Automatically fetch and inject connected people (Founder, Works At) into the LLM context when an Organization is found.
+    - **[v2]** Prioritize `Person` entities when the query implies it (e.g. "investors in..."), filtering by `types=['person']` and enriching results with employment history and organization connections.
+  - [x] **Deep RAG (Notes)**:
   - [x] Confirmed `graph.interactions` table exists.
   - [x] Created `api/cron/embed-interactions` to generate embeddings for notes/meetings.
   - [x] Updated Chat Agent with `search_notes` tool.
   - [x] **Schema Mismatch Fix**: Created `supabase/migrations/20251130_fix_interactions_schema.sql` to resolve missing columns blocking sync.
+  - [x] **Search Improvements**:
+    - [x] **Hybrid Search**: Implemented Parallel Keyword Search using **Full Text Search** (`websearch_to_tsquery`) to correctly handle natural language queries (e.g. "what about Mark Gilbert" -> matches "Mark Gilbert").
+    - [x] **Recall Boost**: Increased search result limit from 10 to **30** to ensure broader context coverage for RAG.
+    - [x] **Smart Prioritization**: Implemented boosted ranking for **Portfolio Companies** (+0.25) and **Founders** (+0.15) to ensure they appear first in relevant searches.
+    - [x] **Query Expansion**: Updated Chat System Prompt to automatically broaden "tool/software" queries with "AI", "WealthTech", and "Modern" to capture innovative solutions.
+    - [x] **Data Correction**: Fixed classification of "Mark Gilbert (Zocks)" (Org -> Person) and re-generated his profile/embedding to fix search visibility.
+    - [x] **Design Overhaul (Nov 30, 2025)**:
+      - [x] **Main Page**: Set Knowledge Graph as the default landing page.
+      - [x] **Navigation**: Implemented elegant collapsible "Spotlight" menu.
+      - [x] **Taxonomy View**: Created interactive, searchable hierarchical view of Investment Taxonomy (`/taxonomy`).
+      - [x] **Chrome Extension**: Added placeholder page (`/chrome-extension`).
+      - [x] **Refactoring**: Extracted core graph logic to `KnowledgeGraphPageContent` for reusability.
 
 ## 2. Active Processes & Monitoring
 
@@ -103,8 +120,8 @@
 
 ## 4. Next Steps (Handoff)
 
-1.  **Monitor Sync**: The pipeline is running (PID 68564). Interactions (notes/meetings) should start populating in `graph.interactions`.
-2.  **Embed Notes**: Once data appears, run `curl http://localhost:3000/api/cron/embed-interactions` to generate vector embeddings.
+1.  **Monitor Sync**: The pipeline is actively running (restarted with fix). `embed_interactions.ts` completed. `migrate-to-neo4j.ts` is in progress (~500/33k entities migrated).
+2.  **Completion Estimate**: ~1.5 hours remaining for full completion (Entity migration -> Edge migration -> Person Enrichment -> Relationships -> Final Cleanup).
 3.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
 3.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
 4.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.

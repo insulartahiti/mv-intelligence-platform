@@ -66,6 +66,18 @@ export class AffinitySyncService {
         // Note: In a real implementation, we'd map dynamic field IDs from Affinity.
         // For now, we assume rawEntry has mapped fields if available, or we trust the basic entity props.
         if (rawEntry.status) newData.pipeline_stage = rawEntry.status; // Example
+        
+        // Check if stage implies Portfolio status
+        const stage = (newData.pipeline_stage || '').toLowerCase();
+        if (
+            stage.includes('portfolio') || 
+            stage.includes('motive aav') || 
+            stage.includes('balance sheet') || 
+            stage.includes('exited')
+        ) {
+            newData.is_portfolio = true;
+        }
+
         // valuation_amount would come from custom fields, ignored for now unless passed explicitly
 
         // 3. Upsert Entity (Manual implementation to avoid ON CONFLICT constraint issues)
@@ -103,6 +115,8 @@ export class AffinitySyncService {
             await this.trackHistory(upserted.id, 'pipeline_stage', existing.pipeline_stage, upserted.pipeline_stage);
             await this.trackHistory(upserted.id, 'valuation_amount', existing.valuation_amount, upserted.valuation_amount);
         }
+
+        if (!upserted) throw new Error(`Failed to upsert ${type} ${entityData.name}`);
 
         return upserted.id;
     }
@@ -183,7 +197,7 @@ export class AffinitySyncService {
                     const chunk = entries.slice(i, i + CHUNK_SIZE);
                     console.log(`   Processing chunk ${i} to ${i + CHUNK_SIZE}...`);
                     
-                    await Promise.all(chunk.map(async (entry) => {
+                    await Promise.all(chunk.map(async (entry: any) => {
                         const entityType = entry.entity_type === 1 ? 'organization' : 'person';
                         let entityDbId: string | null = null;
 
@@ -342,7 +356,7 @@ export class AffinitySyncService {
                 }
 
                 console.log(`   - Fetched ${entries.length} entries.`);
-                pageToken = response.next_page_token;
+                pageToken = response.next_page_token || undefined;
             } while (pageToken);
 
         } catch (e: any) {

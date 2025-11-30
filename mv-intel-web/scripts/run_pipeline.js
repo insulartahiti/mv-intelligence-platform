@@ -154,6 +154,10 @@ async function runPipeline() {
     // Infer NEW edges from the newly enriched data
     await runScript('generate_relationships.js', ['--run-once']);
 
+    // 5.1. Portfolio Flag Propagation
+    // Ensure founders of portfolio companies inherit the portfolio status
+    await runScript('fix_portfolio_flags.ts');
+
     // 6. Final Cleanup
     // Deduplicate any nodes created by inference
     await runScript('systematic_cleanup.js');
