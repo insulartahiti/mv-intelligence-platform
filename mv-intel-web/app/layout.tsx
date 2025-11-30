@@ -1,6 +1,6 @@
 import '../styles/globals.css';
 import type { Metadata, Viewport } from 'next';
-import Navigation from './components/Navigation';
+import CollapsibleMenu from './components/CollapsibleMenu';
 import { ToastContainer } from './components/ui/AppShell';
 import { PWAInstaller, PWAStatus } from './components/PWAInstaller';
 import PWAScript from './components/PWAScript';
@@ -62,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                <meta name="apple-mobile-web-app-title" content="MV Intelligence" />
       </head>
       <body className="app-backdrop text-onGlassDark">
-        <Navigation />
+        <CollapsibleMenu />
         <main className="min-h-screen">
           {children}
         </main>

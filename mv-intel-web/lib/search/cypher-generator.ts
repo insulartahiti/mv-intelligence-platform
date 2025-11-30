@@ -91,12 +91,12 @@ export async function generateAndExecuteCypher(query: string) {
                 const val = record.get(key);
                 if (val && val.properties) {
                     // Node or Relationship
-                    obj[key] = {
+                    obj[key as string] = {
                         ...val.properties,
                         label: val.labels ? val.labels[0] : val.type // Node label or Rel type
                     };
                 } else {
-                    obj[key] = val;
+                    obj[key as string] = val;
                 }
             });
             return obj;

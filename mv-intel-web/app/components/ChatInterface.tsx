@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Sparkles, Network, Building2, Users } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-interface Message {
+export interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
@@ -13,17 +13,44 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-    conversationId?: string;
+    conversationId?: string | null;
+    setConversationId?: (id: string | null) => void;
+    messages?: Message[];
+    setMessages?: React.Dispatch<React.SetStateAction<Message[]>>;
+    loading?: boolean;
+    setLoading?: (loading: boolean) => void;
     onGraphUpdate?: (nodeIds: string[], subgraph?: any) => void;
     onNodeSelect?: (nodeId: string) => void;
+    onSearchStart?: () => void;
+    variant?: 'default' | 'spotlight';
 }
 
-export default function ChatInterface({ conversationId: initialConvId, onGraphUpdate, onNodeSelect }: ChatInterfaceProps) {
-    const [conversationId, setConversationId] = useState<string | null>(initialConvId || null);
-    const [messages, setMessages] = useState<Message[]>([]);
+export default function ChatInterface({ 
+    conversationId: propConvId, 
+    setConversationId: propSetConvId,
+    messages: propMessages,
+    setMessages: propSetMessages,
+    loading: propLoading,
+    setLoading: propSetLoading,
+    onGraphUpdate, 
+    onNodeSelect, 
+    onSearchStart,
+    variant = 'default'
+}: ChatInterfaceProps) {
+    const [internalConvId, setInternalConvId] = useState<string | null>(null);
+    const [internalMessages, setInternalMessages] = useState<Message[]>([]);
+    const [internalLoading, setInternalLoading] = useState(false);
     const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const conversationId = propConvId !== undefined ? propConvId : internalConvId;
+    const setConversationId = propSetConvId || setInternalConvId;
+    
+    const messages = propMessages !== undefined ? propMessages : internalMessages;
+    const setMessages = propSetMessages || setInternalMessages;
+
+    const loading = propLoading !== undefined ? propLoading : internalLoading;
+    const setLoading = propSetLoading || setInternalLoading;
 
     // Auto-scroll to bottom
     useEffect(() => {
@@ -33,6 +60,10 @@ export default function ChatInterface({ conversationId: initialConvId, onGraphUp
     const handleSend = async () => {
         if (!input.trim() || loading) return;
 
+        if (messages.length === 0 && onSearchStart) {
+            onSearchStart();
+        }
+
         const userMsg: Message = {
             id: crypto.randomUUID(),
             role: 'user',
@@ -40,6 +71,7 @@ export default function ChatInterface({ conversationId: initialConvId, onGraphUp
         };
 
         setMessages(prev => [...prev, userMsg]);
+        const currentInput = input; // Capture input for logic
         setInput('');
         setLoading(true);
 
@@ -87,6 +119,56 @@ export default function ChatInterface({ conversationId: initialConvId, onGraphUp
             setLoading(false);
         }
     };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        handleSend();
+    };
+
+    if (variant === 'spotlight') {
+        return (
+            <div className="w-full max-w-2xl mx-auto">
+                <form onSubmit={handleFormSubmit} className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
+                        <Sparkles className="h-6 w-6 text-blue-400 group-focus-within:text-blue-300 transition-colors" />
+                    </div>
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Search companies, people, or ask anything..."
+                        autoFocus
+                        className="block w-full pl-16 pr-16 py-5 bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl text-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 shadow-2xl transition-all"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center">
+                        <button
+                            type="submit"
+                            disabled={!input.trim() || loading}
+                            className={`p-2 rounded-xl transition-all duration-200 ${
+                                input.trim() && !loading 
+                                ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg' 
+                                : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                            }`}
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    </div>
+                </form>
+                {loading && (
+                    <div className="mt-6 flex justify-center">
+                        <div className="flex items-center gap-3 px-4 py-2 bg-slate-900/50 backdrop-blur rounded-full border border-slate-800/50 text-slate-400 text-sm animate-fadeIn">
+                            <div className="flex gap-1">
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-75"></span>
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-150"></span>
+                            </div>
+                            <span>Analyzing Knowledge Graph...</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
@@ -223,23 +305,22 @@ export default function ChatInterface({ conversationId: initialConvId, onGraphUp
 
             {/* Input Area */}
             <div className="p-4 bg-slate-900 border-t border-slate-800">
-                <div className="relative">
+                <form onSubmit={handleFormSubmit} className="relative">
                     <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                         placeholder="Ask a question..."
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-4 pr-12 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                     />
                     <button
-                        onClick={handleSend}
+                        type="submit"
                         disabled={!input.trim() || loading}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Send className="w-4 h-4" />
                     </button>
-                </div>
+                </form>
             </div>
         </div>
     );

@@ -20,12 +20,26 @@ const Neo4jVisNetwork = dynamic(
 );
 
 interface Neo4jGraphViewerProps {
-  onNodeClick?: (nodeId: string) => void;
+  onNodeClick?: (nodeId: string, nodeData?: any) => void;
+  onNodeHover?: (nodeId: string, nodeData?: any) => void;
   highlightedNodeIds?: string[];
-  subgraphData?: any; // New prop
+  subgraphData?: any;
+  hoveredNodeId?: string | null;
+  limit?: number;
+  minImportance?: number;
+  className?: string;
 }
 
-export default function Neo4jGraphViewer({ onNodeClick, highlightedNodeIds, subgraphData }: Neo4jGraphViewerProps) {
+export default function Neo4jGraphViewer({ 
+  onNodeClick, 
+  onNodeHover, 
+  highlightedNodeIds, 
+  subgraphData, 
+  hoveredNodeId,
+  limit,
+  minImportance,
+  className
+}: Neo4jGraphViewerProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -35,11 +49,16 @@ export default function Neo4jGraphViewer({ onNodeClick, highlightedNodeIds, subg
   if (!mounted) return null;
 
   return (
-    <div className="w-full h-full bg-slate-950 relative">
+    <div className={`w-full h-full bg-slate-950 relative ${className || ''}`}>
       <Neo4jVisNetwork 
-        onNodeClick={onNodeClick} 
+        onNodeClick={onNodeClick}
+        onNodeHover={onNodeHover}
         highlightedNodeIds={highlightedNodeIds}
         subgraphData={subgraphData}
+        hoveredNodeId={hoveredNodeId}
+        limit={limit}
+        minImportance={minImportance}
+        className={className}
       />
       
       {/* Legend / Controls Overlay */}

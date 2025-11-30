@@ -40,7 +40,7 @@ export interface SearchResult {
 }
 
 // Generate embedding using OpenAI
-async function generateEmbedding(text: string): Promise<number[]> {
+export async function generateEmbedding(text: string): Promise<number[]> {
     const response = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
         headers: {
@@ -137,20 +137,130 @@ export async function searchEntities(
     if (filters.dateRange?.start) filterJson.dateStart = filters.dateRange.start;
     if (filters.dateRange?.end) filterJson.dateEnd = filters.dateRange.end;
 
-    // Execute RPC
-    const { data: results, error } = await supabase.rpc('search_entities_filtered', {
+    // Execute RPC (Global Search)
+    const vectorPromise = supabase.rpc('search_entities_filtered', {
         query_embedding: queryEmbedding,
         match_threshold: 0.1, // Lower threshold for text-embedding-3-large
-        match_count: limit,
+        match_count: limit * 2, // Fetch more to allow re-ranking effectiveness
         filters: filterJson
     });
 
-    if (error) {
-        throw new Error(`Semantic search error: ${error.message}`);
+    // Parallel: Portfolio Search (Ensure portfolio items are always retrieved)
+    const portfolioPromise = (async () => {
+        // Don't run if the main filter already restricts to portfolio
+        if (filters.isPortfolio) return { data: [] };
+        
+        return supabase.rpc('search_entities_filtered', {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.3, // stricter threshold for forced inclusion
+            match_count: 10, // Grab top 10 relevant portfolio items
+            filters: { ...filterJson, isPortfolio: true }
+        });
+    })();
+
+    // Parallel: Keyword Search (Boost exact name matches)
+    const keywordPromise = (async () => {
+        // Only run if query is reasonably short
+        if (query.length > 200) return [];
+        
+        let dbQuery = supabase
+            .schema('graph')
+            .from('entities')
+            .select('id, name, type, domain, industry, pipeline_stage, taxonomy, ai_summary, importance, location_country, location_city, updated_at, business_analysis, enrichment_source, is_portfolio')
+            // Use websearch_to_tsquery to handle "what about Mark Gilbert" -> 'Mark' & 'Gilbert'
+            // This works even without a specific index (sequential scan is fine for <100k rows)
+            .textSearch('name', query, { type: 'websearch', config: 'english' })
+            .limit(5);
+
+        if (filters.types && filters.types.length > 0) {
+            dbQuery = dbQuery.in('type', filters.types);
+        }
+        if (filters.isPortfolio) {
+            dbQuery = dbQuery.eq('is_portfolio', true);
+        }
+
+        const { data, error } = await dbQuery;
+        if (error) {
+            console.warn('Keyword search error:', error.message);
+            return [];
+        }
+        
+        // Map to SearchResult format with high similarity
+        return (data || []).map((e: any) => ({
+            ...e,
+            similarity: 1.1, // Artificial boost to ensure top ranking
+            related_edges: []
+        }));
+    })();
+
+    const [vectorResponse, portfolioResponse, keywordResults] = await Promise.all([vectorPromise, portfolioPromise, keywordPromise]);
+
+    if (vectorResponse.error) {
+        throw new Error(`Semantic search error: ${vectorResponse.error.message}`);
     }
 
+    const vectorResults = vectorResponse.data || [];
+    const portfolioResults = portfolioResponse.data || [];
+
+    // Helper to calculate score with boosts
+    const getBoostedScore = (item: any) => {
+        let score = item.similarity;
+        
+        // Only apply boosts if there is a baseline relevance to avoid prioritizing noise
+        if (score < 0.30) return score;
+
+        // Boost Portfolio (+0.15)
+        if (item.is_portfolio) {
+            score += 0.15;
+        }
+        
+        // Boost Founders (+0.10)
+        // Check seniority, analysis, or title
+        const analysis = item.business_analysis || {};
+        const enrichment = item.enrichment_data || {};
+        const title = (enrichment.title || '').toLowerCase();
+        
+        const isFounder = 
+            title.includes('founder') || 
+            title.includes('co-founder') ||
+            analysis.seniority_level === 'Founder' ||
+            (analysis.key_achievements || '').toLowerCase().includes('founder') ||
+            (analysis.key_achievements || '').toLowerCase().includes('founded');
+
+        if (isFounder) {
+            score += 0.10;
+        }
+        
+        return score;
+    };
+
+    // Merge results: Keyword -> Portfolio -> Vector (deduplicated)
+    const mergedResults: SearchResult[] = [...keywordResults];
+    const seenIds = new Set(keywordResults.map((r: any) => r.id));
+
+    // Add Portfolio matches (if not already added by keyword)
+    portfolioResults.forEach((r: any) => {
+        if (!seenIds.has(r.id)) {
+            mergedResults.push(r);
+            seenIds.add(r.id);
+        }
+    });
+
+    // Add Global Vector matches
+    vectorResults.forEach((r: any) => {
+        if (!seenIds.has(r.id)) {
+            mergedResults.push(r);
+            seenIds.add(r.id);
+        }
+    });
+
+    // Sort by Boosted Score
+    mergedResults.sort((a, b) => getBoostedScore(b) - getBoostedScore(a));
+
+    // Apply Limit
+    let enrichedResults = mergedResults.slice(0, limit);
+
     // Enrich with edges
-    let enrichedResults = results || [];
     if (enrichedResults.length > 0) {
         const topEntityIds = enrichedResults.slice(0, 10).map((r: any) => r.id);
         const relatedEdges = await fetchRelatedEdges(topEntityIds);

@@ -85,7 +85,9 @@ interface NodeDetailPanelProps {
   onSelectNode?: (id: string) => void
   onBack?: () => void
 }
-// ... (skip TabType) ...
+
+type TabType = 'overview' | 'details' | 'connections' | 'interactions' | 'files';
+
 const RecursiveJson = ({ data }: { data: any }) => {
   if (!data) return <span className="text-slate-500 italic">Empty</span>;
   

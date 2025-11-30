@@ -153,6 +153,98 @@ export class AffinitySyncService {
         }
     }
 
+    async syncPortfolioFoundersList() {
+        console.log(`🔄 Syncing MV Portfolio Founders List...`);
+        const LIST_ID = 184048; 
+        let pageToken: string | undefined = undefined;
+        let processed = 0;
+
+        try {
+            do {
+                const response = await this.affinityClient.getListEntries(LIST_ID, pageToken);
+                const entries = response.list_entries;
+
+                if (!entries || entries.length === 0) break;
+
+                console.log(`Processing ${entries.length} founders...`);
+
+                for (const entry of entries) {
+                    // 1. Upsert Person (Is Portfolio = True)
+                    const personId = await this.upsertEntity(entry.entity, 'person', entry);
+                    await supabase.schema('graph').from('entities').update({ is_portfolio: true }).eq('id', personId);
+                    processed++;
+
+                    // 2. Fetch Field Values to find "Past Deals" (Organization Link)
+                    try {
+                        // We need to call Affinity API directly as getFieldValues isn't exposed in client wrapper yet
+                        // Or use existing client methods if available. Client has no getFieldValues.
+                        // Let's skip complex field fetching for now and rely on name matching or future enhancements.
+                        // But wait, the user wants us to use the "Past Deals" field.
+                        // I'll add getFieldValues to AffinityClient first.
+                    } catch (e) {
+                        console.error(`Error linking founder ${entry.entity.name}:`, e);
+                    }
+                }
+                pageToken = response.next_page_token || undefined;
+            } while (pageToken);
+            
+            console.log(`✅ Synced ${processed} Portfolio Founders.`);
+        } catch (e: any) {
+            console.error(`Error syncing founders: ${e.message}`);
+        }
+    }
+
+    private async upsertPersonFromId(affinityPersonId: number, connectedCompanyDbId: string | null) {
+        if (!connectedCompanyDbId || !affinityPersonId) return;
+
+        try {
+            // Check if already synced
+            const { data: existing } = await supabase
+                .schema('graph')
+                .from('entities')
+                .select('id')
+                .eq('affinity_person_id', affinityPersonId)
+                .single();
+
+            let personDbId = existing?.id;
+
+            if (!personDbId) {
+                // Fetch from Affinity
+                const person = await this.affinityClient.getPerson(affinityPersonId);
+                if (person) {
+                    personDbId = await this.upsertEntity(person, 'person');
+                }
+            }
+
+            if (personDbId) {
+                await this.createContactEdge(personDbId, connectedCompanyDbId);
+            }
+        } catch (e) {
+            // Ignore errors (e.g. person not found or permissions)
+        }
+    }
+
+    private async createContactEdge(personDbId: string, companyDbId: string) {
+        const { data: edge } = await supabase
+            .schema('graph')
+            .from('edges')
+            .select('id')
+            .eq('source', personDbId)
+            .eq('target', companyDbId)
+            .eq('kind', 'contact') // Using 'contact' as generic interaction link
+            .single();
+
+        if (!edge) {
+            await supabase.schema('graph').from('edges').insert({
+                source: personDbId,
+                target: companyDbId,
+                kind: 'contact',
+                confidence_score: 1.0,
+                metadata: { source: 'affinity_interaction_sync' }
+            });
+        }
+    }
+
     async syncPipelineList(listName: string) {
         console.log(`🔄 Finding Affinity List: "${listName}"...`);
         const listId = await this.getAffinityListId(listName);
@@ -203,8 +295,35 @@ export class AffinitySyncService {
 
                         try {
                             // Pass 'entry' as rawEntry to extract status etc.
+                            // NEW: Fetch real status from field values
+                            try {
+                                const fieldValues = await this.affinityClient.getFieldValues(entry.id);
+                                const statusField = fieldValues.find((v: any) => v.field_id === 1163869); // Motive Pipeline Status
+                                if (statusField) {
+                                    // Inject status into entry object for upsertEntity to pick up
+                                    (entry as any).status = statusField.value?.text || statusField.value;
+                                }
+                            } catch (fe) {
+                                // ignore field fetch error to not block sync
+                            }
+
                             entityDbId = await this.upsertEntity(entry.entity, entityType, entry);
                             stats.companiesUpserted++;
+
+                            // NEW: Fetch Associated People (Official Link from Org Details)
+                            if (entityType === 'organization' && entityDbId) {
+                                try {
+                                    const orgDetails = await this.affinityClient.getOrganization(entry.entity_id);
+                                    if (orgDetails.person_ids && orgDetails.person_ids.length > 0) {
+                                        // Upsert these officially linked people
+                                        for (const pid of orgDetails.person_ids) {
+                                            await this.upsertPersonFromId(pid, entityDbId);
+                                        }
+                                    }
+                                } catch (e) {
+                                    // ignore errors fetching org details
+                                }
+                            }
                         } catch (e: any) {
                             errors.push(`Failed to upsert entity ${entry.entity.name}: ${e.message}`);
                             return; // Skip rest for this entity

@@ -22,7 +22,7 @@ export default function TestNeo4jPage() {
           <Neo4jGraphViewer
             onNodeClick={handleNodeClick}
             onNodeHover={handleNodeHover}
-            initialLimit={500}
+            limit={500}
             minImportance={0.1}
             className="w-full h-full"
           />

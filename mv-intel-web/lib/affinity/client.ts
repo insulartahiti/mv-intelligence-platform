@@ -142,4 +142,19 @@ export class AffinityClient {
   getDownloadUrl(fileId: number): string {
     return `${this.baseUrl}/entity-files/download/${fileId}`;
   }
+
+  // Fetch field values for a list entry
+  async getFieldValues(listEntryId: number) {
+    return this.request<any[]>(`/field-values?list_entry_id=${listEntryId}`);
+  }
+
+  // Fetch single person details
+  async getPerson(personId: number) {
+    return this.request<AffinityEntity>(`/persons/${personId}`);
+  }
+
+  // Fetch organization details (includes person_ids)
+  async getOrganization(orgId: number) {
+    return this.request<any>(`/organizations/${orgId}`);
+  }
 }

@@ -78,7 +78,17 @@ async function fetchSubgraph(nodeIds: string[]) {
     }
 
     return {
-        nodes: allNodes.map((n: any) => ({
+        nodes: allNodes
+            .sort((a: any, b: any) => {
+                const indexA = nodeIds.indexOf(a.id);
+                const indexB = nodeIds.indexOf(b.id);
+                // If not in nodeIds (extra secondary nodes), push to end
+                if (indexA === -1 && indexB === -1) return 0;
+                if (indexA === -1) return 1;
+                if (indexB === -1) return -1;
+                return indexA - indexB;
+            })
+            .map((n: any) => ({
             id: n.id,
             label: n.name,
             group: n.type,
@@ -110,12 +120,84 @@ async function findSimilarEntities(entityId: string) {
     const { data: results, error } = await supabase.rpc('search_entities_filtered', {
         query_embedding: entity.embedding,
         match_threshold: 0.6, 
-        match_count: 10,
+        match_count: 20,
         filters: { type: 'organization' }
     });
     
     if (error) console.error('Similarity search error:', error);
     return results || [];
+}
+
+// Helper to fetch key people for an organization
+async function getEntityConnections(entityId: string) {
+    // Fetch inbound edges from People (e.g. works_at, founder, deal_team)
+    const { data: edges } = await supabase
+        .schema('graph')
+        .from('edges')
+        .select('source, kind')
+        .eq('target', entityId)
+        .in('kind', ['works_at', 'owner', 'deal_team', 'advises', 'board_member', 'contact'])
+        .limit(10);
+
+    if (!edges || edges.length === 0) return "";
+
+    const sourceIds = edges.map(e => e.source);
+    const { data: people } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('id, name')
+        .in('id', sourceIds)
+        .eq('type', 'person');
+
+    if (!people || people.length === 0) return "";
+
+    const connections = people.map(p => {
+        // Find relationship kind (simplified)
+        const rel = edges.find(e => e.source === p.id)?.kind;
+        return `${p.name} (${rel})`;
+    });
+
+    return connections.join(', ');
+}
+
+// Helper to fetch rich details for a person
+async function getPersonDetails(personId: string) {
+    const { data: person } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('employment_history, business_analysis, description')
+        .eq('id', personId)
+        .single();
+    
+    if (!person) return "";
+
+    let details = "";
+    
+    // 1. Current Role & History
+    if (person.employment_history) {
+        const history = Array.isArray(person.employment_history) ? person.employment_history : [];
+        const current = history.filter((h: any) => h.current || !h.end_date);
+        if (current.length > 0) {
+            details += `Current Role: ${current.map((h:any) => `${h.title || 'Role'} at ${h.company || 'Unknown'}`).join('; ')}\n`;
+        }
+        
+        const past = history.filter((h: any) => !h.current && h.end_date).slice(0, 3);
+        if (past.length > 0) {
+            details += `Past Roles: ${past.map((h:any) => `${h.title || 'Role'} at ${h.company || 'Unknown'}`).join('; ')}\n`;
+        }
+    }
+
+    // 2. Bio / Description
+    if (person.description) details += `Bio: ${person.description}\n`;
+    
+    // 3. Analysis
+    if (person.business_analysis && typeof person.business_analysis === 'string') {
+        details += `Analysis: ${person.business_analysis.substring(0, 300)}...\n`;
+    } else if (person.business_analysis?.key_achievements) {
+        details += `Achievements: ${JSON.stringify(person.business_analysis.key_achievements).substring(0, 300)}...\n`;
+    }
+    
+    return details;
 }
 
 // Helper for Notes Search
@@ -165,7 +247,8 @@ const tools = [
               countries: { type: "array", items: { type: "string" } },
               industries: { type: "array", items: { type: "string" } },
               isPortfolio: { type: "boolean" },
-              seniority: { type: "array", items: { type: "string" } }
+              seniority: { type: "array", items: { type: "string" } },
+              types: { type: "array", items: { type: "string", enum: ["organization", "person"] }, description: "Filter by entity type. Use ['person'] for people searches, ['organization'] for companies." }
             }
           }
         },
@@ -227,7 +310,7 @@ export async function POST(req: NextRequest) {
             ? `The user works for the VC firm with ID: ${rootEntityId}. When they say 'us', 'we', or 'our portfolio', refer to this entity and its relationships.` 
             : "The user works for 'Motive Partners'.";
 
-        let messages = [
+        let messages: any[] = [
             { 
                 role: "system", 
                 content: `You are an AI analyst for a Venture Capital firm. 
@@ -236,6 +319,8 @@ export async function POST(req: NextRequest) {
                 ${rootContext}
                 
                 - If the user asks a question about market/companies, SEARCH the graph.
+                - For software/tools queries (e.g. "advisor tools"), broaden the query to include "AI", "WealthTech", "Modern" to find innovative solutions.
+                - If the user asks specifically about PEOPLE (investors, founders, experts), use 'types': ['person'] in filters to prioritize finding individuals.
                 - If the user asks about internal discussions, meetings, or history with a company, use 'search_notes'.
                 - If filtering ("show only UK"), call search with updated filters.
                 - If asking for "companies like X", first SEARCH for X to get its ID, then call 'find_similar_companies'.
@@ -270,23 +355,47 @@ export async function POST(req: NextRequest) {
             messages.push(choice); // Add assistant message (potentially with tool calls)
 
             if (choice.tool_calls && choice.tool_calls.length > 0) {
-                const toolCall = choice.tool_calls[0]; // Handle one tool per turn for simplicity
+                const toolCall = choice.tool_calls[0] as any; // Handle one tool per turn for simplicity
                 let contextText = "";
                 let searchResults: any[] = [];
 
-                if (toolCall.function.name === 'search_knowledge_graph') {
+                if (toolCall.function && toolCall.function.name === 'search_knowledge_graph') {
                     const args = JSON.parse(toolCall.function.arguments);
                     console.log('🔍 Tool Call: search_knowledge_graph', args);
-                    searchResults = await searchEntities(args.query, { limit: 10 }, args.filters || {});
+                    // Increase limit to 30 to improve recall for specific names/niche figures
+                    searchResults = await searchEntities(args.query, { limit: 30 }, args.filters || {});
                     
                     if (searchResults.length > 0) {
                         const nodeIds = searchResults.map(r => r.id.toString());
                         finalRelevantNodeIds = [...new Set([...finalRelevantNodeIds, ...nodeIds])];
                         
-                        contextText = searchResults.map(r => {
+                        // Parallel fetch to enrich with connected people
+                        const enrichedContext = await Promise.all(searchResults.map(async (r, index) => {
                             const info = r.business_analysis?.core_business || r.ai_summary || "No description.";
-                            return `Entity: ${r.name} (ID: ${r.id})\nType: ${r.type}\nInfo: ${info}\nPortfolio: ${r.is_portfolio}\nSimilarity: ${r.similarity || 'N/A'}\n`;
-                        }).join('\n---\n');
+                            let text = `Entity: ${r.name} (ID: ${r.id})\nType: ${r.type}\nInfo: ${info}\nPortfolio: ${r.is_portfolio}\nSimilarity: ${r.similarity || 'N/A'}`;
+                            
+                            // Add edges if available (from searchEntities)
+                            if (r.related_edges && r.related_edges.length > 0) {
+                                const edges = r.related_edges.slice(0, 5).map((e: any) => `${e.relationship} -> ${e.targetName} (${e.targetType})`).join(', ');
+                                text += `\nConnections: ${edges}`;
+                            }
+
+                            // Enrich top 5 organizations with key people (Inbound edges)
+                            if (index < 5 && r.type === 'organization') {
+                                const people = await getEntityConnections(r.id);
+                                if (people) text += `\nPeople: ${people}`;
+                            }
+                            
+                            // Enrich top 5 people with rich details (Employment, Analysis)
+                            if (index < 5 && r.type === 'person') {
+                                const details = await getPersonDetails(r.id);
+                                if (details) text += `\n${details}`;
+                            }
+
+                            return text;
+                        }));
+
+                        contextText = enrichedContext.join('\n---\n');
                     } else {
                         contextText = "No results found.";
                     }
@@ -300,10 +409,17 @@ export async function POST(req: NextRequest) {
                         const nodeIds = searchResults.map(r => r.id.toString());
                         finalRelevantNodeIds = [...new Set([...finalRelevantNodeIds, ...nodeIds])];
                         
-                        contextText = searchResults.map(r => {
+                        const enrichedContext = await Promise.all(searchResults.map(async (r, index) => {
                             const info = r.business_analysis?.core_business || r.ai_summary || "No description.";
-                            return `Entity: ${r.name} (ID: ${r.id})\nType: ${r.type}\nInfo: ${info}\nSimilarity: ${r.similarity || 'N/A'}\n`;
-                        }).join('\n---\n');
+                            let text = `Entity: ${r.name} (ID: ${r.id})\nType: ${r.type}\nInfo: ${info}\nSimilarity: ${r.similarity || 'N/A'}`;
+                            
+                            if (index < 5 && r.type === 'organization') {
+                                const people = await getEntityConnections(r.id);
+                                if (people) text += `\nPeople: ${people}`;
+                            }
+                            return text;
+                        }));
+                        contextText = enrichedContext.join('\n---\n');
                     } else {
                         contextText = "No similar companies found.";
                     }

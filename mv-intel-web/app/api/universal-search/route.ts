@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
                 } catch (err) {
                     console.error('Text-to-Cypher failed, falling back to Entity Search:', err);
                     // Fallback to standard entity search if graph query fails
-                    const entityResults = await searchEntities(query, limit, filters);
+                    const entityResults = await searchEntities(query, { limit }, filters);
                     results = {
                         ...entityResults,
                         fallback: true,
@@ -91,11 +91,11 @@ export async function POST(request: NextRequest) {
                         searchType: 'market-insight',
                         data: insight,
                         // We also return standard results to show below the insight
-                        ...(await searchEntities(query, 5, filters))
+                        ...(await searchEntities(query, { limit: 5 }, filters))
                     };
                 } catch (err) {
                     console.error('Graph RAG failed, falling back to Entity Search:', err);
-                    const entityResults = await searchEntities(query, limit, filters);
+                    const entityResults = await searchEntities(query, { limit }, filters);
                     results = {
                         ...entityResults,
                         fallback: true,
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
                     filters.isPortfolio = true;
                 }
 
-                results = await searchEntities(query, limit, filters);
+                results = await searchEntities(query, { limit }, filters);
                 break;
         }
 
