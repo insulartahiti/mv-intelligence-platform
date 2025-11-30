@@ -323,7 +323,7 @@ export class AffinitySyncService {
         }
     }
 
-    async syncPipelineList(listName: string) {
+    async syncPipelineList(listName: string, options: { limit?: number } = {}) {
         console.log(`🔄 Finding Affinity List: "${listName}"...`);
         const listId = await this.getAffinityListId(listName);
 
@@ -333,6 +333,7 @@ export class AffinitySyncService {
         }
 
         console.log(`📋 Found List ID: ${listId}. Fetching entries...`);
+        if (options.limit) console.log(`ℹ️  Limit applied: ${options.limit} entries`);
 
         let pageToken: string | undefined = undefined;
         // Shared counters
@@ -359,12 +360,20 @@ export class AffinitySyncService {
                     break;
                 }
 
-                console.log(`Processing batch of ${entries.length} entries...`);
+                // Apply limit if specified
+                let currentBatch = entries;
+                if (options.limit && (stats.companiesProcessed + currentBatch.length) > options.limit) {
+                    const remaining = options.limit - stats.companiesProcessed;
+                    if (remaining <= 0) break;
+                    currentBatch = currentBatch.slice(0, remaining);
+                }
+
+                console.log(`Processing batch of ${currentBatch.length} entries...`);
 
                 // OPTIMIZATION: Process in chunks to respect rate limits but improve speed
                 const CHUNK_SIZE = 5; 
-                for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
-                    const chunk = entries.slice(i, i + CHUNK_SIZE);
+                for (let i = 0; i < currentBatch.length; i += CHUNK_SIZE) {
+                    const chunk = currentBatch.slice(i, i + CHUNK_SIZE);
                     console.log(`   Processing chunk ${i} to ${i + CHUNK_SIZE}...`);
                     
                     await Promise.all(chunk.map(async (entry: any) => {
@@ -548,7 +557,13 @@ export class AffinitySyncService {
                     await this.updateSyncProgress(stats.companiesProcessed);
                 }
 
-                console.log(`   - Fetched ${entries.length} entries.`);
+                console.log(`   - Fetched ${currentBatch.length} entries.`);
+                
+                if (options.limit && stats.companiesProcessed >= options.limit) {
+                    console.log(`🛑 Limit reached (${options.limit}). Stopping.`);
+                    break;
+                }
+
                 pageToken = response.next_page_token || undefined;
             } while (pageToken);
 

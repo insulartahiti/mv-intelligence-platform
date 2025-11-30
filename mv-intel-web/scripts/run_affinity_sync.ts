@@ -14,8 +14,14 @@ async function runSync() {
     }
 
     const service = new AffinitySyncService();
+    
+    // Check for limit arg
+    const args = process.argv.slice(2);
+    const limitIdx = args.indexOf('--limit');
+    const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : undefined;
+
     // Default list name
-    const stats = await service.syncPipelineList("Motive Ventures Pipeline");
+    const stats = await service.syncPipelineList("Motive Ventures Pipeline", { limit });
 
     console.log('\n📊 Sync Complete:');
     console.log(`   - Companies Processed: ${stats.companiesProcessed}`);
