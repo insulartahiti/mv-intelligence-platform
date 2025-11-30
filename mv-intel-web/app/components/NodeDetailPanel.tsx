@@ -19,7 +19,9 @@ import {
   Zap,
   Layout,
   List,
-  Share2
+  Share2,
+  RefreshCw,
+  ArrowLeft
 } from 'lucide-react'
 
 interface Entity {
@@ -45,6 +47,17 @@ interface Entity {
   areas_of_expertise?: string[]
   publications?: any[]
   business_analysis?: any
+  interactions?: Interaction[]
+  files?: AffinityFile[]
+}
+
+interface Interaction {
+  id: string
+  interaction_type: string
+  subject?: string
+  content_preview?: string
+  started_at: string
+  source?: string
 }
 
 interface AffinityFile {
@@ -70,10 +83,9 @@ interface NodeDetailPanelProps {
   nodeId: string | null
   onClose: () => void
   onSelectNode?: (id: string) => void
+  onBack?: () => void
 }
-
-type TabType = 'overview' | 'details' | 'files' | 'connections';
-
+// ... (skip TabType) ...
 const RecursiveJson = ({ data }: { data: any }) => {
   if (!data) return <span className="text-slate-500 italic">Empty</span>;
   
@@ -132,12 +144,14 @@ const RenderAnalysisContent = ({ data }: { data: any }) => {
 export default function NodeDetailPanel({
   nodeId,
   onClose,
-  onSelectNode
+  onSelectNode,
+  onBack
 }: NodeDetailPanelProps) {
   const [entity, setEntity] = useState<Entity | null>(null)
   const [files, setFiles] = useState<AffinityFile[]>([])
   const [introPaths, setIntroPaths] = useState<IntroPath[]>([])
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
 
   useEffect(() => {
@@ -185,6 +199,10 @@ export default function NodeDetailPanel({
           }
 
           setEntity(entityData)
+          
+          if (entityData.files) {
+             setFiles(entityData.files);
+          }
           
           // Set connections from the response - with deduplication logic on frontend too just in case
           if (responseData.data.connections) {
@@ -304,14 +322,44 @@ export default function NodeDetailPanel({
         }
       }
 
-      // Files are not available in Neo4j, so we'll skip this for now
+      // Files are not available in Neo4j, so we'll skip this for now (handled via Postgres in API now)
+      if (!entity?.files) {
       setFiles([])
+      }
     } catch (error) {
       console.error('Error loading entity data:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  const handleRefresh = async () => {
+    if (!nodeId || refreshing) return;
+    
+    setRefreshing(true);
+    try {
+        const res = await fetch('/api/pipeline/refresh-entity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entityId: nodeId })
+        });
+        
+        if (res.ok) {
+            // Poll for completion or just wait a bit and reload
+            // Ideally we'd use a websocket or polling, but for MVP just wait 5s and reload
+            setTimeout(() => {
+                loadEntityData();
+                setRefreshing(false);
+            }, 5000);
+        } else {
+            console.error('Failed to trigger refresh');
+            setRefreshing(false);
+        }
+    } catch (err) {
+        console.error('Error triggering refresh:', err);
+        setRefreshing(false);
+    }
+  };
 
   const getPipelineStageColor = (stage?: string) => {
     switch (stage) {
@@ -381,8 +429,9 @@ export default function NodeDetailPanel({
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Layout },
-    { id: 'details', label: 'Details & Enrichment', icon: List },
+    { id: 'details', label: 'Details', icon: List },
     { id: 'connections', label: 'Connections', icon: Share2 },
+    { id: 'interactions', label: 'Interactions', icon: MessageSquare },
     { id: 'files', label: 'Files', icon: FileText },
   ]
 
@@ -414,12 +463,32 @@ export default function NodeDetailPanel({
               </div>
             </div>
           </div>
+          
+          <div className="flex items-center gap-2">
+              {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="p-2 text-slate-500 hover:text-slate-300 rounded-full hover:bg-slate-800 transition-colors mr-1"
+                    title="Go Back"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+              )}
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Refresh Intelligence Data"
+                className={`p-2 text-slate-500 hover:text-blue-400 rounded-full hover:bg-slate-800 transition-colors ${refreshing ? 'animate-spin text-blue-500' : ''}`}
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
           <button
             onClick={onClose}
             className="p-2 text-slate-500 hover:text-slate-300 rounded-full hover:bg-slate-800 transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -446,6 +515,11 @@ export default function NodeDetailPanel({
                 {tab.id === 'connections' && introPaths.length > 0 && (
                   <span className="ml-1 bg-slate-800 text-slate-400 py-0.5 px-2 rounded-full text-xs">
                     {introPaths.length}
+                  </span>
+                )}
+                {tab.id === 'interactions' && entity?.interactions && entity.interactions.length > 0 && (
+                  <span className="ml-1 bg-slate-800 text-slate-400 py-0.5 px-2 rounded-full text-xs">
+                    {entity.interactions.length}
                   </span>
                 )}
               </button>
@@ -760,6 +834,48 @@ export default function NodeDetailPanel({
                     <Share2 className="w-12 h-12 text-slate-700 mx-auto mb-3" />
                     <h3 className="text-lg font-medium text-slate-200">No Connections Found</h3>
                     <p className="text-slate-500">There are no known connections or introduction paths for this entity.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'interactions' && (
+              <div className="space-y-4">
+                {entity?.interactions && entity.interactions.length > 0 ? (
+                  entity.interactions.map((interaction, index) => (
+                    <div key={interaction.id || index} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                         <div className="flex items-center gap-2">
+                             <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${
+                                 interaction.interaction_type === 'email' ? 'bg-blue-900/30 text-blue-400 border border-blue-800' :
+                                 interaction.interaction_type === 'meeting' ? 'bg-purple-900/30 text-purple-400 border border-purple-800' :
+                                 'bg-slate-800 text-slate-400 border border-slate-700'
+                             }`}>
+                                 {interaction.interaction_type}
+                             </span>
+                             <span className="text-slate-500 text-sm">{formatDate(interaction.started_at)}</span>
+                         </div>
+                         {interaction.source && (
+                             <span className="text-xs text-slate-600 uppercase tracking-wide">{interaction.source}</span>
+                         )}
+                      </div>
+                      
+                      {interaction.subject && (
+                          <h4 className="text-slate-200 font-medium mb-2">{interaction.subject}</h4>
+                      )}
+                      
+                      {interaction.content_preview && (
+                          <p className="text-slate-400 text-sm leading-relaxed line-clamp-3">
+                              {interaction.content_preview}
+                          </p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 bg-slate-900 rounded-xl border border-slate-800 border-dashed">
+                    <MessageSquare className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                    <h3 className="text-lg font-medium text-slate-200">No Interactions Found</h3>
+                    <p className="text-slate-500">There are no tracked interactions (emails, meetings) for this entity.</p>
                   </div>
                 )}
               </div>

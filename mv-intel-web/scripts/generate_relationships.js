@@ -192,7 +192,7 @@ async function processBatch() {
   const { data: entities, error } = await supabase
     .schema('graph')
     .from('entities')
-    .select('id, name, type, business_analysis')
+    .select('id, name, type, business_analysis, is_internal')
     .not('business_analysis', 'is', null)
     .is('relationships_extracted_at', null)
     .limit(BATCH_SIZE);
@@ -236,6 +236,13 @@ async function processBatch() {
       
       if (kindMap[rel.relationship_type]) {
         dbKind = kindMap[rel.relationship_type];
+      }
+
+      // Safety Check: Internal people cannot "work at" external companies (usually)
+      // This prevents AI hallucinations where it sees a VC partner on a board/deal team and thinks they are an employee.
+      if (dbKind === 'works_at' && entity.is_internal) {
+          console.log(`  - Skipping 'works_at' for internal person ${entity.name}`);
+          continue;
       }
 
       try {

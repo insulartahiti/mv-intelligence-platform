@@ -142,7 +142,7 @@ Format: JSON object only.`
 
       const response = await this.retry(async () => {
         return await perplexity.chat.completions.create({
-          model: 'llama-3.1-sonar-large-128k-online', // Updated model name for reliability
+          model: 'sonar-pro', // Updated to latest stable model
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1
         })
@@ -217,7 +217,7 @@ Format: JSON object.`
 
       const response = await this.retry(async () => {
         return await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-5.1',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
           temperature: 0.2

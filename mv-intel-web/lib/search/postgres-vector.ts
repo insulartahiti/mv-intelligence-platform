@@ -89,10 +89,11 @@ async function fetchRelatedEdges(entityIds: string[]) {
         if (!edgesBySource[edge.source]) {
             edgesBySource[edge.source] = [];
         }
-        if (edgesBySource[edge.source].length < 5) {
+        if (edgesBySource[edge.source].length < 10) { // Increased limit for chat context
              edgesBySource[edge.source].push({
                 targetId: edge.target.id,
                 targetName: edge.target.name,
+                targetType: edge.target.type, // Added targetType
                 relationship: edge.kind,
                 confidence: edge.confidence_score
             });
@@ -105,9 +106,10 @@ async function fetchRelatedEdges(entityIds: string[]) {
 // Main Search Function
 export async function searchEntities(
     query: string, 
-    limit: number = 20, 
+    options: { limit?: number } = {},
     filters: SearchFilters = {}
-): Promise<{ results: SearchResult[], total: number }> {
+): Promise<SearchResult[]> {
+    const limit = options.limit || 20;
     
     // Generate embedding
     const queryEmbedding = await generateEmbedding(query);
@@ -120,6 +122,17 @@ export async function searchEntities(
         filterJson.queryText = query;
     }
 
+    // RELAXATION: Remove fuzzy filters (industries, countries, taxonomy) from hard filtering
+    // because the DB expects exact string matches, but data might be "Fintech; Startup" or "United Kingdom" vs "UK"
+    // We rely on the Vector Search to handle these semantic matches.
+    // We ONLY keep boolean flags or strict enums that we know are consistent.
+    delete filterJson.industries;
+    delete filterJson.countries;
+    delete filterJson.taxonomy; 
+    // Keep isPortfolio, dateRange, seniority (if strictly mapped)
+
+    console.log(`🔎 Searching: "${query}" | Filters:`, JSON.stringify(filterJson));
+
     // Map date range to flat keys expected by SQL
     if (filters.dateRange?.start) filterJson.dateStart = filters.dateRange.start;
     if (filters.dateRange?.end) filterJson.dateEnd = filters.dateRange.end;
@@ -127,7 +140,7 @@ export async function searchEntities(
     // Execute RPC
     const { data: results, error } = await supabase.rpc('search_entities_filtered', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.3, // Default threshold
+        match_threshold: 0.1, // Lower threshold for text-embedding-3-large
         match_count: limit,
         filters: filterJson
     });
@@ -148,9 +161,6 @@ export async function searchEntities(
         }));
     }
 
-    return {
-        results: enrichedResults,
-        total: enrichedResults.length
-    };
+    return enrichedResults;
 }
 

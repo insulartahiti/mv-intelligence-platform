@@ -48,6 +48,17 @@ interface AffinityReminder {
   created_at: string;
 }
 
+export interface AffinityFile {
+  id: number;
+  name: string;
+  size: number;
+  organization_id?: number;
+  person_id?: number;
+  opportunity_id?: number;
+  uploader_id: number;
+  created_at: string;
+}
+
 interface AffinityListEntry {
   id: number;
   entity_id: number;
@@ -120,5 +131,15 @@ export class AffinityClient {
   // Fetch reminders
   async getReminders(entityType: 'person' | 'organization', entityId: number) {
     return this.request<{ reminders: AffinityReminder[], next_page_token: string | null }>(`/reminders?${entityType}_id=${entityId}`);
+  }
+
+  // Fetch files
+  async getFiles(entityType: 'person' | 'organization', entityId: number) {
+    return this.request<{ entity_files: AffinityFile[], next_page_token: string | null }>(`/entity-files?${entityType}_id=${entityId}`);
+  }
+
+  // Get download URL for a file (returns 302 redirect usually, but we might just store the link construction)
+  getDownloadUrl(fileId: number): string {
+    return `${this.baseUrl}/entity-files/download/${fileId}`;
   }
 }

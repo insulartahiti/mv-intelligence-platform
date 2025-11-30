@@ -6,8 +6,8 @@
 
 **Progress**:
 - **System**:
-  - `enhanced_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client to bypass server-side DNS resolution issues. Enriches Organizations via Web Scraper -> Perplexity -> GPT-5.1.
-  - `enhanced_person_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client. Enriches People via Perplexity -> GPT-5.1.
+  - `enhanced_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client to bypass server-side DNS resolution issues. Enriches Organizations via Web Scraper -> Perplexity (`sonar-pro`) -> GPT-5.1.
+  - `enhanced_person_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client. Enriches People via Perplexity (`sonar-pro`) -> GPT-5.1.
   - `scripts/generate_relationships.js`: **Fixed & Running**. Refactored to use `supabase-js` client. Extracts market relationships using **GPT-5.1**.
   - `mv-intel-web/scripts/summarize_interactions.ts`: **Fixed & Running**. Refactored to use `supabase-js` client. Summarizes interaction history using **GPT-5.1**.
   - **Quality Control**:
@@ -37,17 +37,6 @@
   - [x] Integrated `ChatInterface` into Knowledge Graph page (split view).
   - [x] **Tested**: Verified end-to-end chat flow via API (Latency ~15s cold start, functional).
   - [x] **Graph Context Fix**: Added neighbor retrieval to RAG context to support queries like "Co-invested with X".
-  - [x] **Search UI**: Added `SearchResultsList` component to display all relevant entities under the graph.
-  - [x] **Graph UI**: Updated `Neo4jVisNetwork` for full Dark Mode support and optimized physics for smoother navigation.
-  - [x] **Pipeline Refactor**: Migrated `enhanced_embedding_generator.js` and `enhanced_person_embedding_generator.js` to use `supabase-js` client, eliminating DNS/connection issues with `pg` in serverless environments.
-  - [x] **API Refactor**: Migrated `/api/neo4j/node-details` to use `supabase-js` client to ensure rich data (AI Analysis, Files) loads reliably.
-  - [x] **Bug Fix**: Fixed `fetchSubgraph` to include `business_analysis` so search result tiles show descriptions.
-  - [x] **UX Feature**: Added "Entity Search" (Autocomplete) to sidebar for direct lookup.
-  - [x] **UX Feature**: Implemented Navigation History (Back button) in Node Detail Panel.
-  - [x] **Consolidation**: Unified Search/Chat interface (removed separate Entity Search) and implemented `SearchResultsList` for tile-based browsing.
-  - [x] **Evaluation**: Conducted architectural review against "Conversational Knowledge Graph" proposal.
-  - [x] **Data Integrity**: Updated pipeline scripts (`enhanced_embedding_generator.js`) to auto-sync `business_analysis` content to the legacy `ai_summary` field.
-  - [x] **Migration**: Running `scripts/migrate_summaries.ts` in background to backfill `ai_summary` for 29k+ entities.
 - [x] Switch to GPT-5.1 for all analysis.
 - [x] Implement robust Perplexity fallback.
 - [x] Fix `supabase-js` 0-row bug.
@@ -73,9 +62,16 @@
   - [x] **Fix**: Resolved DNS resolution errors by migrating `run_pipeline.js` and `systematic_cleanup.js` to use `supabase-js` client instead of direct Postgres connection.
   - [x] **Fix**: Resolved `42P10` ON CONFLICT errors in `sync.ts` by implementing manual upsert logic.
   - [x] **Fix**: Refactored ALL pipeline scripts (`enhanced_embedding_generator.js`, `enhanced_person_embedding_generator.js`, `summarize_interactions.ts`, `generate_relationships.js`) to use `supabase-js` client, ensuring full pipeline functionality despite server-side DNS issues with direct Postgres connection.
+  - [x] **Fix**: Updated Perplexity API model from deprecated `llama-3.1-sonar` to `sonar-pro`.
+  - [x] **Update**: Standardized all AI analysis tasks to use **GPT-5.1**.
 - [x] **Affinity Integration**:
   - [x] Backend: Updated `node-details` API.
   - [x] Frontend: Updated `NodeDetailPanel` to display Interactions and Files.
+- [x] **Deep RAG (Notes)**:
+  - [x] Confirmed `graph.interactions` table exists.
+  - [x] Created `api/cron/embed-interactions` to generate embeddings for notes/meetings.
+  - [x] Updated Chat Agent with `search_notes` tool.
+  - [x] **Schema Mismatch Fix**: Created `supabase/migrations/20251130_fix_interactions_schema.sql` to resolve missing columns blocking sync.
 
 ## 2. Active Processes & Monitoring
 
@@ -83,16 +79,15 @@
     - Backend: `/api/chat` (Next.js)
     - Frontend: `ChatInterface` (React)
     - Database: `graph.conversations`, `graph.messages`
-2.  **Affinity Sync** (`run_affinity_sync.ts`)
-    - Pulls Entities, Notes, Meetings, Emails, Reminders, **and Files**.
-    - Runs in parallel batches of 5.
-    - Updates `graph.history_log`.
-3.  **Interaction Summarization** (`summarize_interactions.ts`)
-    - Aggregates recent interactions into `graph.entity_notes_rollup`.
-4.  **Enrichment & Graph Sync**
-    - `enhanced_embedding_generator.js`
-    - `generate_relationships.js`
-    - `migrate-to-neo4j.ts`
+2.  **Automated Data Pipeline** (`run_pipeline.js`)
+    - **Execution**: Runs hourly via GitHub Actions (Server-side) or manually via Status Page.
+    - **Steps**:
+        1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
+        2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
+        3.  `summarize_interactions.ts`: Aggregates interaction history.
+        4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
+        5.  `generate_relationships.js`: Infers market relationships.
+        6.  `migrate-to-neo4j.ts`: Syncs graph data.
 
 ## 3. Usage & Testing
 
@@ -107,9 +102,11 @@
 
 ## 4. Next Steps (Handoff)
 
-1.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
-2.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
-3.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
+1.  **Monitor Sync**: The pipeline is running (PID 68564). Interactions (notes/meetings) should start populating in `graph.interactions`.
+2.  **Embed Notes**: Once data appears, run `curl http://localhost:3000/api/cron/embed-interactions` to generate vector embeddings.
+3.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
+3.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
+4.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
 
 ## 5. Technical Notes
 

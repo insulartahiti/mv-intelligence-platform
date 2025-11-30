@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { classifyIntent } from '@/lib/search/intent';
+
+export const dynamic = 'force-dynamic';
+
 import { searchEntities, SearchFilters } from '@/lib/search/postgres-vector';
 import { generateAndExecuteCypher } from '@/lib/search/cypher-generator';
 import { generateMarketInsight } from '@/lib/search/rag-service';

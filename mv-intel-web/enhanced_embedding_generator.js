@@ -161,7 +161,7 @@ Output ONLY valid JSON:
   "industry_position": { "segment": "Segment", "differentiators": ["diff1"] }
 }`
         const completion = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-5.1',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' }
         })
@@ -184,7 +184,7 @@ Output ONLY valid JSON:
 }`
       
       const completion = await perplexity.chat.completions.create({
-        model: 'llama-3.1-sonar-large-128k-online',
+        model: 'sonar-pro',
         messages: [{ role: 'user', content: prompt }]
       })
       
@@ -233,7 +233,7 @@ Output ONLY valid JSON:
 }`
 
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o', // Use 4o for classification accuracy
+        model: 'gpt-5.1', // Use 5.1 for classification accuracy
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' }
       })

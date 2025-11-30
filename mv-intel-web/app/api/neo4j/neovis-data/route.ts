@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
+import neo4j from 'neo4j-driver'; // Import neo4j for integer types
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
         WITH n
         ORDER BY n.importance DESC, n.name ASC
         SKIP $cursor
-        LIMIT ` + limitInt + `
+        LIMIT $limit
         MATCH (n)-[r:RELATES]-(m:Entity)
         WHERE m.importance >= $minImportance OR m.is_internal = true
         RETURN n, r, m
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest) {
       `;
       params = { 
         minImportance: Number(minImportance),
-        cursor: Number(cursor),
+        cursor: neo4j.int(Number(cursor)), // Use neo4j.int for integers
+        limit: neo4j.int(limitInt),        // Use neo4j.int for integers
         expandNodeId: expandNodeId
       };
     } else {
@@ -48,14 +50,15 @@ export async function GET(request: NextRequest) {
         WITH n
         ORDER BY n.importance DESC, n.name ASC
         SKIP $cursor
-        LIMIT ` + limitInt + `
+        LIMIT $limit
         MATCH (n)-[r:RELATES]-(m:Entity)
         WHERE m.importance >= $minImportance OR m.is_internal = true
         RETURN n, r, m
       `;
       params = { 
         minImportance: Number(minImportance),
-        cursor: Number(cursor)
+        cursor: neo4j.int(Number(cursor)),
+        limit: neo4j.int(limitInt)
       };
     }
 

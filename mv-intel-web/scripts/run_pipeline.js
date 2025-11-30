@@ -125,6 +125,10 @@ async function runPipeline() {
     // Pull live data from Affinity pipeline first
     await runScript('run_affinity_sync.ts');
 
+    // 2.1. Embed Interactions
+    // Generate vector embeddings for new notes/emails so they are searchable
+    await runScript('embed_interactions.ts');
+
     // 2a. Reset Stale Enrichment (Optional - run only if significant upgrades happened)
     // Uncomment this line to force full re-enrichment
     // await runScript('reset_enrichment.ts');

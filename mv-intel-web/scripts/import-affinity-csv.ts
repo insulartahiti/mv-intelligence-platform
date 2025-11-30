@@ -208,7 +208,7 @@ async function importAffinityCSV() {
             relevance_score: 0.5,
             confidence_score: 0.5,
             is_active: true,
-            is_internal: false,
+            is_internal: true,
             is_portfolio: false,
             is_pipeline: false
           }

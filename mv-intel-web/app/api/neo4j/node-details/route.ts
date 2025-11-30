@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
-import pool from '../../../../lib/postgres';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase Client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+});
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -37,27 +44,68 @@ export async function GET(request: NextRequest) {
     const node = nodeResult.records[0].get('n');
     const dbId = node.properties.id; // Get the Postgres UUID
 
-    // --- FETCH RICH DATA FROM POSTGRES (using pg directly) ---
+    // --- FETCH RICH DATA FROM POSTGRES (using Supabase Client) ---
     let postgresData: any = {};
+    let interactions: any[] = [];
+    let files: any[] = [];
+
     if (dbId) {
       try {
-        const client = await pool.connect();
-        try {
-            const res = await client.query(
-                `SELECT business_analysis, enrichment_data, employment_history, publications, areas_of_expertise, enrichment_source 
-                 FROM graph.entities 
-                 WHERE id = $1`,
-                [dbId]
-            );
-            
-            if (res.rows.length > 0) {
-                postgresData = res.rows[0];
-            }
-        } finally {
-            client.release();
+        // 1. Fetch Entity Enrichment
+        const { data: entityData, error: entityError } = await supabase
+            .schema('graph')
+            .from('entities')
+            .select('business_analysis, enrichment_data, employment_history, publications, areas_of_expertise, enrichment_source')
+            .eq('id', dbId)
+            .single();
+        
+        if (entityData) {
+            postgresData = entityData;
+        } else if (entityError) {
+            console.warn(`Failed to fetch Postgres data for ${dbId}:`, entityError.message);
         }
-      } catch (pgError) {
-        console.warn(`Failed to fetch Postgres data for ${dbId}:`, pgError);
+
+        // 2. Fetch Interactions (Emails, Meetings)
+        try {
+            const type = (node.properties.type || node.labels[0] || '').toLowerCase();
+            let query = supabase.schema('graph').from('interactions').select('*').order('started_at', { ascending: false }).limit(50);
+            
+            if (type === 'organization') {
+                query = query.eq('company_id', dbId);
+            } else {
+                // For person, we need to check if ID is in participants array.
+                // Supabase filter for array contains: .contains('participants', [dbId]) ??
+                // Actually 'participants' is text[] array. .cs (contains) works.
+                query = query.contains('participants', [dbId]);
+            }
+            
+            const { data: intData, error: intError } = await query;
+            if (intData) interactions = intData;
+            if (intError) console.warn('Interaction fetch error:', intError.message);
+
+        } catch (err) {
+            console.warn(`Failed to fetch interactions for ${dbId}:`, err);
+        }
+
+        // 3. Fetch Affinity Files
+        try {
+            const { data: filesData, error: filesError } = await supabase
+                .schema('graph')
+                .from('affinity_files')
+                .select('id, name, url, size_bytes, ai_summary, created_at')
+                .eq('entity_id', dbId)
+                .order('created_at', { ascending: false })
+                .limit(20);
+            
+            if (filesData) files = filesData;
+            if (filesError) console.warn('Files fetch error:', filesError.message);
+
+        } catch (err) {
+            console.warn(`Failed to fetch files for ${dbId}:`, err);
+        }
+
+      } catch (err: any) {
+        console.warn(`Failed to fetch extra data for ${dbId}:`, err.message);
       }
     }
     // -------------------------------------
@@ -69,6 +117,8 @@ export async function GET(request: NextRequest) {
       properties: {
         ...node.properties,
         ...postgresData, // Merge rich data
+        interactions,    // Add interactions
+        files,           // Add files
         type: node.properties.type || node.labels[0] || 'Entity',
         importance: node.properties.importance || 0,
         is_internal: node.properties.is_internal || false,
