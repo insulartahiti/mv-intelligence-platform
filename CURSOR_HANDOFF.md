@@ -122,6 +122,9 @@
       - [x] **User Management**: Implemented `allowed_users` table in Supabase and logic to add/delete/verify users.
       - [x] **Personalization**: Added "Good morning, [Name]" greeting to the main knowledge graph page.
       - [x] **Client Optimization**: Implemented Singleton pattern for Supabase client to prevent "Multiple GoTrueClient instances" warnings and ensure stable auth state.
+      - [x] **Name Formatting**: Updated greeting to format names from email (e.g. "Harsh" instead of "harsh.govil") correctly.
+      - [x] **Context Injection**: Connected User Entity from graph (matching by name) to the Chat Agent, enabling personalized answers (e.g. "my deals").
+      - [x] **Affinity Sync Fix**: Updated `sync.ts` to extract Owners, Sourced By, and Deal Team fields and create relationship edges in the graph.
 
 ## 2. Active Processes & Monitoring
 
@@ -135,7 +138,6 @@
         1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
             - **Update**: Relaxed error handling to treat partial sync failures as warnings.
             - **Update**: Robust field mapping for critical business data (Status, Fund, Valuation).
-            - **Update**: Fixed schema mismatch (`participants` column) to prevent silent sync failures.
         2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
         3.  `summarize_interactions.ts`: Aggregates interaction history.
         4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
@@ -156,11 +158,12 @@
 
 ## 4. Next Steps (Handoff)
 
-1.  **Monitor Sync**: Trigger the GitHub Action now that the code is fixed and pushed.
-2.  **Completion Estimate**: ~1.5 hours remaining for full completion (Entity migration -> Edge migration -> Person Enrichment -> Relationships -> Final Cleanup).
-3.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
-4.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
-5.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
+1.  **Verify Sync Script**: The `run_affinity_sync.ts` script with dynamic imports encountered a timeout during local testing. Verify execution in the full environment.
+2.  **Monitor Edge Creation**: Check if the new sync logic correctly creates "contact" or "deal_team" edges for Owners/Sourced By fields.
+3.  **Completion Estimate**: ~1 hour remaining for final verification and cleanup.
+4.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
+5.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
+6.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
 
 ## 5. Technical Notes
 

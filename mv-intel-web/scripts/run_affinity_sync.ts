@@ -1,11 +1,15 @@
-import { AffinitySyncService } from '../lib/affinity/sync';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load env vars
-dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+// Load env vars FIRST
+const envPath = path.resolve(__dirname, '../.env.local');
+console.log(`Loading env from ${envPath}`);
+dotenv.config({ path: envPath });
 
 async function runSync() {
+    // Dynamic import to ensure env vars are loaded first
+    const { AffinitySyncService } = await import('../lib/affinity/sync');
+    
     console.log('🚀 Starting Affinity Pipeline Sync...');
     
     if (!process.env.AFFINITY_API_KEY) {
