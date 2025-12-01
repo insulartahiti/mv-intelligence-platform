@@ -133,7 +133,7 @@ async function summarizeInteractions() {
                     },
                     { role: "user", content: `Summarize the following interaction history into a single paragraph:\n\n${context}` }
                 ],
-                max_tokens: 300
+                max_completion_tokens: 300
             });
 
             const summary = completion.choices[0].message.content;
