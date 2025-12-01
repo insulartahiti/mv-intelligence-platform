@@ -53,7 +53,7 @@ jobs:
             FLAGS="$FLAGS --full"
           fi
           echo "Running Intelligent Cleanup with flags: $FLAGS"
-          npx tsx scripts/intelligent_cleanup.ts $FLAGS
+            npx tsx scripts/intelligent_cleanup.ts $FLAGS
 
       - name: Sync Changes to Neo4j (Always Runs)
         if: always()

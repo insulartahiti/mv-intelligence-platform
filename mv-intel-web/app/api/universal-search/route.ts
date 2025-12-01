@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
             }
             if (taxonomyResult.filters.countries && !filters.countries) {
                 filters.countries = taxonomyResult.filters.countries;
-            }
+                }
             if (taxonomyResult.filters.isPortfolio) {
                 filters.isPortfolio = true;
             }
@@ -57,21 +57,21 @@ export async function POST(request: NextRequest) {
         const lowerQuery = query.toLowerCase();
 
         // 3. Additional filter inference from query keywords
-        const typeKeywords = {
-            person: ['who', 'person', 'people', 'individual', 'founder', 'ceo'],
-            organization: ['company', 'companies', 'firm', 'agency']
-        };
+                const typeKeywords = {
+                    person: ['who', 'person', 'people', 'individual', 'founder', 'ceo'],
+                    organization: ['company', 'companies', 'firm', 'agency']
+                };
         if (!filters.types) {
-            if (typeKeywords.person.some(kw => lowerQuery.includes(kw))) {
+                if (typeKeywords.person.some(kw => lowerQuery.includes(kw))) {
                 filters.types = ['person'];
-            } else if (typeKeywords.organization.some(kw => lowerQuery.includes(kw))) {
+                } else if (typeKeywords.organization.some(kw => lowerQuery.includes(kw))) {
                 filters.types = ['organization'];
             }
-        }
+                }
 
-        // Portfolio Inference
+                // Portfolio Inference
         if (['portfolio', 'invested', 'investments', 'my portfolio', 'our portfolio'].some(kw => lowerQuery.includes(kw))) {
-            filters.isPortfolio = true;
+                    filters.isPortfolio = true;
         }
 
         // 4. Execute search
