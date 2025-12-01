@@ -86,6 +86,7 @@ Run these from the `mv-intel-web/` directory:
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
 | **Enrich Only** | `npm run pipeline:enrich` | Skips sync; runs AI/Embeddings/Graph only |
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
+| **Check Health** | `npx tsx scripts/check_pipeline_health.ts` | Reports % complete for enrichment, embeddings, and summaries |
 
 ### GitHub Actions Workflows
 *   **Data Pipeline Sync**: Runs daily at 6 AM UTC (Full Sync).
@@ -261,6 +262,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Interaction Summary Fixes**: 
     *   Corrected column mapping (`interaction_type`, `ai_summary`) in `summarize_interactions.ts`.
     *   Updated OpenAI parameter (`max_tokens` → `max_completion_tokens`) for GPT-5.1 compatibility.
+    *   Aligned embedding dimensions to 2000d (`text-embedding-3-large`) to match DB schema.
+*   **Pipeline Monitoring**: Added `scripts/check_pipeline_health.ts` for real-time progress tracking (Enrichment %, Embedding coverage).
 *   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
 *   **Location Enrichment with Perplexity**: Added `enrichLocation` to `intelligent_cleanup.ts`. Uses a two-step process (Internal GPT-5.1 → External Perplexity Sonar) to find headquarters location for entities with missing geographic data.
 *   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
