@@ -367,11 +367,49 @@ function TaxonomyDashboard({
     return (
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header Area */}
-            <div className="p-8 pb-4 border-b border-slate-800/50 backdrop-blur-sm sticky top-0 z-20 bg-slate-950/80">
+            <div className="p-8 pb-6 border-b border-slate-800/50 backdrop-blur-sm sticky top-0 z-20 bg-slate-950/80">
+                {/* Breadcrumbs */}
+                <div className="flex items-center gap-2 text-xs text-slate-500 mb-3 font-mono">
+                    {parts.map((part, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                            {i > 0 && <ChevronRight size={12} />}
+                            <span 
+                                className={`cursor-pointer hover:text-blue-400 ${i === parts.length - 1 ? 'text-slate-300 font-bold' : ''}`}
+                                onClick={() => onNavigate(parts.slice(0, i + 1).join('.'))}
+                            >
+                                {part}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Title Row with Stats */}
+                <div className="flex items-start justify-between mb-2">
+                    <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                        {node.label}
+                        <span className="text-sm font-normal text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-800 font-mono">
+                            {parts[parts.length - 1]}
+                        </span>
+                    </h1>
+                    <div className="flex gap-3">
+                        <div className="text-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800 min-w-[90px]">
+                            <div className="text-xl font-bold text-blue-400">{totalBranchCount.toLocaleString()}</div>
+                            <div className="text-xs text-slate-500 uppercase">Entities</div>
+                        </div>
+                        <div className="text-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800 min-w-[90px]">
+                            <div className="text-xl font-bold text-emerald-400">{Object.keys(subCategories).length}</div>
+                            <div className="text-xs text-slate-500 uppercase">Subcats</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Subtitle / Description */}
+                <p className="text-slate-400 mb-5">{node.description || 'No description available.'}</p>
+
                 {/* Spotlight-style Search Bar */}
-                <div className="relative mb-6 max-w-2xl">
+                <div className="relative">
                     <div className="relative">
-                        <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
                         <input
                             type="text"
                             placeholder="Search taxonomy categories or companies..."
@@ -379,7 +417,7 @@ function TaxonomyDashboard({
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => setIsSearchFocused(true)}
                             onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                            className="w-full pl-12 pr-10 py-3.5 bg-slate-900/80 border border-slate-700/50 rounded-xl text-base text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 focus:bg-slate-900 transition-all shadow-lg"
+                            className="w-full pl-11 pr-10 py-3 bg-slate-900/60 border border-slate-700/50 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 focus:bg-slate-900 transition-all"
                         />
                         {searchQuery && (
                             <button 
@@ -393,7 +431,7 @@ function TaxonomyDashboard({
                     
                     {/* Search Results Dropdown */}
                     {isSearchFocused && searchResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 max-h-[450px] overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 max-h-[400px] overflow-y-auto">
                             <div className="p-2">
                                 {searchResults.map((result, i) => (
                                     <div
@@ -437,43 +475,6 @@ function TaxonomyDashboard({
                             <p className="text-sm text-slate-500">No results found for "{searchQuery}"</p>
                         </div>
                     )}
-                </div>
-
-                {/* Breadcrumbs */}
-                <div className="flex items-center gap-2 text-xs text-slate-500 mb-4 font-mono">
-                    {parts.map((part, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                            {i > 0 && <ChevronRight size={12} />}
-                            <span 
-                                className={`cursor-pointer hover:text-blue-400 ${i === parts.length - 1 ? 'text-slate-300 font-bold' : ''}`}
-                                onClick={() => onNavigate(parts.slice(0, i + 1).join('.'))}
-                            >
-                                {part}
-                            </span>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="flex items-start justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                            {node.label}
-                            <span className="text-sm font-normal text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-800 font-mono">
-                                {parts[parts.length - 1]}
-                            </span>
-                        </h1>
-                        <p className="text-slate-400 max-w-2xl">{node.description || 'No description available.'}</p>
-                    </div>
-                    <div className="flex gap-4">
-                        <div className="text-center bg-slate-900/50 p-3 rounded-lg border border-slate-800 min-w-[100px]">
-                            <div className="text-2xl font-bold text-blue-400">{totalBranchCount.toLocaleString()}</div>
-                            <div className="text-xs text-slate-500 uppercase">Entities</div>
-                        </div>
-                        <div className="text-center bg-slate-900/50 p-3 rounded-lg border border-slate-800 min-w-[100px]">
-                            <div className="text-2xl font-bold text-emerald-400">{Object.keys(subCategories).length}</div>
-                            <div className="text-xs text-slate-500 uppercase">Subcats</div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
