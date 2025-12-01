@@ -84,7 +84,7 @@ Run these from the `mv-intel-web/` directory:
 | :--- | :--- | :--- |
 | **Start App** | `npm run dev` | Starts Next.js on localhost:3000 |
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
-| **Enrich Only** | `node scripts/run_enrichment_only.js` | Skips Affinity sync, runs AI enrichment & graph sync |
+| **Enrich Only** | `npm run pipeline:enrich` | Skips sync; runs AI/Embeddings/Graph only |
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
 
 ### GitHub Actions Workflows
@@ -256,6 +256,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Agent Strategy Enhancement**: Updated Chat Agent system prompt to support "Strategy-First" list building. Queries like "Who should I invite..." now trigger a segment-based multi-search workflow (e.g. "Vertical SaaS", "Competitors") rather than single keyword searches.
 *   **Taxonomy Threshold Fix**: Aligned confidence thresholds between `detectTaxonomy()` (0.85→0.7) and `universal-search/route.ts` (0.7) using shared `TAXONOMY_CONFIDENCE_THRESHOLD` constant. Prevents unnecessary LLM calls for high-confidence fast matches.
 *   **GPT-5.1 Taxonomy Classifier**: Updated `lib/search/taxonomy-classifier.ts` to use GPT-5.1. Now imports schema from centralized source.
+*   **Enrichment-Only Pipeline**: Added `scripts/run_enrichment_only.js` and GitHub Action to allow re-running AI enrichment without full Affinity sync. Useful for error recovery.
+*   **Taxonomy Hallucination Fix**: Updated `enhanced_embedding_generator.js` to use centralized schema and force validation (invalid codes -> `IFT.UNKNOWN`). Prevents entities from disappearing from the dashboard.
 *   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
 *   **Location Enrichment with Perplexity**: Added `enrichLocation` to `intelligent_cleanup.ts`. Uses a two-step process (Internal GPT-5.1 → External Perplexity Sonar) to find headquarters location for entities with missing geographic data.
 *   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
