@@ -103,7 +103,16 @@ async function summarizeInteractions() {
                 .order('occurred_at', { ascending: false })
                 .limit(20);
 
-                if (error || !interactions || interactions.length === 0) return;
+                if (error) {
+                    console.error(`   [Error] Failed to fetch interactions for ${entity_id}:`, error.message);
+                    return;
+                }
+
+                if (!interactions || interactions.length === 0) {
+                    // This is unexpected because we found this ID in the interactions table earlier
+                    console.warn(`   [Warn] No interactions found for ${entity_id} despite being in index. Skipping.`);
+                    return;
+                }
 
             // 3. Construct Context
             let context = `Recent Interactions for Entity:\n`;
