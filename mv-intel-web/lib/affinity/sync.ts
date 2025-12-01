@@ -92,11 +92,11 @@ export class AffinitySyncService {
         let existing = null;
         try {
             const { data } = await supabase
-                .schema('graph')
-                .from('entities')
-                .select('id, pipeline_stage, valuation_amount')
-                .eq(type === 'organization' ? 'affinity_org_id' : 'affinity_person_id', type === 'organization' ? entityData.id : entityData.id)
-                .single();
+            .schema('graph')
+            .from('entities')
+            .select('id, pipeline_stage, valuation_amount')
+            .eq(type === 'organization' ? 'affinity_org_id' : 'affinity_person_id', type === 'organization' ? entityData.id : entityData.id)
+            .single();
             existing = data;
         } catch (e) {
             // ignore
@@ -179,11 +179,11 @@ export class AffinitySyncService {
              error = result.error;
         } else {
              const result = await supabase
-                .schema('graph')
-                .from('entities')
+            .schema('graph')
+            .from('entities')
                 .insert(newData)
                 .select('id, pipeline_stage, valuation_amount')
-                .single();
+            .single();
              upserted = result.data;
              error = result.error;
         }
@@ -360,7 +360,7 @@ export class AffinitySyncService {
             do {
                 const response = await this.affinityClient.getListEntries(listId, pageToken);
                 const entries = response.list_entries; 
-                
+
                 if (!entries || entries.length === 0) {
                     console.log('No more entries to fetch.');
                     break;

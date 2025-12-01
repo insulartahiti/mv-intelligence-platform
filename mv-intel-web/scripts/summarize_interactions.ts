@@ -125,8 +125,8 @@ async function summarizeInteractions() {
             if (upsertError) {
                 console.error(`Error upserting summary for ${entity_id}:`, upsertError);
             } else {
-                console.log(`   ✅ Summarized ${entity_id} (${interactions.length} interactions)`);
-                updated++;
+            console.log(`   ✅ Summarized ${entity_id} (${interactions.length} interactions)`);
+            updated++;
             }
         }
 

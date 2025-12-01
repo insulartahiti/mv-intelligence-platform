@@ -53,7 +53,7 @@ async function runSync() {
         // Only fail if NO companies were processed (implies total failure) or critical error
         if (stats.companiesProcessed === 0 && stats.errors.length > 0) {
              console.error('❌ Critical Failure: No companies processed.');
-             process.exit(1);
+        process.exit(1);
         }
         
         // otherwise, treat as success with warnings

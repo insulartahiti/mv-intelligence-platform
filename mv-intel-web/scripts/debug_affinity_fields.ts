@@ -61,7 +61,7 @@ async function debugFields() {
         });
         
         const fields = await response.json();
-        
+
         console.log('\n📋 AVAILABLE FIELDS MAPPING:');
         console.log('==========================================');
         fields.forEach((f: any) => {

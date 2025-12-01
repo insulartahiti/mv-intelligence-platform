@@ -193,10 +193,10 @@ class Neo4jMigration {
 
       while (retries > 0) {
         const result = await supabase
-          .schema('graph')
-          .from('entities')
-          .select('*')
-          .range(offset, offset + this.batchSize - 1);
+        .schema('graph')
+        .from('entities')
+        .select('*')
+        .range(offset, offset + this.batchSize - 1);
         
         if (!result.error) {
           entities = result.data;
@@ -309,10 +309,10 @@ class Neo4jMigration {
 
       while (retries > 0) {
         const result = await supabase
-          .schema('graph')
-          .from('edges')
-          .select('*')
-          .range(offset, offset + this.batchSize - 1);
+        .schema('graph')
+        .from('edges')
+        .select('*')
+        .range(offset, offset + this.batchSize - 1);
         
         if (!result.error) {
           edges = result.data;

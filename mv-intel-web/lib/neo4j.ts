@@ -100,4 +100,4 @@ export function closeNeo4jDriver() {
   return Promise.resolve();
 }
 
-export { getDriver as driver, NEO4J_DATABASE };
+export { driver, getDriver, NEO4J_DATABASE };

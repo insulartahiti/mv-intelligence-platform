@@ -98,7 +98,7 @@ class EnhancedPersonEmbeddingGenerator {
              .eq('source', entity.id)
              .in('kind', ['works_at', 'founder', 'board_member', 'advisor', 'partner', 'deal_team', 'owner', 'invests_in'])
              .limit(5);
-
+           
            if (edges && edges.length > 0) {
              const targetIds = edges.map(e => e.target);
              const { data: targets } = await supabase
@@ -111,12 +111,12 @@ class EnhancedPersonEmbeddingGenerator {
              if (targets && targets.length > 0) {
                  const orgs = targets.map(r => r.name).join(', ');
                  const domains = targets.filter(r => r.domain).map(r => r.domain).join(', ');
-                 context = ` associated with organizations: ${orgs}`;
-                 if (domains) context += ` (${domains})`;
-                 
-                 // Specific override for investors
+             context = ` associated with organizations: ${orgs}`;
+             if (domains) context += ` (${domains})`;
+             
+             // Specific override for investors
                  if (edges.some(r => ['deal_team', 'owner', 'invests_in'].includes(r.kind))) {
-                    context += ". Likely an Investor/VC or Private Equity professional.";
+                context += ". Likely an Investor/VC or Private Equity professional.";
                  }
              }
            }
@@ -387,7 +387,7 @@ Format: JSON object.`
     if (limit) {
        query = query.limit(parseInt(limit));
     }
-    
+
     // Pagination loop to fetch IDs
     console.log('Fetching candidate IDs...')
     let allIds = [];

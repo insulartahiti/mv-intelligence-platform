@@ -161,13 +161,13 @@ Output ONLY valid JSON:
   "industry_position": { "segment": "Segment", "differentiators": ["diff1"] }
 }`
         const completion = await openai.chat.completions.create({
-          model: 'gpt-5.1',
-          messages: [{ role: 'user', content: prompt }],
+            model: 'gpt-5.1',
+            messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' }
         })
         return JSON.parse(completion.choices[0].message.content)
-      }
-
+      } 
+      
       // PATH B: Perplexity Fallback
       const prompt = `Research this company: ${entity.name} (${entity.domain || 'unknown domain'}).
 Provide a comprehensive business analysis.
@@ -182,7 +182,7 @@ Output ONLY valid JSON:
   "technology": "Tech stack",
   "industry_position": { "segment": "Segment", "differentiators": ["diff1"] }
 }`
-      
+
       const completion = await perplexity.chat.completions.create({
         model: 'sonar-pro',
         messages: [{ role: 'user', content: prompt }]
@@ -201,7 +201,7 @@ Output ONLY valid JSON:
 
     } catch (err) {
       console.error(`Analysis failed for ${entity.name}:`, err.message)
-      return { 
+      return {
         summary: entity.description || "Unknown", 
         core_business: "Unknown", 
         error: true 
@@ -288,7 +288,7 @@ Summary: ${analysis.summary}
     
     // 3. Classify (Taxonomy)
     const taxonomyAssignment = await this.assignTaxonomy(entity, businessAnalysis)
-
+    
     // Determine enrichment source
     let enrichmentSource = 'web_scraper'
     if (!webpageContent) {
@@ -464,14 +464,14 @@ async function main() {
   if (limitIndex !== -1 && args[limitIndex + 1]) {
     limit = args[limitIndex + 1]
   }
-
+  
   // Check for target argument
   let target = null
   const targetIndex = args.indexOf('--target')
   if (targetIndex !== -1 && args[targetIndex + 1]) {
     target = args[targetIndex + 1]
   }
-
+  
   await generator.generateAllEnhancedEmbeddings({ incremental, limit, target })
 }
 
