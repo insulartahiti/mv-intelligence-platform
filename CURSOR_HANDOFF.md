@@ -14,7 +14,7 @@ The Motive Intelligence Platform is a **Conversational Knowledge Graph** that ag
 - **Frontend**: Next.js 14 (App Router), React, Tailwind CSS.
 - **Primary Database**: Supabase (PostgreSQL) - Stores structured entity data, interaction logs, and vector embeddings (`pgvector`).
 - **Graph Database**: Neo4j (AuraDB) - Stores relationship nodes and edges for visualization and traversal.
-- **AI/LLM**: OpenAI GPT-5.1 (Reasoning & Synthesis), Perplexity `sonar-pro` (Enrichment), Supabase Edge Functions.
+- **AI/LLM**: OpenAI GPT-5.1 (Reasoning, Synthesis, Taxonomy Classification), Perplexity `sonar-pro` (Enrichment), Supabase Edge Functions.
 - **Hosting**: Vercel (Production URL: `https://motivepartners.ai`)
 
 ### Data Flow Architecture
@@ -97,10 +97,36 @@ Run these from the `mv-intel-web/` directory:
 *   `app/components/Neo4jGraphViewer.tsx`: Main graph visualization component (Vis.js).
 *   `app/components/ChatInterface.tsx`: Split-screen chat UI.
 *   `lib/search/postgres-vector.ts`: Hybrid search implementation.
-*   `lib/search/taxonomy-classifier.ts`: **GPT-5.1 IFT Taxonomy Classifier** (NEW).
+*   `lib/search/taxonomy-classifier.ts`: **GPT-5.1 IFT Taxonomy Classifier**.
+*   `lib/taxonomy/schema.ts`: **Centralized Taxonomy Schema** (single source of truth).
 *   `lib/graph/`: Graph algorithms and helpers.
 
 **Note:** Components relying on `graphology` (e.g., `EnhancedClientGraph.tsx`) have been disabled to fix build issues.
+
+### Centralized Taxonomy Architecture
+The IFT (Integrated Fintech Taxonomy) is defined in a **single source of truth**: `lib/taxonomy/schema.ts`.
+
+**Exports:**
+- `TAXONOMY_TREE`: Full hierarchical tree (used by `/taxonomy` page UI)
+- `TAXONOMY_PROMPT_SCHEMA`: Compact string for LLM prompts (used by classifier)
+- `VALID_TAXONOMY_CODES`: Set of all valid codes (used for validation)
+- `isValidTaxonomyCode(code)`: Validation function
+- `hasInvalidSegment(code)`: Checks for garbage codes (UNKNOWN, UNDEFINED, etc.)
+
+**Consumers:**
+1. **`/taxonomy` page**: Imports `TAXONOMY_TREE` for tree rendering
+2. **`taxonomy-classifier.ts`**: Imports `TAXONOMY_PROMPT_SCHEMA` for LLM classification
+3. **`intelligent_cleanup.ts`**: Uses validation for data quality checks
+
+**Policy:** Strict predefined codes only. "Discovered" categories are filtered out during display and flagged during cleanup.
+
+### Proposed Feature: Admin Data Tools
+Ideally, the `/admin` page should be expanded to include data management tools:
+1.  **Taxonomy Reclassification**: Allow admins to search for a company and manually assign a valid IFT code from the schema.
+2.  **Entity Merging**: Tool to manually merge duplicate entities (e.g., "Stripe" + "Stripe, Inc.").
+3.  **Schema Viewer**: Read-only view of the current code-defined taxonomy for reference.
+
+*Recommendation: Implement these as a new "Data Tools" tab in the Admin dashboard.*
 
 ### Search Architecture (Hybrid Approach)
 The search agent uses **parallel signals** to rank results:
@@ -118,7 +144,7 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
                      └───────── Combined Ranking ──────────┘
 ```
 
-**Taxonomy Policy:** Strict predefined codes only (no "discovered" categories). If confidence < 0.7, taxonomy filter is skipped and vector search alone is used.
+**Taxonomy Policy:** Strict predefined codes only (no "discovered" categories). If confidence < 0.7, taxonomy filter is skipped and vector search alone is used. The 0.7 threshold is defined as `TAXONOMY_CONFIDENCE_THRESHOLD` in `taxonomy-classifier.ts` and used by both the classifier and `universal-search/route.ts` for consistency.
 
 ### `mv-intel-web/scripts/` (Data Pipeline)
 *   `run_pipeline.js`: Master orchestrator script.
@@ -209,6 +235,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 3.  **Monitor Pipeline Performance**: Verify the optimized pipeline completes in <1 hour.
 
 ### Strategic Backlog
+*   **Admin Data Tools**: Build UI for manual entity reclassification and merging (proposed).
 *   **Subgraph Retrieval**: Instead of loading the full graph, query Neo4j for *only* the nodes relevant to the current user context/search.
 *   **"Explain" Feature**: Add UI to visualize *why* a node was recommended (e.g., highlight the path "You -> Invested In X -> Partnered With Y").
 *   **Email Drafting**: Expand `draft_message` tool to support template selection.
@@ -217,7 +244,9 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
-*   **GPT-5.1 Taxonomy Classifier**: Added `lib/search/taxonomy-classifier.ts` for LLM-based IFT taxonomy detection. Uses hybrid approach: fast keyword matching → GPT-5.1 fallback. Strict predefined codes only (no discovered categories).
+*   **Centralized Taxonomy Schema**: Created `lib/taxonomy/schema.ts` as single source of truth for IFT taxonomy. Exports tree structure, LLM prompt schema, and validation utilities. Eliminates duplication across taxonomy page and classifier.
+*   **Taxonomy Threshold Fix**: Aligned confidence thresholds between `detectTaxonomy()` (0.85→0.7) and `universal-search/route.ts` (0.7) using shared `TAXONOMY_CONFIDENCE_THRESHOLD` constant. Prevents unnecessary LLM calls for high-confidence fast matches.
+*   **GPT-5.1 Taxonomy Classifier**: Updated `lib/search/taxonomy-classifier.ts` to use GPT-5.1. Now imports schema from centralized source.
 *   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
 *   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
 *   **Cleanup Resilience Fix**: Added `continue-on-error: true` and `if: always()` to ensure Neo4j sync runs regardless of cleanup failures.

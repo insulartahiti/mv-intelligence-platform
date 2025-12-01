@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { classifyIntent } from '@/lib/search/intent';
-import { detectTaxonomy } from '@/lib/search/taxonomy-classifier';
+import { detectTaxonomy, TAXONOMY_CONFIDENCE_THRESHOLD } from '@/lib/search/taxonomy-classifier';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
         console.log('🏷️ Taxonomy Result:', taxonomyResult);
 
         // 2. Apply taxonomy codes to filters (if confident)
-        if (taxonomyResult.codes.length > 0 && taxonomyResult.confidence >= 0.7) {
+        if (taxonomyResult.codes.length > 0 && taxonomyResult.confidence >= TAXONOMY_CONFIDENCE_THRESHOLD) {
             if (!filters.taxonomy) filters.taxonomy = [];
-            taxonomyResult.codes.forEach(code => {
+            taxonomyResult.codes.forEach((code: string) => {
                 if (!filters.taxonomy!.includes(code)) filters.taxonomy!.push(code);
             });
         }
