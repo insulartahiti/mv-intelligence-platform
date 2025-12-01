@@ -136,6 +136,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### `mv-intel-web/` (Frontend & API)
 *   `app/api/chat/`: Core Chat Agent logic (Next.js Route Handler).
+*   `app/api/auth/check-access/`: **Auth Check Endpoint**. Verifies email authorization before sending OTP.
 *   `app/components/Neo4jGraphViewer.tsx`: Main graph visualization component (Vis.js).
 *   `app/components/ChatInterface.tsx`: Split-screen chat UI.
 *   `lib/search/postgres-vector.ts`: Hybrid search implementation.
@@ -332,4 +333,5 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Added**: "Spotlight Login" with Magic Link auth.
 *   **Added**: "Magic Code" OTP login support to bypass corporate email scanners (Antigena).
 *   **Documentation**: Updated Handoff doc with Production Auth Configuration (Redirect URLs) and Deployment Target (`motive_intelligence`).
+*   **Security Enforced**: Added strict server-side authorization check (`/api/auth/check-access`) before sending OTP codes. Unauthorized users are blocked immediately with a clear error message.
 *   **Improved**: Search recall boosted (10 -> 30 results) and portfolio prioritization (+0.25 score).

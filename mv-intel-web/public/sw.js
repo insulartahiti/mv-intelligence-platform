@@ -1,7 +1,7 @@
 // Service Worker for MV Intelligence Platform
-const CACHE_NAME = 'mv-intel-v2.0.3';
-const STATIC_CACHE = 'mv-intel-static-v2.0.3';
-const DYNAMIC_CACHE = 'mv-intel-dynamic-v2.0.3';
+const CACHE_NAME = 'mv-intel-v2.0.4';
+const STATIC_CACHE = 'mv-intel-static-v2.0.4';
+const DYNAMIC_CACHE = 'mv-intel-dynamic-v2.0.4';
 
 const urlsToCache = [
   '/',
@@ -44,7 +44,7 @@ async function cacheAssetsIndividually(cache, urls) {
 
 // Install event
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker v2.0.3...');
+  console.log('[SW] Installing service worker v2.0.4...');
   
   event.waitUntil(
     Promise.all([
@@ -67,7 +67,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker v2.0.3...');
+  console.log('[SW] Activating service worker v2.0.4...');
   
   event.waitUntil(
     Promise.all([
@@ -109,6 +109,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip API calls - let them go directly to server
   if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // Helper: Network only for specific assets (bypass cache)
+  // Fixes "Failed to fetch" for favicon.ico in PWA mode
+  if (url.pathname === '/favicon.ico') {
     return;
   }
 
