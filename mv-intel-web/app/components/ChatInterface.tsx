@@ -7,10 +7,9 @@ import ReactMarkdown from 'react-markdown';
 const PLACEHOLDERS = [
     "Search companies, people, or ask anything...",
     "Which companies help banks modernize their core systems?",
-    "List potential partners for Navro",
     "List companies with similar business models to Triver",
-    "List all current portfolio companies in payments.",
-    "Who has expertise in financial advisor tools?"
+    "Show my portfolio companies",
+    "Draft a WhatsApp intro connecting Mark Gilbert with Neel Ganu",
 ];
 
 export interface Message {
