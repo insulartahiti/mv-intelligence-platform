@@ -149,13 +149,13 @@ The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data r
 ### Weekly Data Maintenance (Sundays @ Midnight UTC)
 A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
-1.  **Garbage Collection** (`systematic_cleanup.js`): Removes email artifacts (`;`, `<`, `>`) and generic job titles.
-2.  **Intelligent Cleanup** (`intelligent_cleanup.ts`): LLM-based maintenance:
+1.  **Garbage Collection** (`systematic_cleanup.js`): Removes email artifacts (`;`, `<`, `>`) and generic job titles. *(continue-on-error)*
+2.  **Intelligent Cleanup** (`intelligent_cleanup.ts`): LLM-based maintenance *(continue-on-error)*:
     *   **Duplicate Merge**: Evaluates "Company (Stealth)" → "Company" merges with 95% confidence threshold.
     *   **Type Verification**: Corrects misclassified entities (person vs. organization).
     *   **Taxonomy Validation**: Re-classifies organizations with invalid/missing taxonomy.
     *   **Stale Re-Enrichment**: Entities not updated in 6+ months are queued for re-enrichment (clears `enriched`, `enrichment_source`, `relationships_extracted_at` flags).
-3.  **Neo4j Sync**: Pushes all cleanup changes to the graph database.
+3.  **Neo4j Sync** *(always runs)*: Pushes all cleanup changes to the graph database. Runs even if previous steps fail to ensure partial changes are persisted.
 
 **Manual Trigger**: Run with `--full` flag for a complete database scan (ignores date filter).
 

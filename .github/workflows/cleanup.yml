@@ -42,9 +42,11 @@ jobs:
       - name: Run Systematic Cleanup (Garbage Collection)
         working-directory: ./mv-intel-web
         run: node scripts/systematic_cleanup.js
+        continue-on-error: true
 
       - name: Run Intelligent Data Assurance
         working-directory: ./mv-intel-web
+        continue-on-error: true
         run: |
           FLAGS=""
           if [ "${{ github.event.inputs.full_scan }}" == "true" ]; then
@@ -53,7 +55,7 @@ jobs:
           echo "Running Intelligent Cleanup with flags: $FLAGS"
           npx tsx scripts/intelligent_cleanup.ts $FLAGS
 
-      - name: Sync Changes to Neo4j
+      - name: Sync Changes to Neo4j (Always Runs)
+        if: always()
         working-directory: ./mv-intel-web
         run: npx tsx scripts/migrate-to-neo4j.ts
-
