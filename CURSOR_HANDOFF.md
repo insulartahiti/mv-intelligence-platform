@@ -89,9 +89,38 @@ Run these from the `mv-intel-web/` directory:
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
 
 ### GitHub Actions Workflows
-*   **Data Pipeline Sync**: Runs daily at 6 AM UTC (Full Sync).
-*   **Enrichment Only Pipeline**: Manual trigger (`workflow_dispatch`). Use this to re-run AI processing without re-fetching data from Affinity.
-*   **Data Maintenance**: Runs weekly on Sundays (Garbage Collection + Intelligent Cleanup).
+
+| Workflow | File | Schedule | Description |
+| :--- | :--- | :--- | :--- |
+| **Data Pipeline Sync** | `pipeline.yml` | Daily 6 AM UTC | Full sync: Affinity → Enrichment → Neo4j |
+| **Enrichment Only** | `enrichment.yml` | Manual | Re-run AI enrichment (skips Affinity sync) |
+| **Data Maintenance** | `cleanup.yml` | Sunday Midnight UTC | Garbage collection + LLM cleanup + Neo4j sync |
+
+**Pipeline → Scripts Mapping:**
+```
+pipeline.yml ──► run_pipeline.js
+                 ├── systematic_cleanup.js
+                 ├── run_affinity_sync.ts
+                 ├── [PARALLEL] embed_interactions.ts + summarize_interactions.ts + enhanced_embedding_generator.js
+                 ├── migrate-to-neo4j.ts
+                 ├── enhanced_person_embedding_generator.js
+                 ├── generate_relationships.js
+                 ├── fix_portfolio_flags.ts
+                 ├── systematic_cleanup.js
+                 └── migrate-to-neo4j.ts
+
+cleanup.yml ──► systematic_cleanup.js (continue-on-error)
+                ├── intelligent_cleanup.ts (continue-on-error)
+                └── migrate-to-neo4j.ts (always runs)
+
+enrichment.yml ──► run_enrichment_only.js (same as pipeline.yml minus Affinity sync)
+```
+
+**Expected Outcomes:**
+- `pipeline.yml`: Fresh Affinity data + all AI enrichment + Neo4j in sync
+- `enrichment.yml`: Re-enriches entities (incl. IFT.UNKNOWN taxonomy) + Neo4j in sync
+- `cleanup.yml`: Garbage removed + duplicates merged + UNKNOWN taxonomy fixed + Neo4j in sync
+
 | **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
 | **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
 
