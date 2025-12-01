@@ -1,15 +1,40 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Sparkles, Network, Building2, Users } from 'lucide-react';
+import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+
+const PLACEHOLDERS = [
+    "Search companies, people, or ask anything...",
+    "Which companies help banks modernize their core systems?",
+    "List potential partners for Navro",
+    "List companies with similar business models to Triver",
+    "List all current portfolio companies in payments.",
+    "Who has expertise in financial advisor tools?"
+];
 
 export interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
     relevant_node_ids?: string[];
-    results?: any[]; // Array of nodes for inline display
+    results?: any[]; 
+    messageDraft?: { // Legacy support
+        channel: 'email' | 'sms' | 'whatsapp';
+        recipient_name: string;
+        recipient_contact?: string;
+        subject?: string;
+        body: string;
+    };
+    messageDrafts?: { // New array support
+        channel: 'email' | 'sms' | 'whatsapp';
+        recipient_name: string;
+        recipient_contact?: string;
+        subject?: string;
+        body: string;
+    }[];
+    thoughts?: string[]; // Log of reasoning steps
+    isThinking?: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -23,6 +48,7 @@ interface ChatInterfaceProps {
     onNodeSelect?: (nodeId: string) => void;
     onSearchStart?: () => void;
     variant?: 'default' | 'spotlight';
+    userEntity?: any;
 }
 
 export default function ChatInterface({ 
@@ -35,13 +61,16 @@ export default function ChatInterface({
     onGraphUpdate, 
     onNodeSelect, 
     onSearchStart,
-    variant = 'default'
+    variant = 'default',
+    userEntity
 }: ChatInterfaceProps) {
     const [internalConvId, setInternalConvId] = useState<string | null>(null);
     const [internalMessages, setInternalMessages] = useState<Message[]>([]);
     const [internalLoading, setInternalLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    
+    const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
     const conversationId = propConvId !== undefined ? propConvId : internalConvId;
     const setConversationId = propSetConvId || setInternalConvId;
@@ -52,10 +81,19 @@ export default function ChatInterface({
     const loading = propLoading !== undefined ? propLoading : internalLoading;
     const setLoading = propSetLoading || setInternalLoading;
 
+    // Cycle placeholders for spotlight variant
+    useEffect(() => {
+        if (variant !== 'spotlight') return;
+        const interval = setInterval(() => {
+            setPlaceholderIndex(prev => (prev + 1) % PLACEHOLDERS.length);
+        }, 4000);
+        return () => clearInterval(interval);
+    }, [variant]);
+
     // Auto-scroll to bottom
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [messages, loading]); // Added loading to dependency to scroll when thoughts update
 
     const handleSend = async () => {
         if (!input.trim() || loading) return;
@@ -70,51 +108,127 @@ export default function ChatInterface({
             content: input
         };
 
+        // 1. Add User Message
         setMessages(prev => [...prev, userMsg]);
-        const currentInput = input; // Capture input for logic
+        
+        // 2. Create Placeholder Assistant Message with Thinking State
+        const assistantMsgId = crypto.randomUUID();
+        const assistantMsg: Message = {
+            id: assistantMsgId,
+            role: 'assistant',
+            content: '', // Empty initially
+            thoughts: [],
+            isThinking: true
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+
+        const currentInput = input;
         setInput('');
         setLoading(true);
 
         try {
-            // Call Chat API
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversationId,
-                    message: userMsg.content
+                    message: currentInput,
+                    userEntity: userEntity ? {
+                        id: userEntity.id,
+                        name: userEntity.name,
+                        type: userEntity.type,
+                        business_analysis: userEntity.business_analysis,
+                        enrichment_data: userEntity.enrichment_data
+                    } : undefined
                 })
             });
 
-            const data = await response.json();
-            
-            if (data.conversationId && !conversationId) {
-                setConversationId(data.conversationId);
-            }
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+            if (!response.body) throw new Error("No response body");
 
-            const assistantMsg: Message = {
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                content: data.reply,
-                relevant_node_ids: data.relevantNodeIds,
-                results: data.subgraph?.nodes // Store full node objects for rendering
-            };
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let done = false;
+            let buffer = '';
 
-            setMessages(prev => [...prev, assistantMsg]);
-            
-            // Trigger Graph Update if nodes were found
-            if (onGraphUpdate) {
-                // Pass both IDs and the full subgraph structure
-                onGraphUpdate(data.relevantNodeIds || [], data.subgraph);
+            // Stream Processing Loop
+            while (!done) {
+                const { value, done: streamDone } = await reader.read();
+                done = streamDone;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    
+                    // Combine buffer with new chunk
+                    const text = buffer + chunk;
+                    const lines = text.split('\n');
+                    
+                    // The last line might be partial, save it back to buffer
+                    // If chunk ends with \n, last line is empty string, which is fine
+                    buffer = lines.pop() || ''; 
+                    
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+                        try {
+                            const event = JSON.parse(line);
+                            
+                            setMessages(prev => prev.map(msg => {
+                                if (msg.id !== assistantMsgId) return msg;
+
+                                if (event.type === 'thought') {
+                                    return { ...msg, thoughts: [...(msg.thoughts || []), event.content] };
+                                }
+                                if (event.type === 'tool_start') {
+                                    // Optionally log tool usage
+                                    // return { ...msg, thoughts: [...(msg.thoughts || []), `Using tool: ${event.name}`] };
+                                    return msg;
+                                }
+                                if (event.type === 'init') {
+                                    if (event.conversationId && !conversationId) {
+                                        setConversationId(event.conversationId);
+                                    }
+                                    return msg;
+                                }
+                                if (event.type === 'final') {
+                                    // Global Graph Update
+                                    if (onGraphUpdate) {
+                                        onGraphUpdate(event.relevantNodeIds || [], event.subgraph);
+                                    }
+                                    
+                                    // Normalize drafts (handle single vs array from server)
+                                    let drafts = event.messageDrafts || [];
+                                    if (!drafts.length && event.messageDraft) {
+                                        drafts = [event.messageDraft];
+                                    }
+
+                                    return {
+                                        ...msg,
+                                        content: event.reply || "I found some results but couldn't generate a summary.",
+                                        relevant_node_ids: event.relevantNodeIds,
+                                        results: event.subgraph?.nodes,
+                                        messageDrafts: drafts,
+                                        isThinking: false
+                                    };
+                                }
+                                if (event.type === 'error') {
+                                    return { ...msg, content: `Error: ${event.message}`, isThinking: false };
+                                }
+                                return msg;
+                            }));
+
+                        } catch (e) {
+                            console.error('Error parsing stream chunk:', e);
+                        }
+                    }
+                }
             }
 
         } catch (error) {
             console.error('Chat error:', error);
-            setMessages(prev => [...prev, { 
-                id: crypto.randomUUID(), 
-                role: 'assistant', 
-                content: 'Sorry, I encountered an error processing your request.' 
-            }]);
+            setMessages(prev => prev.map(msg => 
+                msg.id === assistantMsgId 
+                ? { ...msg, content: 'Sorry, I encountered an error processing your request.', isThinking: false }
+                : msg
+            ));
         } finally {
             setLoading(false);
         }
@@ -125,20 +239,60 @@ export default function ChatInterface({
         handleSend();
     };
 
+    // --- Render Component for Thoughts ---
+    const ThoughtProcess = ({ thoughts, isThinking }: { thoughts?: string[], isThinking?: boolean }) => {
+        const [isExpanded, setIsExpanded] = useState(false); // Closed by default
+
+        if (!thoughts || thoughts.length === 0) return null;
+
+        return (
+            <div className="mb-3">
+                <button 
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-800"
+                >
+                    <BrainCircuit className={`w-3.5 h-3.5 ${isThinking ? 'animate-pulse text-blue-400' : ''}`} />
+                    {isThinking ? 'Reasoning...' : 'Thought Process'}
+                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+                
+                {isExpanded && (
+                    <div className="mt-2 pl-2 border-l-2 border-slate-800 space-y-2">
+                        {thoughts.map((thought, i) => (
+                            <div key={i} className="text-xs text-slate-400 animate-fadeIn flex items-start gap-2">
+                                <span className="mt-1 w-1 h-1 rounded-full bg-slate-600 flex-shrink-0" />
+                                <span>{thought}</span>
+                            </div>
+                        ))}
+                        {isThinking && (
+                            <div className="flex gap-1 pl-3 pt-1">
+                                <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce"></span>
+                                <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce delay-75"></span>
+                                <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce delay-150"></span>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // ... Spotlight variant logic ... (Simplified for brevity, keeping existing logic if needed)
     if (variant === 'spotlight') {
+        // (Keeping the exact same spotlight render as before for safety, just updated with handleFormSubmit)
         return (
             <div className="w-full max-w-2xl mx-auto">
                 <form onSubmit={handleFormSubmit} className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                         <Sparkles className="h-6 w-6 text-blue-400 group-focus-within:text-blue-300 transition-colors" />
                     </div>
                     <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Search companies, people, or ask anything..."
+                        placeholder={PLACEHOLDERS[placeholderIndex]}
                         autoFocus
-                        className="block w-full pl-16 pr-16 py-5 bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl text-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 shadow-2xl transition-all"
+                        className="block w-full pl-12 pr-16 py-5 bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl text-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 shadow-2xl transition-all"
                     />
                     <div className="absolute inset-y-0 right-0 pr-4 flex items-center">
                         <button
@@ -176,9 +330,8 @@ export default function ChatInterface({
             <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur">
                 <h2 className="font-semibold text-slate-200 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-blue-400" />
-                    AI Assistant
+                    Motive Intelligence
                 </h2>
-                <p className="text-xs text-slate-500">Powered by Knowledge Graph & GPT-5.1</p>
             </div>
 
             {/* Messages Area */}
@@ -200,45 +353,116 @@ export default function ChatInterface({
                         )}
                         
                         <div className={`flex flex-col max-w-[90%] gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                            {/* Text Bubble */}
-                            <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                                msg.role === 'user' 
-                                    ? 'bg-blue-600 text-white rounded-br-none' 
-                                    : 'bg-slate-800 text-slate-200 rounded-bl-none border border-slate-700'
-                            }`}>
-                                 <ReactMarkdown 
-                                    className="prose prose-invert prose-sm max-w-none"
-                                    components={{
-                                        a: ({ node, href, children, ...props }) => {
-                                            const handleClick = (e: React.MouseEvent) => {
-                                                if (href?.includes('nodeId=')) {
-                                                    e.preventDefault();
-                                                    const id = href.split('nodeId=')[1];
-                                                    if (id && onNodeSelect) {
-                                                        onNodeSelect(id);
+                            {/* Thought Process (Only for Assistant) */}
+                            {msg.role === 'assistant' && (
+                                <ThoughtProcess thoughts={msg.thoughts} isThinking={msg.isThinking} />
+                            )}
+
+                            {/* Text Bubble (Only show if content exists or not thinking) */}
+                            {(msg.content || !msg.isThinking) && (
+                                <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                    msg.role === 'user' 
+                                        ? 'bg-blue-600 text-white rounded-br-none' 
+                                        : 'bg-slate-800 text-slate-200 rounded-bl-none border border-slate-700'
+                                }`}>
+                                     <ReactMarkdown 
+                                        className="prose prose-invert prose-sm max-w-none"
+                                        components={{
+                                            a: ({ node, href, children, ...props }) => {
+                                                const handleClick = (e: React.MouseEvent) => {
+                                                    if (href?.includes('nodeId=')) {
+                                                        e.preventDefault();
+                                                        const id = href.split('nodeId=')[1];
+                                                        if (id && onNodeSelect) {
+                                                            onNodeSelect(id);
+                                                        }
                                                     }
+                                                };
+                                                return (
+                                                    <a 
+                                                        href={href} 
+                                                        onClick={handleClick} 
+                                                        className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+                                                        {...props}
+                                                    >
+                                                        {children}
+                                                    </a>
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        {msg.content}
+                                    </ReactMarkdown>
+                                </div>
+                            )}
+
+                            {/* Message Draft Buttons (Multiple) */}
+                            {msg.role === 'assistant' && msg.messageDrafts && msg.messageDrafts.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2 animate-fadeIn">
+                                    {msg.messageDrafts.map((draft, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => {
+                                                const { channel, recipient_contact, subject, body } = draft;
+                                                const contact = recipient_contact || '';
+                                                
+                                                let link = '';
+                                                if (channel === 'email') {
+                                                    link = `mailto:${contact}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body)}`;
+                                                } else if (channel === 'sms') {
+                                                    const sep = navigator.userAgent.match(/iPhone|iPad|iPod/i) ? '&' : '?';
+                                                    link = `sms:${contact}${sep}body=${encodeURIComponent(body)}`;
+                                                } else if (channel === 'whatsapp') {
+                                                    const cleanPhone = contact.replace(/\D/g, '');
+                                                    link = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(body)}`;
                                                 }
-                                            };
-                                            return (
-                                                <a 
-                                                    href={href} 
-                                                    onClick={handleClick} 
-                                                    className="text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
-                                                    {...props}
-                                                >
-                                                    {children}
-                                                </a>
-                                            );
-                                        }
-                                    }}
-                                 >
-                                    {msg.content}
-                                 </ReactMarkdown>
-                            </div>
+                                                
+                                                if (link) window.open(link, '_blank');
+                                            }}
+                                            title={`Draft ${draft.channel} to ${draft.recipient_name}`}
+                                            className={`p-3 rounded-full transition-all shadow-lg hover:scale-105 flex items-center gap-2 text-xs font-medium px-4 ${
+                                                draft.channel === 'whatsapp' ? 'bg-[#25D366] hover:bg-[#128C7E] text-white' :
+                                                draft.channel === 'sms' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' :
+                                                'bg-blue-600 hover:bg-blue-500 text-white'
+                                            }`}
+                                        >
+                                            {draft.channel === 'email' && <Mail className="w-4 h-4" />}
+                                            {draft.channel === 'sms' && <MessageSquare className="w-4 h-4" />}
+                                            {draft.channel === 'whatsapp' && <MessageCircle className="w-4 h-4" />}
+                                            <span>
+                                                {draft.channel === 'whatsapp' ? 'WhatsApp' : draft.channel === 'sms' ? 'Text' : 'Email'} {draft.recipient_name.split(' ')[0]}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            
+                            {/* Legacy Single Draft Fallback (if drafts array is empty but single draft exists) */}
+                            {msg.role === 'assistant' && !msg.messageDrafts && msg.messageDraft && (
+                                <div className="mt-2 flex items-center gap-2 animate-fadeIn">
+                                    <button
+                                        onClick={() => {
+                                            const { channel, recipient_contact, subject, body } = msg.messageDraft!;
+                                            const contact = recipient_contact || '';
+                                            let link = '';
+                                            if (channel === 'email') link = `mailto:${contact}?subject=${encodeURIComponent(subject || '')}&body=${encodeURIComponent(body)}`;
+                                            else if (channel === 'sms') link = `sms:${contact}?body=${encodeURIComponent(body)}`;
+                                            else if (channel === 'whatsapp') link = `https://wa.me/${contact.replace(/\D/g, '')}?text=${encodeURIComponent(body)}`;
+                                            if (link) window.open(link, '_blank');
+                                        }}
+                                        title={`Draft ${msg.messageDraft.channel}`}
+                                        className="p-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-lg"
+                                    >
+                                        {msg.messageDraft.channel === 'email' && <Mail className="w-5 h-5" />}
+                                        {msg.messageDraft.channel === 'sms' && <MessageSquare className="w-5 h-5" />}
+                                        {msg.messageDraft.channel === 'whatsapp' && <MessageCircle className="w-5 h-5" />}
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Inline Results Grid (Only for Assistant) */}
                             {msg.role === 'assistant' && msg.results && msg.results.length > 0 && (
-                                <div className="grid grid-cols-1 gap-2 mt-1 w-full">
+                                <div className="grid grid-cols-1 gap-2 mt-1 w-full animate-fadeIn">
                                     {msg.results.slice(0, 3).map((node: any) => (
                                         <div 
                                             key={node.id}
@@ -267,7 +491,6 @@ export default function ChatInterface({
                                         <button 
                                             className="text-xs text-slate-500 hover:text-slate-300 text-left px-1"
                                             onClick={() => {
-                                                // Trigger global update to ensure the bottom list is visible
                                                 if (onGraphUpdate) {
                                                     onGraphUpdate(msg.relevant_node_ids || [], { nodes: msg.results || [], edges: [] });
                                                 }
@@ -288,18 +511,6 @@ export default function ChatInterface({
                     </div>
                 ))}
 
-                {loading && (
-                     <div className="flex gap-3 justify-start">
-                        <div className="w-8 h-8 rounded-full bg-blue-900/50 flex items-center justify-center">
-                            <Bot className="w-4 h-4 text-blue-400" />
-                        </div>
-                        <div className="bg-slate-800 rounded-2xl rounded-bl-none px-4 py-3 border border-slate-700 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce"></span>
-                            <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce delay-75"></span>
-                            <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce delay-150"></span>
-                        </div>
-                    </div>
-                )}
                 <div ref={messagesEndRef} />
             </div>
 

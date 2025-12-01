@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "MV Intelligence — Deck Capture",
+  "name": "Motive Intelligence — Deck Capture",
   "version": "0.1.0",
   "description": "Capture slides from web decks and compile PDFs via Supabase Edge Functions.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "MV Deck Capture"
+    "default_title": "Motive Deck Capture"
   },
   "permissions": [
     "storage",

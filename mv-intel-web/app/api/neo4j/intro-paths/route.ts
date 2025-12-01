@@ -14,7 +14,17 @@ export async function GET(request: NextRequest) {
     }, { status: 400 });
   }
 
-  const session = driver.session({ database: NEO4J_DATABASE });
+  // Get driver instance (might be null if env vars missing)
+  const drv = typeof driver === 'function' ? driver() : driver;
+  
+  if (!drv) {
+     return NextResponse.json({
+      success: false,
+      message: 'Neo4j driver not initialized'
+    }, { status: 500 });
+  }
+
+  const session = drv.session({ database: NEO4J_DATABASE });
 
   try {
     console.log(`🔍 Finding intro paths for entity: ${entityId}, maxDepth: ${maxDepth}`);

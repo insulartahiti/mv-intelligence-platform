@@ -94,6 +94,28 @@ const TAXONOMY_DATA = {
               }
           }
       },
+      'CAPR': {
+        label: 'Capital Raising',
+        description: 'Digital capital raising and crowdfunding',
+        children: {
+            'INV_CF': { 
+                label: 'Investment Crowdfunding',
+                children: {
+                    'EQUITY': { label: 'Equity Crowdfunding' },
+                    'REAL_ESTATE': { label: 'Real Estate Crowdfunding' },
+                    'RETAIL_BROKER': { label: 'Retail Broker' },
+                    'INST_BROKER': { label: 'Institutional Broker' }
+                }
+            },
+            'NONINV_CF': {
+                label: 'Non-Investment CF',
+                children: {
+                    'DONATION': { label: 'Donation' },
+                    'REWARD': { label: 'Reward' }
+                }
+            }
+        }
+      },
       'WLT': {
           label: 'Wealth Management',
           description: 'Wealth tech and asset management',
@@ -149,6 +171,26 @@ const TAXONOMY_DATA = {
                     } 
                   } 
                 } 
+              },
+              'CONS': {
+                label: 'Consensus & Networks',
+                description: 'Blockchain consensus and network operations',
+                children: {
+                    'MINING': { 
+                        label: 'Mining', 
+                        children: {
+                            'HARDWARE_MFG': { label: 'Hardware Mfg' },
+                            'REMOTE_HOSTING': { label: 'Remote Hosting' },
+                            'CLOUD_MINING': { label: 'Cloud Mining' }
+                        }
+                    },
+                    'STAKING': { 
+                        label: 'Staking', 
+                        children: {
+                            'AS_A_SERVICE': { label: 'Staking as a Service' }
+                        }
+                    }
+                }
               }
           }
       },
@@ -165,39 +207,119 @@ const TAXONOMY_DATA = {
           label: 'Risk, Compliance & Identity',
           description: 'RegTech, identity verification, and compliance',
           children: {
-              'ID': { 
-                label: 'Identity', 
+          'ID': { 
+            label: 'Identity', 
+            children: { 
+              'KYB': { 
+                label: 'KYB', 
                 children: { 
-                  'KYB': { 
-                    label: 'KYB', 
-                    children: { 
-                      'BASIC_PROFILE': { label: 'Basic Profile' }, 
-                      'UBO_DISCOVERY': { label: 'UBO Discovery' }, 
-                      'DOC_COLLECTION': { label: 'Doc Collection' } 
-                    } 
-                  }, 
-                  'KYC': { label: 'KYC' } 
+                  'BASIC_PROFILE': { label: 'Basic Profile' }, 
+                  'UBO_DISCOVERY': { label: 'UBO Discovery' }, 
+                  'DOC_COLLECTION': { label: 'Doc Collection' } 
                 } 
-              },
-              'REG': { 
-                label: 'Regulatory', 
+              }, 
+              'KYC': { label: 'KYC' } 
+            } 
+          },
+          'REG': { 
+            label: 'Regulatory', 
+            children: { 
+              'TMON': { 
+                label: 'Transaction Monitoring', 
                 children: { 
-                  'TMON': { 
-                    label: 'Transaction Monitoring', 
-                    children: { 
-                      'REALTIME': { label: 'Realtime Monitoring' }, 
-                      'CASE_MGMT': { label: 'Case Management' } 
-                    } 
-                  }, 
-                  'DYNAMIC_COMPLIANCE': { label: 'Dynamic Compliance' }, 
-                  'REPORTING': { label: 'Reporting' }, 
-                  'REPORTING_DASHBOARDS': { label: 'Reporting Dashboards' }, 
-                  'PROFILE_DD': { label: 'Profile Due Diligence' }, 
-                  'BLOCKCHAIN_FORENSICS': { label: 'Blockchain Forensics' }, 
-                  'RISK_ANALYTICS': { label: 'Risk Analytics' } 
+                  'REALTIME': { label: 'Realtime Monitoring' }, 
+                  'CASE_MGMT': { label: 'Case Management' } 
                 } 
-              }
+              }, 
+              'DYNAMIC_COMPLIANCE': { label: 'Dynamic Compliance' }, 
+              'REPORTING': { label: 'Reporting' }, 
+              'REPORTING_DASHBOARDS': { label: 'Reporting Dashboards' }, 
+              'PROFILE_DD': { label: 'Profile Due Diligence' }, 
+              'BLOCKCHAIN_FORENSICS': { label: 'Blockchain Forensics' }, 
+              'RISK_ANALYTICS': { label: 'Risk Analytics' } 
+            } 
           }
+        }
+      },
+      'SAV': {
+          label: 'Digital Savings',
+          description: 'Digital savings and micro-savings platforms'
+      },
+      'OPS': {
+        label: 'Finance Ops & Treasury',
+        description: 'Treasury, payouts, reconciliation, and connectivity',
+        children: {
+            'TREASURY': { 
+                label: 'Treasury', 
+                children: {
+                    'CASH': { label: 'Cash Management' },
+                    'FORECAST': { label: 'Forecasting' },
+                    'VIRTUAL_ACCOUNTS': { label: 'Virtual Accounts' }
+                }
+            },
+            'PAYOUTS': { 
+                label: 'Payouts', 
+                children: {
+                    'MASS': { label: 'Mass Payouts' },
+                    'XB': { label: 'Cross-Border Payouts' }
+                }
+            },
+            'RECON': { 
+                label: 'Reconciliation', 
+                children: {
+                    'AUTO': { label: 'Automated Recon' },
+                    'CASH_APP': { label: 'Cash Application' }
+                }
+            },
+            'CONNECT': { 
+                label: 'Connectivity', 
+                children: {
+                    'H2H': { label: 'Host-to-Host' },
+                    'SWIFT': { label: 'SWIFT Gateway' },
+                    'ERP': { label: 'ERP Connectors' }
+                }
+            },
+            'DATA': { 
+                label: 'Data & Identity', 
+                children: {
+                    'KYB': { label: 'KYB Registry' },
+                    'CPTY_RESOLUTION': { label: 'Counterparty Resolution' }
+                }
+            }
+        }
+      },
+      'ENT': {
+        label: 'Enterprise Tech',
+        description: 'Technology for enterprise operations',
+        children: {
+            'AI_ML_NLP': { label: 'AI/ML & NLP', description: 'Artificial Intelligence and Machine Learning' },
+            'API_MGMT': { label: 'API Management', description: 'Tools for managing APIs' },
+            'CLOUD': { label: 'Cloud Infrastructure', description: 'Cloud computing services' },
+            'FIN_MGMT_BI': { label: 'Financial Management & BI', description: 'Business Intelligence and Finance tools' },
+            'DIGITAL_ACCOUNTING': { label: 'Digital Accounting', description: 'Accounting software' },
+            'E_INVOICING': { label: 'E-Invoicing', description: 'Electronic invoicing solutions' }
+        }
+      },
+      'MKT': {
+        label: 'Market Infrastructure',
+        description: 'Capital markets and trading infrastructure',
+        children: {
+            'REFDATA': { 
+                label: 'Reference Data', 
+                children: {
+                    'MGMT': { label: 'Management' }
+                }
+            },
+            'SURV': { 
+                label: 'Surveillance', 
+                children: {
+                    'TRADE': { label: 'Trade Surveillance' },
+                    'COMMS': { label: 'Comms Surveillance' }
+                }
+            },
+            'COLLATERAL': { label: 'Collateral Management' },
+            'MARGIN': { label: 'Margin' }
+        }
       }
     }
   }
@@ -220,8 +342,33 @@ interface Company {
 export default function TaxonomyPage() {
   const [selectedPath, setSelectedPath] = useState<string>('IFT');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  
+  // Global entity state
+  const [allEntities, setAllEntities] = useState<Company[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Helper to find node data from path
+  // Initial Fetch - Load Everything
+  useEffect(() => {
+    const fetchAllEntities = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch all entities under IFT root
+        const res = await fetch('/api/taxonomy/entities?code=IFT');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setAllEntities(data.data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch taxonomy entities:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAllEntities();
+  }, []);
   const currentNodeData = useMemo(() => {
     const parts = selectedPath.split('.');
     let current: any = TAXONOMY_DATA;
@@ -286,12 +433,22 @@ export default function TaxonomyPage() {
 
       {/* RIGHT MAIN AREA: Dashboard */}
       <div className="flex-1 flex flex-col pt-16 h-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
-          <TaxonomyDashboard 
-             path={selectedPath} 
-             node={activeNode} 
-             onNavigate={setSelectedPath}
-             onCompanyClick={setSelectedNodeId}
-          />
+          {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center gap-4">
+                      <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                      <p className="text-slate-400 text-sm">Loading Taxonomy Data...</p>
+                  </div>
+              </div>
+          ) : (
+              <TaxonomyDashboard 
+                 path={selectedPath} 
+                 node={activeNode} 
+                 allEntities={allEntities}
+                 onNavigate={setSelectedPath}
+                 onCompanyClick={setSelectedNodeId}
+              />
+          )}
       </div>
 
       {selectedNodeId && (
@@ -370,58 +527,43 @@ function TaxonomySidebarTree({ data, path, selectedPath, onSelect }: { data: any
 // DASHBOARD COMPONENTS
 // ----------------------------------------------------------------------------
 
-function TaxonomyDashboard({ path, node, onNavigate, onCompanyClick }: { path: string, node: any, onNavigate: (p: string) => void, onCompanyClick: (id: string) => void }) {
-    const [companies, setCompanies] = useState<Company[]>([]);
-    const [loading, setLoading] = useState(false);
-
-    useEffect(() => {
-        const fetchCompanies = async () => {
-            setLoading(true);
-            try {
-                const res = await fetch(`/api/taxonomy/entities?code=${path}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.success) {
-                        setCompanies(data.data);
-                    }
-                }
-            } catch (err) {
-                console.error('Failed to fetch', err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCompanies();
-    }, [path]);
-
+function TaxonomyDashboard({ path, node, allEntities, onNavigate, onCompanyClick }: { path: string, node: any, allEntities: Company[], onNavigate: (p: string) => void, onCompanyClick: (id: string) => void }) {
+    // Use local filtered state derived from global 'allEntities'
+    
     // Separate into Direct Matches vs Subcategories
-    const { directMatches, subCategories } = useMemo(() => {
-        if (!companies) return { directMatches: [], subCategories: {} };
+    const { directMatches, subCategories, totalBranchCount } = useMemo(() => {
+        if (!allEntities) return { directMatches: [], subCategories: {}, totalBranchCount: 0 };
 
         const direct: Company[] = [];
         const subs: Record<string, number> = {}; // key -> count
+        let total = 0;
 
         // Initialize known subcategories with 0
         if (node?.children) {
             Object.keys(node.children).forEach(key => subs[key] = 0);
         }
 
-        companies.forEach(c => {
+        allEntities.forEach(c => {
             if (c.taxonomy === path) {
                 direct.push(c);
+                total++;
             } else if (c.taxonomy?.startsWith(path + '.')) {
+                total++;
                 // Determine which subcategory bucket
                 const suffix = c.taxonomy.substring(path.length + 1);
                 const nextSegment = suffix.split('.')[0];
-                if (nextSegment) {
+                
+                // Blocklist for garbage/invalid taxonomy segments
+                const invalidSegments = ['UNKNOWN', 'UNDEFINED', 'UNK', 'UNCLASSIFIED', 'NULL', 'NAN', 'NONE', 'N/A', 'NOT_APPLICABLE', 'NOT CLASSIFIED', 'NON_FINTECH', 'UNDETERMINED', 'UNMAPPED', 'OUT_OF_SCOPE', 'NOT_CLASSIFIED', 'CONS'];
+                
+                if (nextSegment && !invalidSegments.includes(nextSegment.toUpperCase())) {
                     subs[nextSegment] = (subs[nextSegment] || 0) + 1;
                 }
             }
         });
 
-        return { directMatches: direct, subCategories: subs };
-    }, [companies, path, node]);
+        return { directMatches: direct, subCategories: subs, totalBranchCount: total };
+    }, [allEntities, path, node]);
 
     if (!node) return <div className="p-10 text-slate-500">Select a category</div>;
 
@@ -458,7 +600,7 @@ function TaxonomyDashboard({ path, node, onNavigate, onCompanyClick }: { path: s
                     </div>
                     <div className="flex gap-4">
                         <div className="text-center bg-slate-900/50 p-3 rounded-lg border border-slate-800 min-w-[100px]">
-                            <div className="text-2xl font-bold text-blue-400">{companies.length}</div>
+                            <div className="text-2xl font-bold text-blue-400">{totalBranchCount.toLocaleString()}</div>
                             <div className="text-xs text-slate-500 uppercase">Entities</div>
                         </div>
                         <div className="text-center bg-slate-900/50 p-3 rounded-lg border border-slate-800 min-w-[100px]">
@@ -485,6 +627,9 @@ function TaxonomyDashboard({ path, node, onNavigate, onCompanyClick }: { path: s
                                 const label = childNode?.label || key.replace(/_/g, ' '); // Fallback for discovered cats
                                 const desc = childNode?.description || 'Discovered Category';
 
+                                // Hide very small discovered categories (likely noise)
+                                if (!childNode && count < 3) return null;
+
                                 return (
                                     <div 
                                         key={key}
@@ -500,7 +645,7 @@ function TaxonomyDashboard({ path, node, onNavigate, onCompanyClick }: { path: s
                                         <h4 className="font-semibold text-slate-200 mb-1 group-hover:text-white">{label}</h4>
                                         <p className="text-xs text-slate-500 line-clamp-2 mb-3">{desc}</p>
                                         <div className="flex items-center text-xs text-slate-400 font-medium">
-                                            {count} Entities
+                                            {count.toLocaleString()} Entities
                                             <ArrowRight size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400" />
                                         </div>
                                     </div>
@@ -510,60 +655,62 @@ function TaxonomyDashboard({ path, node, onNavigate, onCompanyClick }: { path: s
                     </section>
                 )}
 
-                {/* 2. Direct Companies Grid */}
-                <section>
-                    <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
-                        <Building2 size={18} className="text-blue-400" />
-                        Classified Companies
-                        <span className="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">
-                            {directMatches.length}
-                        </span>
-                    </h3>
-                    
-                    {directMatches.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {directMatches.map(company => (
-                                <div 
-                                    key={company.id}
-                                    onClick={() => onCompanyClick(company.id)}
-                                    className="group relative p-5 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 rounded-xl cursor-pointer transition-all hover:-translate-y-1 shadow-sm hover:shadow-xl hover:shadow-blue-900/10"
-                                >
-                                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Zap size={16} className="text-yellow-400 fill-yellow-400/20" />
-                                    </div>
+                {/* 2. Direct Companies Grid (Only if NOT at root 'IFT' - reduces noise) */}
+                {path !== 'IFT' && (
+                    <section>
+                        <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
+                            <Building2 size={18} className="text-blue-400" />
+                            Classified Companies
+                            <span className="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">
+                                {directMatches.length}
+                            </span>
+                        </h3>
+                        
+                        {directMatches.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {directMatches.map(company => (
+                                    <div 
+                                        key={company.id}
+                                        onClick={() => onCompanyClick(company.id)}
+                                        className="group relative p-5 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 rounded-xl cursor-pointer transition-all hover:-translate-y-1 shadow-sm hover:shadow-xl hover:shadow-blue-900/10"
+                                    >
+                                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Zap size={16} className="text-yellow-400 fill-yellow-400/20" />
+                                        </div>
 
-                                    <div className="w-10 h-10 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-slate-400 font-bold text-lg mb-4 border border-slate-700 group-hover:border-blue-500/30 group-hover:text-blue-400 transition-colors">
-                                        {company.name.charAt(0)}
-                                    </div>
-                                    
-                                    <h4 className="font-bold text-slate-200 mb-2 truncate pr-6">{company.name}</h4>
-                                    
-                                    <p className="text-sm text-slate-500 line-clamp-2 min-h-[40px] mb-4">
-                                        {company.brief_description || 'No description available'}
-                                    </p>
+                                        <div className="w-10 h-10 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-slate-400 font-bold text-lg mb-4 border border-slate-700 group-hover:border-blue-500/30 group-hover:text-blue-400 transition-colors">
+                                            {company.name.charAt(0)}
+                                        </div>
+                                        
+                                        <h4 className="font-bold text-slate-200 mb-2 truncate pr-6">{company.name}</h4>
+                                        
+                                        <p className="text-sm text-slate-500 line-clamp-2 min-h-[40px] mb-4">
+                                            {company.brief_description || 'No description available'}
+                                        </p>
 
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/50 group-hover:border-slate-700">
-                                        {company.domain ? (
-                                            <span className="text-xs text-slate-500 font-mono truncate max-w-[120px]">
-                                                {company.domain}
+                                        <div className="flex items-center justify-between pt-4 border-t border-slate-800/50 group-hover:border-slate-700">
+                                            {company.domain ? (
+                                                <span className="text-xs text-slate-500 font-mono truncate max-w-[120px]">
+                                                    {company.domain}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-slate-600">No Domain</span>
+                                            )}
+                                            <span className="text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                                View <ArrowRight size={10} />
                                             </span>
-                                        ) : (
-                                            <span className="text-xs text-slate-600">No Domain</span>
-                                        )}
-                                        <span className="text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                            View <ArrowRight size={10} />
-                                        </span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                         <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center">
-                            <p className="text-slate-500">No companies directly classified in this category.</p>
-                            <p className="text-xs text-slate-600 mt-1">Check subcategories above.</p>
-                         </div>
-                    )}
-                </section>
+                                ))}
+                            </div>
+                        ) : (
+                             <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center">
+                                <p className="text-slate-500">No companies directly classified in this category.</p>
+                                <p className="text-xs text-slate-600 mt-1">Check subcategories above.</p>
+                             </div>
+                        )}
+                    </section>
+                )}
                 
                 {/* Spacer for bottom scrolling */}
                 <div className="h-20" />

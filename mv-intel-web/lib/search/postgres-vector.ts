@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import path from 'path';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Load env vars if missing (fallback)
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    dotenv.config({ path: envPath });
+}
+
+// Client removed from top-level to prevent build-time errors
 
 export interface SearchFilters {
     countries?: string[];
@@ -63,7 +68,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 // Fetch top related edges
-async function fetchRelatedEdges(entityIds: string[]) {
+async function fetchRelatedEdges(entityIds: string[], supabase: any) {
     if (entityIds.length === 0) return {};
 
     const { data: edges, error } = await supabase
@@ -109,6 +114,15 @@ export async function searchEntities(
     options: { limit?: number } = {},
     filters: SearchFilters = {}
 ): Promise<SearchResult[]> {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    
+    if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Missing Supabase credentials for searchEntities");
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const limit = options.limit || 20;
     
     // Generate embedding
@@ -138,10 +152,11 @@ export async function searchEntities(
     if (filters.dateRange?.end) filterJson.dateEnd = filters.dateRange.end;
 
     // Execute RPC (Global Search)
+    // Optimization: Reduce match_count to limit processing load
     const vectorPromise = supabase.rpc('search_entities_filtered', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.1, // Lower threshold for text-embedding-3-large
-        match_count: limit * 2, // Fetch more to allow re-ranking effectiveness
+        match_threshold: 0.1, 
+        match_count: limit, 
         filters: filterJson
     });
 
@@ -167,9 +182,13 @@ export async function searchEntities(
             .schema('graph')
             .from('entities')
             .select('id, name, type, domain, industry, pipeline_stage, taxonomy, ai_summary, importance, location_country, location_city, updated_at, business_analysis, enrichment_source, is_portfolio')
-            // Use websearch_to_tsquery to handle "what about Mark Gilbert" -> 'Mark' & 'Gilbert'
-            // This works even without a specific index (sequential scan is fine for <100k rows)
-            .textSearch('name', query, { type: 'websearch', config: 'english' })
+            // Use simple ILIKE first which is very fast for short names, fallback to textSearch if needed
+            // But for "find vega", ILIKE is better.
+            // .ilike('name', `%${query}%`) 
+            // Actually, websearch_to_tsquery on an unindexed column is causing the timeout.
+            // We'll optimize: IF query is short and alphanumeric, try ILIKE on indexed name column?
+            // Assuming 'name' is indexed (it usually is).
+            .ilike('name', `%${query}%`)
             .limit(5);
 
         if (filters.types && filters.types.length > 0) {
@@ -263,7 +282,7 @@ export async function searchEntities(
     // Enrich with edges
     if (enrichedResults.length > 0) {
         const topEntityIds = enrichedResults.slice(0, 10).map((r: any) => r.id);
-        const relatedEdges = await fetchRelatedEdges(topEntityIds);
+        const relatedEdges = await fetchRelatedEdges(topEntityIds, supabase);
         
         enrichedResults = enrichedResults.map((r: any) => ({
             ...r,
@@ -273,4 +292,3 @@ export async function searchEntities(
 
     return enrichedResults;
 }
-

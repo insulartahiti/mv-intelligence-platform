@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const AFFINITY_API_KEY = process.env.AFFINITY_API_KEY!;
-const AFFINITY_BASE_URL = 'https://api.affinity.co';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { 
-  auth: { persistSession: false } 
-});
-
 export async function POST(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const AFFINITY_API_KEY = process.env.AFFINITY_API_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE || !AFFINITY_API_KEY) {
+     return NextResponse.json({ 
+       success: false, 
+       error: 'Missing configuration' 
+     }, { status: 500 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { 
+    auth: { persistSession: false } 
+  });
+
   try {
     console.log('🔍 Starting intelligent Portfolio MVF1 search...');
 

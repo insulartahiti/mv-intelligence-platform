@@ -6,7 +6,7 @@ import NodeDetailPanel from '@/app/components/NodeDetailPanel';
 import ChatInterface, { Message } from '@/app/components/ChatInterface';
 import SearchResultsList from '@/app/components/SearchResultsList';
 
-export default function KnowledgeGraphPageContent() {
+export default function KnowledgeGraphPageContent({ greeting, userEntity }: { greeting?: { text: string, name: string }, userEntity?: any }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]); 
   const [subgraphData, setSubgraphData] = useState<any>(null);
@@ -69,8 +69,19 @@ export default function KnowledgeGraphPageContent() {
           <div className="flex h-screen bg-slate-950 items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black relative">
               <div className="w-full max-w-3xl transform -translate-y-12 transition-all duration-700 ease-out animate-fadeIn">
                   <div className="text-center mb-10">
-                      <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-4 tracking-tight">Market Intelligence</h1>
-                      <p className="text-slate-400 text-xl font-light">Explore the Knowledge Graph with AI-powered search.</p>
+                      {greeting ? (
+                          <>
+                            <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-4 tracking-tight pb-2">
+                                {greeting.text}, {greeting.name}
+                            </h1>
+                            <p className="text-slate-400 text-xl font-light mt-2">Ready to explore the graph?</p>
+                          </>
+                      ) : (
+                          <>
+                            <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-4 tracking-tight pb-2">Motive Intelligence</h1>
+                            <p className="text-slate-400 text-xl font-light mt-2">Explore pipeline data with AI-powered search</p>
+                          </>
+                      )}
                   </div>
                   <div className="relative z-10">
                       <ChatInterface 
@@ -84,6 +95,7 @@ export default function KnowledgeGraphPageContent() {
                         loading={loading}
                         setLoading={setLoading}
                         variant="spotlight"
+                        userEntity={userEntity}
                       />
                   </div>
               </div>
@@ -105,6 +117,7 @@ export default function KnowledgeGraphPageContent() {
             setConversationId={setConversationId}
             loading={loading}
             setLoading={setLoading}
+            userEntity={userEntity}
          />
          
          {/* Toggle Results Button (Centered on Right Edge) */}

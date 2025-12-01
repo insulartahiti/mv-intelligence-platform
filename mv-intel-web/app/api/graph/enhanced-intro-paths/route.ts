@@ -1,53 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-interface IntroPath {
-  id: string;
-  source_entity_id: string;
-  target_entity_id: string;
-  path_data: {
-    path: Array<{
-      id: string;
-      name: string;
-      type: string;
-      isInternal: boolean;
-      isLinkedIn: boolean;
-    }>;
-    totalStrength: number;
-    linkedinConnections: number;
-    internalConnections: number;
-    pathLength: number;
-    qualityScore: number;
-  };
-  path_strength: number;
-  quality_score: number;
-  path_length: number;
-  linkedin_connections: number;
-  internal_connections: number;
-  calculated_at: string;
-}
-
-interface NetworkInsights {
-  totalEntities: number;
-  totalConnections: number;
-  wellConnectedEntities: number;
-  influentialEntities: number;
-  networkDensity: number;
-  topInfluencers: Array<{
-    id: string;
-    name: string;
-    influenceScore: number;
-  }>;
-  industryDistribution: Record<string, number>;
-  connectionTypes: Record<string, number>;
-}
 
 export async function GET(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+  
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
   try {
     const { searchParams } = new URL(req.url);
     const targetEntityId = searchParams.get('targetEntityId');
@@ -102,7 +66,7 @@ export async function GET(req: NextRequest) {
     let paths: IntroPath[] = [];
     if (!introPaths || introPaths.length === 0) {
       console.log('No stored paths found, calculating dynamically...');
-      paths = await calculateDynamicPaths(targetEntityId, maxPaths, minStrength);
+      paths = await calculateDynamicPaths(targetEntityId, maxPaths, minStrength, supabase);
     } else {
       paths = introPaths as IntroPath[];
     }
@@ -121,7 +85,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Enhance paths with entity details
-    const enhancedPaths = await enhancePathsWithDetails(paths);
+    const enhancedPaths = await enhancePathsWithDetails(paths, supabase);
 
     return NextResponse.json({
       success: true,
@@ -153,10 +117,53 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Interfaces need to be available in module scope
+interface IntroPath {
+  id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  path_data: {
+    path: Array<{
+      id: string;
+      name: string;
+      type: string;
+      isInternal: boolean;
+      isLinkedIn: boolean;
+    }>;
+    totalStrength: number;
+    linkedinConnections: number;
+    internalConnections: number;
+    pathLength: number;
+    qualityScore: number;
+  };
+  path_strength: number;
+  quality_score: number;
+  path_length: number;
+  linkedin_connections: number;
+  internal_connections: number;
+  calculated_at: string;
+}
+
+interface NetworkInsights {
+  totalEntities: number;
+  totalConnections: number;
+  wellConnectedEntities: number;
+  influentialEntities: number;
+  networkDensity: number;
+  topInfluencers: Array<{
+    id: string;
+    name: string;
+    influenceScore: number;
+  }>;
+  industryDistribution: Record<string, number>;
+  connectionTypes: Record<string, number>;
+}
+
 async function calculateDynamicPaths(
   targetEntityId: string, 
   maxPaths: number, 
-  minStrength: number
+  minStrength: number,
+  supabase: any
 ): Promise<IntroPath[]> {
   // Get all internal owners
   const { data: internalOwners } = await supabase
@@ -303,7 +310,7 @@ function calculateQualityScore(path: string[], strength: number): number {
   return Math.max(0, strength - lengthPenalty);
 }
 
-async function enhancePathsWithDetails(paths: IntroPath[]): Promise<IntroPath[]> {
+async function enhancePathsWithDetails(paths: IntroPath[], supabase: any): Promise<IntroPath[]> {
   // Get all unique entity IDs from paths
   const entityIds = new Set<string>();
   paths.forEach(path => {

@@ -3,10 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import { createHash } from 'crypto';
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Generate deterministic UUID from name + domain
 function generateEntityId(name: string, domain?: string, type: 'organization' | 'person' = 'organization'): string {
@@ -19,6 +15,15 @@ function generateEntityId(name: string, domain?: string, type: 'organization' | 
 }
 
 export async function POST(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
   try {
     console.log('🧪 Starting simple CSV import...');
     

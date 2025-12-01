@@ -1,42 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const AFFINITY_API_KEY = process.env.AFFINITY_API_KEY;
-
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-interface AffinityOrganization {
-  id: string;
-  name: string;
-  domain?: string;
-  website?: string;
-  industry?: string;
-  company_type: 'startup' | 'scaleup' | 'enterprise';
-  created_at: string;
-  status: 'active' | 'inactive';
-  metadata: {
-    employees?: string;
-    funding_stage?: string;
-    revenue_range?: string;
-    location?: string;
-  };
-}
-
-interface CreateOrganizationRequest {
-  name: string;
-  domain?: string;
-  website?: string;
-  industry?: string;
-  company_type?: 'startup' | 'scaleup' | 'enterprise';
-  employees?: string;
-  funding_stage?: string;
-  revenue_range?: string;
-  location?: string;
-}
 
 export async function GET(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const AFFINITY_API_KEY = process.env.AFFINITY_API_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return NextResponse.json({ error: 'Missing Supabase configuration' }, { status: 500 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
   try {
     const { searchParams } = new URL(req.url);
     const domain = searchParams.get('domain');
@@ -92,6 +68,36 @@ export async function POST(req: NextRequest) {
       error: 'Failed to create organization: ' + error.message 
     }, { status: 500 });
   }
+}
+
+// Interfaces need to be available in module scope
+interface AffinityOrganization {
+  id: string;
+  name: string;
+  domain?: string;
+  website?: string;
+  industry?: string;
+  company_type: 'startup' | 'scaleup' | 'enterprise';
+  created_at: string;
+  status: 'active' | 'inactive';
+  metadata: {
+    employees?: string;
+    funding_stage?: string;
+    revenue_range?: string;
+    location?: string;
+  };
+}
+
+interface CreateOrganizationRequest {
+  name: string;
+  domain?: string;
+  website?: string;
+  industry?: string;
+  company_type?: 'startup' | 'scaleup' | 'enterprise';
+  employees?: string;
+  funding_stage?: string;
+  revenue_range?: string;
+  location?: string;
 }
 
 async function getAffinityOrganization(orgId: string, apiKey: string): Promise<AffinityOrganization | null> {

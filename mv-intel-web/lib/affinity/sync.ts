@@ -328,7 +328,7 @@ export class AffinitySyncService {
         }
     }
 
-    async syncPipelineList(listName: string, options: { limit?: number } = {}) {
+    async syncPipelineList(listName: string, options: { limit?: number, concurrency?: number } = {}) {
         console.log(`🔄 Finding Affinity List: "${listName}"...`);
         const listId = await this.getAffinityListId(listName);
 
@@ -339,6 +339,7 @@ export class AffinitySyncService {
 
         console.log(`📋 Found List ID: ${listId}. Fetching entries...`);
         if (options.limit) console.log(`ℹ️  Limit applied: ${options.limit} entries`);
+        if (options.concurrency) console.log(`🚀 Concurrency set to: ${options.concurrency}`);
 
         let pageToken: string | undefined = undefined;
         // Shared counters
@@ -359,7 +360,7 @@ export class AffinitySyncService {
             do {
                 const response = await this.affinityClient.getListEntries(listId, pageToken);
                 const entries = response.list_entries; 
-
+                
                 if (!entries || entries.length === 0) {
                     console.log('No more entries to fetch.');
                     break;
@@ -376,7 +377,7 @@ export class AffinitySyncService {
                 console.log(`Processing batch of ${currentBatch.length} entries...`);
 
                 // OPTIMIZATION: Process in chunks to respect rate limits but improve speed
-                const CHUNK_SIZE = 5; 
+                const CHUNK_SIZE = options.concurrency || 5; 
                 for (let i = 0; i < currentBatch.length; i += CHUNK_SIZE) {
                     const chunk = currentBatch.slice(i, i + CHUNK_SIZE);
                     console.log(`   Processing chunk ${i} to ${i + CHUNK_SIZE}...`);

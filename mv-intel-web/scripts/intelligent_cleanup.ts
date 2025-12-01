@@ -5,7 +5,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Load env vars
-dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
+const envPath = path.resolve(__dirname, '../../.env'); // Check root .env first
+const localEnvPath = path.resolve(__dirname, '../.env.local');
+
+dotenv.config({ path: envPath });
+dotenv.config({ path: localEnvPath, override: true }); // Local overrides root
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

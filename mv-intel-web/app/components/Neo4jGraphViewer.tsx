@@ -61,26 +61,6 @@ export default function Neo4jGraphViewer({
         className={className}
       />
       
-      {/* Legend / Controls Overlay */}
-      <div className="absolute bottom-6 left-6 pointer-events-none">
-        <div className="bg-slate-900/80 backdrop-blur border border-slate-800 p-4 rounded-xl shadow-xl pointer-events-auto">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Graph Legend</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#7c3aed]"></span>
-              <span className="text-slate-300">Organization</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#2563eb]"></span>
-              <span className="text-slate-300">Person</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#dc2626]"></span>
-              <span className="text-slate-300">Internal Team</span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

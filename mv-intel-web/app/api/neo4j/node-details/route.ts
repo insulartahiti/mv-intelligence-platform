@@ -2,14 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false }
-});
 
 export async function GET(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json({
+      success: false,
+      message: 'Missing configuration'
+    }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+  });
+
   const { searchParams } = new URL(request.url);
   const nodeId = searchParams.get('id');
 

@@ -1,15 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
-// Initialize clients
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
@@ -19,10 +10,27 @@ export interface ChatMessage {
 }
 
 export class ChatService {
+    private supabase: any;
+    private openai: OpenAI;
+
+    constructor() {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+        
+        if (supabaseUrl && supabaseKey) {
+            this.supabase = createClient(supabaseUrl, supabaseKey);
+        }
+        
+        this.openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+        });
+    }
     
     // 1. Create a new conversation
     async createConversation(userId?: string, initialTitle: string = 'New Conversation') {
-        const { data, error } = await supabase
+        if (!this.supabase) throw new Error("Supabase client not initialized");
+        
+        const { data, error } = await this.supabase
             .schema('graph')
             .from('conversations')
             .insert({ 
@@ -39,7 +47,9 @@ export class ChatService {
 
     // 2. Add message to conversation
     async addMessage(conversationId: string, message: ChatMessage) {
-        const { data, error } = await supabase
+        if (!this.supabase) throw new Error("Supabase client not initialized");
+
+        const { data, error } = await this.supabase
             .schema('graph')
             .from('messages')
             .insert({
@@ -58,7 +68,9 @@ export class ChatService {
 
     // 3. Get history
     async getHistory(conversationId: string, limit: number = 20) {
-        const { data, error } = await supabase
+        if (!this.supabase) throw new Error("Supabase client not initialized");
+
+        const { data, error } = await this.supabase
             .schema('graph')
             .from('messages')
             .select('*')
@@ -110,7 +122,7 @@ export class ChatService {
         }
         `;
 
-        const response = await openai.chat.completions.create({
+        const response = await this.openai.chat.completions.create({
             model: "gpt-5.1", // Using user preferred model
             messages: [
                 { role: "system", content: systemPrompt },

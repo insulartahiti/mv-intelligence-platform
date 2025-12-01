@@ -6,24 +6,46 @@ const NEO4J_USER = process.env.NEO4J_USER;
 const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
 const NEO4J_DATABASE = process.env.NEO4J_DATABASE || 'neo4j';
 
-if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
-  throw new Error('Missing Neo4j environment variables. Please check your .env.local file.');
+let driver: any = null;
+
+function getDriver() {
+  if (driver) return driver;
+
+  if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
+    // Only throw in development or if actually needed, don't crash build
+    if (process.env.NODE_ENV === 'production' && typeof window === 'undefined' && process.env.NEXT_PHASE !== 'phase-production-build') {
+        console.warn('Missing Neo4j environment variables. Neo4j features will be disabled.');
+        return null;
+    }
+    // During build or if missing vars, we might want to return a mock or null to avoid crash
+    return null;
+  }
+
+  driver = neo4j.driver(
+    NEO4J_URI,
+    neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD),
+    {
+      maxConnectionLifetime: 3 * 60 * 60 * 1000, // 3 hours
+      maxConnectionPoolSize: 50,
+      connectionAcquisitionTimeout: 2 * 60 * 1000, // 2 minutes
+    }
+  );
+  return driver;
 }
 
-// Create Neo4j driver instance
-const driver = neo4j.driver(
-  NEO4J_URI,
-  neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD),
-  {
-    maxConnectionLifetime: 3 * 60 * 60 * 1000, // 3 hours
-    maxConnectionPoolSize: 50,
-    connectionAcquisitionTimeout: 2 * 60 * 1000, // 2 minutes
-  }
-);
+// Ensure driver is initialized if possible, but don't crash top-level if not
+try {
+    getDriver();
+} catch (e) {
+    console.warn('Failed to initialize Neo4j driver:', e);
+}
 
 // Test connection function
 export async function testNeo4jConnection(): Promise<boolean> {
-  const session = driver.session({ database: NEO4J_DATABASE });
+  const drv = getDriver();
+  if (!drv) return false;
+  
+  const session = drv.session({ database: NEO4J_DATABASE });
   
   try {
     const result = await session.run('RETURN 1 as test');
@@ -39,7 +61,10 @@ export async function testNeo4jConnection(): Promise<boolean> {
 
 // Get database info
 export async function getNeo4jInfo() {
-  const session = driver.session({ database: NEO4J_DATABASE });
+  const drv = getDriver();
+  if (!drv) return null;
+
+  const session = drv.session({ database: NEO4J_DATABASE });
   
   try {
     // Get node count
@@ -69,7 +94,10 @@ export async function getNeo4jInfo() {
 
 // Close driver (call this when shutting down the app)
 export function closeNeo4jDriver() {
-  return driver.close();
+  if (driver) {
+    return driver.close();
+  }
+  return Promise.resolve();
 }
 
-export { driver, NEO4J_DATABASE };
+export { getDriver as driver, NEO4J_DATABASE };

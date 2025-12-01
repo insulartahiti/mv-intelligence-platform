@@ -2,22 +2,22 @@ import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import { SearchFilters } from './postgres-vector';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Interface for Chat Message
-export interface ChatMessage {
-    role: 'user' | 'assistant' | 'system';
-    content: string;
+async function getClients() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    
+    if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Missing Supabase credentials for rag-service");
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    
+    return { supabase, openai };
 }
 
-async function generateEmbedding(text: string): Promise<number[]> {
+async function generateEmbedding(text: string, openai: OpenAI): Promise<number[]> {
     const response = await openai.embeddings.create({
         model: 'text-embedding-3-large',
         input: text,
@@ -31,6 +31,8 @@ export async function generateMarketInsight(
     filters: SearchFilters = {}, 
     history: ChatMessage[] = []
 ) {
+    const { supabase, openai } = await getClients();
+
     console.log('🧠 Generating Conversational Insight...');
 
     // 1. Contextualize Query (if history exists)
@@ -49,8 +51,9 @@ export async function generateMarketInsight(
         console.log(`   ↳ Rewritten Query: "${effectiveQuery}"`);
     }
 
+
     // 2. Vector Search with Rewritten Query
-    const queryEmbedding = await generateEmbedding(effectiveQuery);
+    const queryEmbedding = await generateEmbedding(effectiveQuery, openai);
     
     const filterJson: any = { ...filters };
     if (!filterJson.queryText) filterJson.queryText = effectiveQuery;

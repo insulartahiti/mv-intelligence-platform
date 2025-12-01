@@ -1,9 +1,16 @@
 import OpenAI from 'openai';
 import { driver, NEO4J_DATABASE } from '../neo4j';
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// Lazy load OpenAI
+let openaiInstance: OpenAI | null = null;
+function getOpenAI() {
+    if (!openaiInstance) {
+        openaiInstance = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        });
+    }
+    return openaiInstance;
+}
 
 const SCHEMA_CONTEXT = `
 Nodes: 
@@ -53,7 +60,7 @@ Return ONLY the Cypher query string. Do not include markdown formatting or expla
 
 export async function generateAndExecuteCypher(query: string) {
     // 1. Generate Cypher
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
         model: "gpt-4o", // Use a smart model for code generation
         messages: [
             { role: "system", content: SYSTEM_PROMPT },

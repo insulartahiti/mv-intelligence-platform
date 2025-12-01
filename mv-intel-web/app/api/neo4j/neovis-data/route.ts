@@ -5,12 +5,17 @@ import neo4j from 'neo4j-driver'; // Import neo4j for integer types
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(parseInt(searchParams.get('limit') || '200', 10), 2000); // Cap at 2000
-  const limitInt = Math.floor(Number(limit)); // Ensure integer
-  const minImportance = parseFloat(searchParams.get('minImportance') || '0.1');
-  const cursor = searchParams.get('cursor') || '0';
-  const expandNodeId = searchParams.get('expandNodeId');
+    const limitInt = Math.floor(Number(limit)); // Ensure integer
+    const minImportance = parseFloat(searchParams.get('minImportance') || '0.1');
+    const cursor = searchParams.get('cursor') || '0';
+    const expandNodeId = searchParams.get('expandNodeId');
 
-  const session = driver.session({ database: NEO4J_DATABASE });
+    // Verify driver is initialized
+    if (!driver) {
+       throw new Error('Neo4j driver not initialized');
+    }
+
+    const session = driver.session({ database: NEO4J_DATABASE });
 
   try {
     console.log(`🔍 Fetching Neovis data: limit=${limitInt}, minImportance=${minImportance}, cursor=${cursor}, expandNodeId=${expandNodeId}`);

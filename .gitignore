@@ -118,3 +118,5 @@ Thumbs.db
 *.backup
 *.bak
 node_modules
+.vercel
+.env*.local

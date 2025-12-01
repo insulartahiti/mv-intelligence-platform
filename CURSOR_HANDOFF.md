@@ -1,187 +1,168 @@
-# Cursor Handoff Document
+# Motive Intelligence Platform - Engineering Handoff
 
-## 1. Current Status (As of Dec 01, 2025)
+**Last Updated:** Dec 01, 2025
 
-**Objective**: Convert the platform into a "Conversational Knowledge Graph" - where users can chat with the data and see the graph update dynamically.
+This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
-**Progress**:
-- **System**:
-  - `enhanced_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client to bypass server-side DNS resolution issues. Enriches Organizations via Web Scraper -> Perplexity (`sonar-pro`) -> GPT-5.1.
-  - `enhanced_person_embedding_generator.js`: **Fixed & Running**. Refactored to use `supabase-js` client. Enriches People via Perplexity (`sonar-pro`) -> GPT-5.1.
-  - `scripts/generate_relationships.js`: **Fixed & Running**. Refactored to use `supabase-js` client. Extracts market relationships using **GPT-5.1**.
-  - `mv-intel-web/scripts/summarize_interactions.ts`: **Fixed & Running**. Refactored to use `supabase-js` client. Summarizes interaction history using **GPT-5.1**.
-  - **Quality Control**:
-    - **Audit**: Created `scripts/check_data_quality.js`.
-    - **Purge**: Cleared 398 low-quality entities (short/unknown text, low confidence) for re-processing.
-    - **Fixes**: Restored `systematic_cleanup.js` to use `Supabase Client` instead of direct Postgres connection.
-  - **Database**:
-    - **Conversational State**: Created `graph.conversations` and `graph.messages` tables.
-    - **History Tracking**: Added `graph.history_log`.
-    - **Interactions**: Added `graph.interactions` table for Notes, Meetings, Emails, Reminders.
-    - **Files**: Added `graph.affinity_files` table.
-    - **Rollup**: Added `graph.entity_notes_rollup` for summarized interaction history.
-  - **Frontend**:
-    - **Chat Interface**: Implemented split-screen chat UI (`ChatInterface.tsx`).
-    - **Dynamic Graph**: Updated `Neo4jGraphViewer` to highlight nodes cited by the chatbot.
-    - **Status Page**: Live pipeline monitoring with real-time sync counts.
-    - **Updated NodeDetailPanel**: Added "Interactions" and "Files" tabs.
-    - **Updated Search**: Added "Taxonomy" and "Seniority" filters.
-    - **Graph RAG**: Added "AI Insight" button.
-    - **Fixes**: Fixed `HTTP 404` error in Knowledge Graph search.
+---
 
-**Completed Tasks**:
-- [x] **Conversational V1 Implementation**:
-  - [x] Created `conversations` and `messages` tables.
-  - [x] Built `ChatService` with **GPT-5.1** query rewriting.
-  - [x] Created `/api/chat` endpoint orchestrating Rewrite -> Search -> Generate -> Graph Update.
-  - [x] Integrated `ChatInterface` into Knowledge Graph page (split view).
-  - [x] **Tested**: Verified end-to-end chat flow via API (Latency ~15s cold start, functional).
-  - [x] **Graph Context Fix**: Added neighbor retrieval to RAG context to support queries like "Co-invested with X".
-- [x] Switch to GPT-5.1 for all analysis.
-- [x] Implement robust Perplexity fallback.
-- [x] Fix `supabase-js` 0-row bug.
-- [x] Implement "Enrichment Source" tracking.
-- [x] Tune Graph Physics.
-- [x] **Chrome Extension**:
-  - [x] "One-click" connect.
-  - [x] Universal capture.
-- [x] **Relationship Extraction**:
-  - [x] Created `generate_relationships.js`.
-- [x] **Graph RAG**:
-  - [x] Implemented `/api/graph-rag`.
-- [x] **Universal Search Agent**:
-  - [x] Intent Classification.
-  - [x] Conversational UI.
-  - [x] Fixed dynamic route 404.
-- [x] **Automated Data Pipeline**:
-  - [x] Created `scripts/run_pipeline.js` with **Batch Processing** (5x speedup).
-  - [x] **Affinity Sync**: Implemented full sync including **Files**.
-  - [x] **Interaction Summarization**: Created `scripts/summarize_interactions.ts` (Updated to GPT-5.1).
-  - [x] **Fix**: Updated `run_pipeline.js` to use `tsx` for TypeScript files, fixing "All jobs have failed" error.
-  - [x] **Fix**: Patched enrichment scripts to handle missing `.env` path in server execution context.
-  - [x] **Fix**: Resolved DNS resolution errors by migrating `run_pipeline.js` and `systematic_cleanup.js` to use `supabase-js` client instead of direct Postgres connection.
-  - [x] **Fix**: Resolved `42P10` ON CONFLICT errors in `sync.ts` by implementing manual upsert logic.
-  - [x] **Fix**: Refactored ALL pipeline scripts (`enhanced_embedding_generator.js`, `enhanced_person_embedding_generator.js`, `summarize_interactions.ts`, `generate_relationships.js`) to use `supabase-js` client, ensuring full pipeline functionality despite server-side DNS issues with direct Postgres connection.
-  - [x] **Fix**: Updated Perplexity API model from deprecated `llama-3.1-sonar` to `sonar-pro`.
-  - [x] **Update**: Standardized all AI analysis tasks to use **GPT-5.1**.
-  - [x] **Fix**: Resolved `fetch failed` error in `migrate-to-neo4j.ts` by adding retry logic with exponential backoff for Supabase fetches.
-  - [x] **Resume**: Restored pipeline execution from mid-point (`embed_interactions.ts`) after failures, skipping completed steps.
-  - [x] **Feature**: Implemented robust field mapping for Affinity sync (Status, Fund, Valuation, Sourced By).
-  - [x] **Fix**: Relaxed error handling in `run_affinity_sync.ts` to prevent total pipeline failure on minor sync errors.
-  - [x] **Fix**: Added validation for `--limit` argument in pipeline scripts to prevent NaN errors.
-  - [x] **Fix**: Resolved `PGRST204` schema cache error by forcing a reload and verifying column existence.
-  - [x] **Fix**: Updated `sync.ts` to include `participants: []` for all interaction types to satisfy `NOT NULL` DB constraint.
-  - [x] **Fix**: Added fallback logic for `started_at` in `sync.ts` to handle null dates from Affinity, fixing `NOT NULL` constraint violations.
-- [x] **Affinity Integration**:
-  - [x] Backend: Updated `node-details` API.
-  - [x] Frontend: Updated `NodeDetailPanel` to display Interactions and Files.
-  - [x] **People Search Fix**: Updated Chat API to:
-    - Automatically fetch and inject connected people (Founder, Works At) into the LLM context when an Organization is found.
-    - **[v2]** Prioritize `Person` entities when the query implies it (e.g. "investors in..."), filtering by `types=['person']` and enriching results with employment history and organization connections.
-  - [x] **Deep RAG (Notes)**:
-  - [x] Confirmed `graph.interactions` table exists.
-  - [x] Created `api/cron/embed-interactions` to generate embeddings for notes/meetings.
-  - [x] Updated Chat Agent with `search_notes` tool.
-  - [x] **Schema Mismatch Fix**: Created `supabase/migrations/20251130_fix_interactions_schema.sql` to resolve missing columns blocking sync.
-  - [x] **Search Improvements**:
-    - [x] **Hybrid Search**: Implemented Parallel Keyword Search using **Full Text Search** (`websearch_to_tsquery`) to correctly handle natural language queries (e.g. "what about Mark Gilbert" -> matches "Mark Gilbert").
-    - [x] **Recall Boost**: Increased search result limit from 10 to **30** to ensure broader context coverage for RAG.
-    - [x] **Smart Prioritization**: Implemented boosted ranking for **Portfolio Companies** (+0.25) and **Founders** (+0.15) to ensure they appear first in relevant searches.
-    - [x] **Query Expansion**: Updated Chat System Prompt to automatically broaden "tool/software" queries with "AI", "WealthTech", and "Modern" to capture innovative solutions.
-    - [x] **Data Correction**: Fixed classification of "Mark Gilbert (Zocks)" (Org -> Person) and re-generated his profile/embedding to fix search visibility.
-    - [x] **Design Overhaul (Nov 30, 2025)**:
-      - [x] **Main Page**: Set Knowledge Graph as the default landing page.
-      - [x] **Navigation**: Implemented elegant collapsible "Spotlight" menu.
-      - [x] **Taxonomy View**: Created interactive, searchable hierarchical view of Investment Taxonomy (`/taxonomy`).
-      - [x] **Chrome Extension**: Added placeholder page (`/chrome-extension`).
-      - [x] **Refactoring**: Extracted core graph logic to `KnowledgeGraphPageContent` for reusability.
-    - [x] **UI Improvements**:
-      - [x] **Spotlight Transition**: Lifted loading state to eliminate empty chat screen flash.
-      - [x] **Result Tags**: Added Industry, Country, Pipeline Stage tags to results list; removed redundant description text.
-      - [x] **Prioritization**: Updated Chat API to sort results by relevance (Portfolio first).
-      - [x] **Graph Legend**: Updated legend to include "Amber" for Highlighted/Cited nodes.
-      - [x] **Home & Branding**: Added Home icon to menu, updated "Motive Intelligence" branding, and added cycling search examples.
-    - [x] **Pipeline Logic Fixes**:
-      - [x] **Portfolio Flag**: Updated `sync.ts` to correctly detect `pipeline_stage` ("Portfolio MVF1", "Motive AAV", etc.) and set `is_portfolio=true`.
-      - [x] **Founder Propagation**: Implemented `fix_portfolio_flags.ts` to automatically tag Founders/Owners of portfolio companies as "Portfolio" entities.
-      - [x] **Official People Sync**: Updated `sync.ts` to fetch Organization details (`GET /organizations/{id}`) and extract `person_ids` to link official contacts, replacing noisy interaction mining.
-    - [x] **Taxonomy & Data Quality (Dec 01, 2025)**:
-      - [x] **Missing Categories**: Added `SAV` (Digital Savings), `ENT` (Enterprise Tech), `MKT` (Market Infrastructure), `CONS` (Consensus), `CAPR` (Capital Raising), and `OPS` (Finance Ops) to frontend.
-      - [x] **Filtering Logic**: Implemented "Blocklist" filter to hide invalid categories (`UNKNOWN`, `UNDEFINED`, `OUT_OF_SCOPE`) and **Low-Count Filter** to hide noisy discovered categories (< 3 entities).
-      - [x] **Pagination**: Updated `/api/taxonomy/entities` to support batch fetching, bypassing Supabase 1000-row limit.
-      - [x] **Cleanup**: Created `fix_taxonomy.js` for reclassification.
-      - [x] **UI**: Added visual grid layout, formatted entity counts with commas, and implemented server-side individual entity refresh.
-      - [x] **Rebranding**: Updated application name from "MV Intelligence Platform" to "**Motive Intelligence**" in web metadata, PWA manifest, and Chrome extension.
-      - [x] **Pre-loading**: Updated Taxonomy Page to fetch all entities upfront, enabling instant client-side filtering and navigation.
-      - [x] **Payload Optimization**: Modified `/api/taxonomy/entities` to exclude `enrichment_data` column, significantly reducing initial load size.
-      - [x] **Logic Fixes**: Corrected entity count logic to sum all items in a branch recursively.
-      - [x] **Structural Update**: Moved "Consensus & Networks" (`CONS`) from root level to `IFT.CRYP.CONS`. Migrated database entities and updated frontend taxonomy tree.
-    - [x] **Auth & Administration (Dec 01, 2025)**:
-      - [x] **Login System**: Implemented "Spotlight Login" - email-only, magic link authentication, styled with Motive Intelligence aesthetic.
-      - [x] **Route Protection**: Restricted all pages (`/`, `/taxonomy`, `/status`, `/admin`, etc.) to authenticated users only.
-      - [x] **Admin Console**: Created `/admin` page for managing allowed users, restricted to `harsh.govil@motivepartners.com`.
-      - [x] **User Management**: Implemented `allowed_users` table in Supabase and logic to add/delete/verify users.
-      - [x] **Personalization**: Added "Good morning, [Name]" greeting to the main knowledge graph page.
-      - [x] **Client Optimization**: Implemented Singleton pattern for Supabase client to prevent "Multiple GoTrueClient instances" warnings and ensure stable auth state.
-      - [x] **Name Formatting**: Updated greeting to format names from email (e.g. "Harsh" instead of "harsh.govil") correctly.
-      - [x] **Context Injection**: Connected User Entity from graph (matching by name) to the Chat Agent, enabling personalized answers (e.g. "my deals").
-      - [x] **Affinity Sync Fix**: Updated `sync.ts` to extract Owners, Sourced By, and Deal Team fields and create relationship edges in the graph.
-      - [x] **Entity Corrections**: Manually updated "Malte Rau" description to distinguish Pliant from Pleo. Verified "Nelly" founders.
-      - [x] **Chat Accuracy**: Instructed Chat Agent to prioritize specific Founder/Owner names in drafts and avoid hallucinations.
-      - [x] **Portfolio Query Fix**: Implemented `get_user_deals` tool and logic to handle "my portfolio" requests by querying edges where the user is an owner/deal_team member.
-    - [x] **Email & Message Integration**:
-      - [x] **Drafting Tool**: Implemented `draft_message` tool supporting Email, SMS, and WhatsApp.
-      - [x] **UI**: Added conditional buttons ("Draft Email", "Draft Text", "Draft WhatsApp") based on user intent.
-      - [x] **Context**: Chat Agent automatically fetches Phone/Email from graph before drafting.
+## 1. System Overview & Architecture
 
-## 2. Active Processes & Monitoring
+The Motive Intelligence Platform is a **Conversational Knowledge Graph** that aggregates data from Affinity (CRM), external enrichment sources, and interaction logs into a unified graph database. It enables users to query their network using natural language.
 
-1.  **Conversational Agent**:
-    - Backend: `/api/chat` (Next.js)
-    - Frontend: `ChatInterface` (React)
-    - Database: `graph.conversations`, `graph.messages`
-2.  **Automated Data Pipeline** (`run_pipeline.js`)
-    - **Execution**: Runs hourly via GitHub Actions (Server-side) or manually via Status Page.
-    - **Steps**:
-        1.  `run_affinity_sync.ts`: Fetches Entities, Notes, Meetings, Files.
-            - **Update**: Relaxed error handling to treat partial sync failures as warnings.
-            - **Update**: Robust field mapping for critical business data (Status, Fund, Valuation).
-            - **Update**: Fixed schema mismatch (`participants` and `started_at` columns) to prevent silent sync failures.
-        2.  `embed_interactions.ts`: **[NEW]** Generates vector embeddings for new interactions.
-        3.  `summarize_interactions.ts`: Aggregates interaction history.
-        4.  `enhanced_embedding_generator.js`: Enriches companies (Perplexity + GPT-5.1).
-        5.  `generate_relationships.js`: Infers market relationships.
-        6.  `migrate-to-neo4j.ts`: Syncs graph data.
+### Core Stack
+- **Frontend**: Next.js 14 (App Router), React, Tailwind CSS.
+- **Primary Database**: Supabase (PostgreSQL) - Stores structured entity data, interaction logs, and vector embeddings (`pgvector`).
+- **Graph Database**: Neo4j (AuraDB) - Stores relationship nodes and edges for visualization and traversal.
+- **AI/LLM**: OpenAI GPT-5.1 (Reasoning & Synthesis), Perplexity `sonar-pro` (Enrichment), Supabase Edge Functions.
+- **Hosting**: Vercel (Production URL: `https://motivepartners.ai`)
 
-## 3. Usage & Testing
+### Data Flow Architecture
+1.  **Ingestion**: `run_affinity_sync.ts` fetches People, Organizations, Notes, and Files from Affinity CRM.
+2.  **Enrichment Loop**:
+    *   **Enrichment**: Entities are processed by Perplexity (web search) and GPT-5.1 to extract descriptions, sectors, and metadata.
+    *   **Vectorization**: `embed_interactions.ts` generates embeddings for unstructured text (notes, emails) using OpenAI `text-embedding-3-small`.
+    *   **Relationship Extraction**: `generate_relationships.js` infers connections (e.g., "Competitor", "Investor") from unstructured text.
+3.  **Graph Sync**: `migrate-to-neo4j.ts` pushes the enriched schemas from Supabase to Neo4j.
+4.  **Query Execution**:
+    *   User asks a question via Chat Interface.
+    *   **Hybrid Search**: The system performs a parallel search:
+        *   **Vector Search** (Supabase) for semantic similarity.
+        *   **Graph Traversal** (Neo4j) for network connections.
+    *   **Synthesis**: LLM (GPT-5.1) synthesizes the retrieved contexts into a coherent answer.
 
-### **Conversational Graph**
-- **URL**: `http://localhost:3000/knowledge-graph`
-- **Action**: Use the chat panel on the left.
-- **Example**: "Who are the key investors in Generative AI?" -> Watch the graph highlight relevant nodes.
+---
 
-### **Pipeline Status**
-- **Local/Server**: `http://localhost:3000/status`
-- **GitHub Actions**: `https://github.com/insulartahiti/mv-intelligence-platform/actions` (Hourly Cron)
-- **Features**: Real-time progress tracking, error logs, manual trigger.
+## 2. Development Setup
 
-## 4. Next Steps (Handoff)
+### Prerequisites
+- Node.js (v18+)
+- Supabase Project & CLI
+- Neo4j AuraDB Instance
+- OpenAI & Perplexity API Keys
+- Affinity API Key
 
-1.  **Monitor Edge Creation**: Check if the new sync logic correctly creates "contact" or "deal_team" edges for Owners/Sourced By fields.
-2.  **Completion Estimate**: ~1 hour remaining for final verification and cleanup.
-3.  **Optimization**: Implement Delta Sync for Affinity to only process entities updated since `last_sync_timestamp`, reducing API load and runtime.
-4.  **Dynamic Subgraph Retrieval**: Currently, the chat highlights nodes in the *full* graph. Ideally, the graph view should filter down to *only* the relevant subgraph for cleaner visualization.
-5.  **"Explain" Feature**: Add a button to chat messages to visualize the specific path (Why is X relevant?) on the graph.
-6.  **Performance Tuning**: Ensure Neo4j queries for node highlighting remain fast as graph grows.
+### Environment Variables
+Ensure your `.env` file in `mv-intel-web/` contains:
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+NEO4J_URI=...
+NEO4J_USER=...
+NEO4J_PASSWORD=...
+OPENAI_API_KEY=...
+PERPLEXITY_API_KEY=...
+AFFINITY_API_KEY=...
+```
 
-## 5. Technical Notes
+### Production Configuration
+For the production deployment at `https://motivepartners.ai`:
 
-- **Affinity Files**: We now fetch file metadata and download links (valid for session or redirected) from Affinity.
-- **Interaction Summarization**: Uses **GPT-5.1** to summarize the last 20 interactions per entity into a concise paragraph stored in Postgres.
-- **Latency**: No local data sync required for chat; hybrid search (Postgres + Neo4j) is performant (<2s).
-- **Graph Colors**:
-  - **Blue**: Person
-  - **Violet**: Organization
-  - **Red**: Internal Team (Motive)
-  - **Amber/Orange**: Highlighted Node (Cited in chat response or Search Result)
-  - **Green**: Hovered Node
+**Deployment Target**: Ensure you are deploying to the correct Vercel project (`motive_intelligence`).
+**Domain Configuration**: The domain `motivepartners.ai` is currently assigned to the old project (`mv-intelligence-platform`). You must move it to `motive_intelligence` in the Vercel Dashboard (Settings > Domains) to resolve the 404 error.
+
+1.  **Supabase Auth Redirects**: In the Supabase Dashboard > Authentication > URL Configuration, add `https://motivepartners.ai` to **Redirect URLs**. This is required for Magic Links to work in production (the code uses `window.location.origin` which resolves to the production domain).
+2.  **Edge Function Secrets**: Set the following secrets for production edge functions (specifically `linkedin-api-direct`):
+    ```bash
+    supabase secrets set LINKEDIN_REDIRECT_URI="https://motivepartners.ai/api/knowledge-graph/linkedin-callback"
+    ```
+
+### Key Commands
+Run these from the `mv-intel-web/` directory:
+
+| Action | Command | Description |
+| :--- | :--- | :--- |
+| **Start App** | `npm run dev` | Starts Next.js on localhost:3000 |
+| **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
+| **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
+| **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
+
+---
+
+## 3. Codebase Map
+
+### `mv-intel-web/` (Frontend & API)
+*   `app/api/chat/`: Core Chat Agent logic (Next.js Route Handler).
+*   `app/components/Neo4jGraphViewer.tsx`: Main graph visualization component (Vis.js).
+*   `app/components/ChatInterface.tsx`: Split-screen chat UI.
+*   `lib/search/postgres-vector.ts`: Hybrid search implementation.
+*   `lib/graph/`: Graph algorithms and helpers.
+
+**Note:** Components relying on `graphology` (e.g., `EnhancedClientGraph.tsx`) have been disabled to fix build issues.
+
+### `mv-intel-web/scripts/` (Data Pipeline)
+*   `run_pipeline.js`: Master orchestrator script.
+*   `run_affinity_sync.ts`: Affinity API ingestion logic.
+*   `enhanced_embedding_generator.js`: Entity enrichment (Perplexity + GPT).
+*   `generate_relationships.js`: Relationship inference.
+*   `intelligent_cleanup.ts`: LLM-based data hygiene (deduplication).
+
+### `supabase/` (Database)
+*   `functions/`: Edge Functions for scheduled tasks and webhooks.
+*   `migrations/`: SQL schemas for `graph.conversations`, `graph.interactions`, etc.
+
+---
+
+## 4. Operational Runbook (Data Pipelines)
+
+### The "Self-Healing" Pipeline
+The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data refresh. It runs hourly via GitHub Actions.
+
+**Pipeline Stages:**
+1.  **Sync**: Fetches delta updates from Affinity.
+2.  **Embed**: Vectorizes new notes/meetings.
+3.  **Summarize**: Generates 1-paragraph summaries of interaction history.
+4.  **Enrich**: Fills missing fields for Organizations/People via Web Search.
+5.  **Relate**: Extracts 2nd-degree connections.
+6.  **Push**: Updates Neo4j.
+
+### Common Issues & Debugging
+*   **"Supabase 0-row bug"**: If scripts fail to fetch data, ensure the `supabase-js` client is initialized with the *Service Role Key*, not the Anon Key.
+*   **Timeout Errors**: `postgres-vector.ts` can timeout on generic queries. Fix: Ensure `ILIKE` filters are used before vector similarity.
+*   **GitHub Actions Failure**: Check the "Actions" tab in GitHub. Common cause: Missing secrets or Neo4j connection limits.
+*   **Vercel Build Errors**: If API routes fail to build due to "Supabase URL required", ensure the client initialization is *inside* the handler function, not global.
+
+---
+
+## 5. Current Status & Known Issues (as of Dec 01, 2025)
+
+### Status Summary
+*   **Conversational Agent**: **Live**. Uses GPT-5.1 with query expansion and tool calling (`search_notes`, `traverse_graph`).
+*   **Graph UI**: **Stable**. Features "Highlighting" for cited nodes and "Densification" to show hidden connections.
+*   **Data Pipeline**: **Stable**. Migrated to `supabase-js` to resolve server-side DNS issues.
+*   **Deployment**: **Production**. Live at https://motivepartners.ai.
+
+### Known Risks & Limitations
+*   **Taxonomy Limits**: The `/api/taxonomy/entities` endpoint hits Supabase's 1000-row limit. *Mitigation: Pagination implemented, but monitor performance.*
+*   **Latency**: Initial graph load can be heavy (~2s). *Work In Progress: Subgraph retrieval optimization.*
+*   **Affinity Rate Limits**: Full syncs are API-intensive. *Next Step: Implement strict Delta Sync.*
+
+---
+
+## 6. Roadmap & Priorities
+
+### Immediate Priorities (This Week)
+1.  **Monitor Edge Creation**: Verify `owner` and `sourced_by` fields are correctly creating edges in Neo4j.
+2.  **Verify Cleanup**: Check logs of `intelligent_cleanup.ts` (Weekly Run) to ensure no valid entities are being merged/deleted.
+3.  **Delta Sync**: Modify `run_affinity_sync.ts` to fetch only records modified since `last_sync`.
+
+### Strategic Backlog
+*   **Subgraph Retrieval**: Instead of loading the full graph, query Neo4j for *only* the nodes relevant to the current user context/search.
+*   **"Explain" Feature**: Add UI to visualize *why* a node was recommended (e.g., highlight the path "You -> Invested In X -> Partnered With Y").
+*   **Email Drafting**: Expand `draft_message` tool to support template selection.
+
+---
+
+## Appendix: Recent Changelog (Dec 01, 2025)
+
+*   **Security Fix**: Removed hardcoded `SUPABASE_SERVICE_ROLE_KEY` from all API routes.
+*   **Deployment Fix**: Refactored ~20 API routes to initialize Supabase client lazily (inside handlers) to prevent Vercel build failures.
+*   **Deployment Fix**: Disabled unused `graphology` components causing build errors.
+*   **Fixed**: Refactored all pipeline scripts to use `supabase-js` client, bypassing server-side DNS issues.
+*   **Added**: `graph.conversations` and `graph.messages` tables for chat state.
+*   **Added**: Taxonomy View (`/taxonomy`) with hierarchical filtering.
+*   **Added**: "Spotlight Login" with Magic Link auth.
+*   **Added**: "Magic Code" OTP login support to bypass corporate email scanners (Antigena).
+*   **Documentation**: Updated Handoff doc with Production Auth Configuration (Redirect URLs) and Deployment Target (`motive_intelligence`).
+*   **Improved**: Search recall boosted (10 -> 30 results) and portfolio prioritization (+0.25 score).

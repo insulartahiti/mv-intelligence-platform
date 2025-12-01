@@ -1,8 +1,15 @@
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// Lazy load OpenAI
+let openaiInstance: OpenAI | null = null;
+function getOpenAI() {
+    if (!openaiInstance) {
+        openaiInstance = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        });
+    }
+    return openaiInstance;
+}
 
 export type SearchIntent = 'ENTITY_LOOKUP' | 'RELATIONSHIP_QUERY' | 'MARKET_INSIGHT';
 

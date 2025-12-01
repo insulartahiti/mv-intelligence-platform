@@ -312,13 +312,32 @@ serve(async (req) => {
 
     console.log(`🔍 Enriching person: ${entity.name}`)
 
-    // Create search queries
+    // Helper to clean company name for search
+    const cleanCompany = (company?: string) => {
+      if (!company) return '';
+      const lower = company.toLowerCase();
+      if (lower.includes('stealth') || lower.includes('unknown') || lower.includes('unassigned')) return '';
+      return company;
+    };
+
+    const company = cleanCompany(entity.metadata?.company || entity.enrichment_data?.current_employer);
+    const position = entity.metadata?.position || entity.enrichment_data?.current_position || '';
+
+    // Create search queries - Prioritize finding the *current* role if existing one is vague
     const searchQueries = [
-      `${entity.name} ${entity.metadata?.company || ''}`,
-      `${entity.name} ${entity.metadata?.position || ''}`,
+      `${entity.name} current job title company`,
       `${entity.name} linkedin profile`,
-      `${entity.name} professional background`
-    ]
+    ];
+
+    if (company) {
+      searchQueries.unshift(`${entity.name} ${company}`);
+    }
+    if (position && !position.toLowerCase().includes('founder')) { // Don't just search "Founder" without company
+       searchQueries.push(`${entity.name} ${position}`);
+    }
+    
+    // Add a specific query for latest news/updates
+    searchQueries.push(`${entity.name} latest news career update`);
 
     // Search web for information
     const allSearchResults: WebSearchResult[] = []

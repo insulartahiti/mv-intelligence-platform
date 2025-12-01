@@ -3,27 +3,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
-// Initialize Clients
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Helper: Generate Embedding
-async function generateEmbedding(text: string): Promise<number[]> {
-    const response = await openai.embeddings.create({
-        model: 'text-embedding-3-large',
-        input: text,
-        dimensions: 2000,
-    });
-    return response.data[0].embedding;
-}
 
 export async function POST(request: NextRequest) {
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const OPENAI_KEY = process.env.OPENAI_API_KEY;
+
+    if (!SUPABASE_URL || !SERVICE_ROLE || !OPENAI_KEY) {
+         return NextResponse.json({ success: false, message: 'Missing configuration' }, { status: 500 });
+    }
+
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const openai = new OpenAI({ apiKey: OPENAI_KEY });
+
+    // Helper: Generate Embedding
+    async function generateEmbedding(text: string): Promise<number[]> {
+        const response = await openai.embeddings.create({
+            model: 'text-embedding-3-large',
+            input: text,
+            dimensions: 2000,
+        });
+        return response.data[0].embedding;
+    }
+
     try {
         const body = await request.json();
         const { query } = body;

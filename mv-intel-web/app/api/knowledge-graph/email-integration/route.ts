@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
 export async function POST(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
   try {
     const { emailId, analysisData, companyLinks, extractedKPIs, insights } = await req.json();
 
@@ -56,16 +61,16 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Generate embeddings for search
-    await generateEmailEmbeddings(emailId, analysisData);
+    await generateEmailEmbeddings(emailId, analysisData, SUPABASE_URL, SERVICE_ROLE);
 
     // 4. Update company relationships
     if (companyLinks && companyLinks.length > 0) {
-      await updateCompanyRelationships(companyLinks, analysisData);
+      await updateCompanyRelationships(companyLinks, analysisData, supabase);
     }
 
     // 5. Store insights in knowledge graph
     if (insights && insights.length > 0) {
-      await storeEmailInsights(emailId, insights);
+      await storeEmailInsights(emailId, insights, supabase);
     }
 
     console.log(`✅ Email ${emailId} integrated with knowledge graph`);
@@ -87,7 +92,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function generateEmailEmbeddings(emailId: string, analysisData: any) {
+async function generateEmailEmbeddings(emailId: string, analysisData: any, supabaseUrl: string, serviceRole: string) {
   try {
     console.log(`🧠 Generating embeddings for email ${emailId}...`);
 
@@ -105,10 +110,10 @@ async function generateEmailEmbeddings(emailId: string, analysisData: any) {
     }
 
     // Call the embedding generation function
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/generate-embeddings`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-embeddings`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'Authorization': `Bearer ${serviceRole}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -130,7 +135,7 @@ async function generateEmailEmbeddings(emailId: string, analysisData: any) {
   }
 }
 
-async function updateCompanyRelationships(companyLinks: any[], analysisData: any) {
+async function updateCompanyRelationships(companyLinks: any[], analysisData: any, supabase: any) {
   try {
     console.log('🔗 Updating company relationships...');
 
@@ -187,7 +192,7 @@ async function updateCompanyRelationships(companyLinks: any[], analysisData: any
   }
 }
 
-async function storeEmailInsights(emailId: string, insights: any[]) {
+async function storeEmailInsights(emailId: string, insights: any[], supabase: any) {
   try {
     console.log(`💡 Storing email insights for ${emailId}...`);
 
@@ -215,7 +220,17 @@ async function storeEmailInsights(emailId: string, insights: any[]) {
   }
 }
 
+
 export async function GET(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
   try {
     const { searchParams } = new URL(req.url);
     const emailId = searchParams.get('emailId');

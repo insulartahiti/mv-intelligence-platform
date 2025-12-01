@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
     const session = driver.session({ database: NEO4J_DATABASE });
 

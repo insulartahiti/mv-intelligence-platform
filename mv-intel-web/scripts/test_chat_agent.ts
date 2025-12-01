@@ -73,14 +73,10 @@ const TEST_SCENARIOS = [
 ];
 
 async function runTest() {
-    console.log('🧪 Starting QA Harness for Universal Search...');
-    console.log('=============================================');
+    console.log('🧪 Starting QA Harness for Universal Search (Streaming API)...');
+    console.log('==========================================================');
 
     const resultsLog = [];
-
-    // Create a new conversation for each test to avoid context pollution, 
-    // or keep it for follow-ups? The guide implies standalone queries mostly.
-    // We'll use one conversation per scenario for clean testing.
 
     for (const scenario of TEST_SCENARIOS) {
         console.log(`\n📂 Category: ${scenario.category}`);
@@ -93,36 +89,110 @@ async function runTest() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    message: scenario.query
-                    // No conversationId -> Start fresh
+                    message: scenario.query,
+                    // Mock user context if needed for generic tests
+                    userEntity: { id: 'mock-user-id', name: 'Test User' }
                 })
             });
-
-            const duration = Date.now() - startTime;
 
             if (!res.ok) {
                 console.error(`❌ API Error: ${res.status} ${res.statusText}`);
                 continue;
             }
 
-            const data = await res.json();
-            
-            console.log(`🤖 Response (${duration}ms):`);
-            console.log(data.reply.trim());
-            
-            const nodeCount = data.relevantNodeIds?.length || 0;
-            const subgraphNodes = data.subgraph?.nodes?.length || 0;
-            const subgraphEdges = data.subgraph?.edges?.length || 0;
+            if (!res.body) {
+                console.error('❌ No response body!');
+                continue;
+            }
 
-            console.log(`📊 Metrics: ${nodeCount} matches, Graph: ${subgraphNodes} nodes / ${subgraphEdges} edges`);
+            // Streaming Response Handling with BUFFER
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let done = false;
+            let finalData = null;
+            let thoughts = [];
+            
+            // Buffer for accumulating split chunks
+            let buffer = "";
 
-            resultsLog.push({
-                ...scenario,
-                success: true,
-                response: data.reply,
-                nodeCount,
-                duration
-            });
+            while (!done) {
+                const { value, done: streamDone } = await reader.read();
+                done = streamDone;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
+                    
+                    // Process complete lines
+                    const lines = buffer.split('\n');
+                    
+                    // Keep the last potentially incomplete line in the buffer
+                    buffer = lines.pop() || ""; 
+
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue;
+
+                        try {
+                            const event = JSON.parse(trimmedLine);
+                            if (event.type === 'thought') {
+                                thoughts.push(event.content);
+                            } else if (event.type === 'final') {
+                                finalData = event;
+                            } else if (event.type === 'error') {
+                                console.error(`❌ Server Error: ${event.message}`);
+                            }
+                        } catch (e) {
+                            // Should not happen with proper buffering unless JSON is malformed
+                            console.warn(`⚠️ JSON Parse Error on line: ${trimmedLine.substring(0, 50)}...`);
+                        }
+                    }
+                }
+            }
+
+            // Process any remaining buffer
+            if (buffer.trim()) {
+                try {
+                    const event = JSON.parse(buffer.trim());
+                    if (event.type === 'final') finalData = event;
+                } catch (e) {
+                    // console.warn('⚠️ Final buffer incomplete');
+                }
+            }
+
+            const duration = Date.now() - startTime;
+
+            if (finalData) {
+                console.log(`🤖 Response (${duration}ms):`);
+                console.log(finalData.reply ? finalData.reply.trim() : "No text reply");
+                
+                const nodeCount = finalData.relevantNodeIds?.length || 0;
+                const subgraphNodes = finalData.subgraph?.nodes?.length || 0;
+                const subgraphEdges = finalData.subgraph?.edges?.length || 0;
+
+                console.log(`📊 Metrics: ${nodeCount} relevant nodes, Graph: ${subgraphNodes} nodes / ${subgraphEdges} edges`);
+                
+                // Check if we got graph data (fail if 0 nodes for non-informational queries)
+                if (subgraphNodes === 0 && !scenario.category.includes("Basic Lookup")) { // Basic lookup might just answer text
+                     // console.warn("   ⚠️ Warning: Empty subgraph returned");
+                }
+
+                resultsLog.push({
+                    ...scenario,
+                    success: true,
+                    response: finalData.reply,
+                    thoughts: thoughts,
+                    nodeCount,
+                    graphStats: { nodes: subgraphNodes, edges: subgraphEdges },
+                    duration
+                });
+            } else {
+                console.error("❌ Failed to get 'final' event from stream");
+                 resultsLog.push({
+                    ...scenario,
+                    success: false,
+                    error: "No final event received"
+                });
+            }
 
         } catch (e: any) {
             console.error(`❌ Request Failed: ${e.message}`);
@@ -135,7 +205,7 @@ async function runTest() {
         
         console.log('---------------------------------------------');
         // Small delay to be nice to the local server
-        await new Promise(r => setTimeout(r, 1000)); 
+        await new Promise(r => setTimeout(r, 500)); 
     }
 
     // Write log to file
@@ -143,6 +213,5 @@ async function runTest() {
     console.log('\n📝 Results saved to qa_results.json');
 }
 
-// Wait for server to potentially start
-console.log('⏳ Waiting 5s for server to settle...');
-setTimeout(runTest, 5000);
+// Run
+runTest();

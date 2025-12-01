@@ -1,34 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { 
-  auth: { persistSession: false } 
-});
-
-interface IntelligenceOverlay {
-  relationship_strength: number;
-  context: string;
-  opportunities: string[];
-  risk_factors: string[];
-  next_best_action: string;
-  confidence_score: number;
-  insights: {
-    communication_style: string;
-    decision_making: string;
-    optimal_timing: string;
-    preferred_channel: string;
-  };
-  investment_thesis?: string;
-  market_analysis?: string;
-  due_diligence_priorities?: string[];
-  last_updated: string;
-}
 
 export async function POST(req: NextRequest) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { 
+    auth: { persistSession: false } 
+  });
+
   try {
     const { company_id } = await req.json();
 
@@ -56,7 +43,7 @@ export async function POST(req: NextRequest) {
     console.log(`🧠 Generating intelligence for company: ${company.name}`);
 
     // Generate AI intelligence overlay
-    const intelligenceOverlay = await generateIntelligenceOverlay(company);
+    const intelligenceOverlay = await generateIntelligenceOverlay(company, OPENAI_API_KEY);
 
     // Save to database (using existing schema)
     const { data: savedOverlay, error: saveError } = await supabase
@@ -110,7 +97,28 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function generateIntelligenceOverlay(company: any): Promise<IntelligenceOverlay> {
+
+// Interface moved here to be accessible by generateIntelligenceOverlay
+interface IntelligenceOverlay {
+  relationship_strength: number;
+  context: string;
+  opportunities: string[];
+  risk_factors: string[];
+  next_best_action: string;
+  confidence_score: number;
+  insights: {
+    communication_style: string;
+    decision_making: string;
+    optimal_timing: string;
+    preferred_channel: string;
+  };
+  investment_thesis?: string;
+  market_analysis?: string;
+  due_diligence_priorities?: string[];
+  last_updated: string;
+}
+
+async function generateIntelligenceOverlay(company: any, OPENAI_API_KEY: string): Promise<IntelligenceOverlay> {
   console.log(`🔑 API Key found: ${OPENAI_API_KEY ? 'YES' : 'NO'}`);
   
   if (!OPENAI_API_KEY) {

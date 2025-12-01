@@ -6,15 +6,15 @@ import { PWAInstaller, PWAStatus } from './components/PWAInstaller';
 import PWAScript from './components/PWAScript';
 
 export const metadata: Metadata = {
-  title: 'MV Intelligence Platform',
+  title: 'Motive Intelligence',
   description: 'Professional portfolio intelligence, deal management, and network insights platform',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'MV Intelligence',
+    title: 'Motive Intelligence',
   },
-  applicationName: 'MV Intelligence',
+  applicationName: 'Motive Intelligence',
   authors: [{ name: 'Motive Ventures' }],
   keywords: ['portfolio', 'intelligence', 'deals', 'network', 'business'],
   robots: 'index, follow',
@@ -22,13 +22,13 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://mv-intelligence.com',
-    title: 'MV Intelligence Platform',
+    title: 'Motive Intelligence',
     description: 'Professional portfolio intelligence, deal management, and network insights platform',
-    siteName: 'MV Intelligence',
+    siteName: 'Motive Intelligence',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'MV Intelligence Platform',
+    title: 'Motive Intelligence',
     description: 'Professional portfolio intelligence, deal management, and network insights platform',
   },
 };
@@ -59,7 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
                <meta name="apple-mobile-web-app-capable" content="yes" />
                <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-               <meta name="apple-mobile-web-app-title" content="MV Intelligence" />
+               <meta name="apple-mobile-web-app-title" content="Motive Intelligence" />
       </head>
       <body className="app-backdrop text-onGlassDark">
         <CollapsibleMenu />

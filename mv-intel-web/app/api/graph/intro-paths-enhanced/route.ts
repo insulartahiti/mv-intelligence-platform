@@ -1,14 +1,37 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-});
+
+export async function POST(req: Request) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return new Response(JSON.stringify({ error: 'Missing configuration' }), { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+  try {
+    const request: IntroPathRequest = await req.json();
+    const paths = await findIntroPaths(request, supabase);
+    
+    return new Response(JSON.stringify(paths), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error: any) {
+    console.error('Intro path error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
 
 interface IntroPath {
   path: Array<{
@@ -36,7 +59,7 @@ interface IntroPathRequest {
   max_paths?: number;
 }
 
-async function findIntroPaths(request: IntroPathRequest): Promise<IntroPath[]> {
+async function findIntroPaths(request: IntroPathRequest, supabase: any): Promise<IntroPath[]> {
   const {
     target_entity_id,
     source_entity_id,
@@ -327,20 +350,5 @@ function generateReasoning(entities: any[], edges: any[]): string {
 }
 
 // API endpoint for intro paths
-export async function POST(req: Request) {
-  try {
-    const request: IntroPathRequest = await req.json();
-    const paths = await findIntroPaths(request);
-    
-    return new Response(JSON.stringify(paths), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error: any) {
-    console.error('Intro path error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
+// This function is now above interfaces and implementation to allow for proper hoisting of POST
 
