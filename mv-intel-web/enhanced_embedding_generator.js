@@ -61,8 +61,17 @@ class EnhancedEmbeddingGenerator {
     this.retryBaseDelay = 1000         
     this.limit = pLimit(this.concurrency)
     this.webScraper = new WebScraper()
-    this.taxonomyPath = path.resolve(__dirname, '../docs/taxonomy.md')
-    this.taxonomyContent = null
+    // Use the single source of truth prompt schema instead of reading the raw markdown file
+    // This ensures we use the curated, high-accuracy prompt
+    try {
+        const { TAXONOMY_PROMPT_SCHEMA } = require('./lib/taxonomy/schema');
+        this.taxonomyContent = TAXONOMY_PROMPT_SCHEMA;
+    } catch (e) {
+        // Fallback for raw JS execution where TS imports might fail if not transpiled
+        // We'll keep the file read as backup, but point to the TS file if possible or just use the file read
+        this.taxonomyPath = path.resolve(__dirname, '../docs/taxonomy.md')
+        this.taxonomyContent = null
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -238,8 +247,17 @@ Output ONLY valid JSON:
         response_format: { type: 'json_object' }
       })
 
-      return JSON.parse(completion.choices[0].message.content)
+      const result = JSON.parse(completion.choices[0].message.content);
+      
+      // Validate Primary Code
+      if (result.primary && !result.primary.startsWith('IFT.')) {
+          console.warn(`[Taxonomy] Invalid code generated: ${result.primary}. Defaulting to IFT.UNKNOWN`);
+          result.primary = 'IFT.UNKNOWN';
+      }
+
+      return result;
     } catch (err) {
+      console.error(`[Taxonomy] Classification failed for ${entity.name}:`, err.message);
       return { primary: 'IFT.UNKNOWN', secondary: [], confidence: 0, reasoning: 'Failed to classify' }
     }
   }
