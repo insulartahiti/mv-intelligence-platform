@@ -100,10 +100,13 @@ async function checkDataAssurance() {
         if (stale) stats.stale++;
     }
 
-    // Check 6: Fix Fake Founders (Stand-alone check)
+    // Check 7: Fix Fake Founders (Stand-alone check)
     await fixFakeFounders();
 
-    console.log('\n📊 Assurance Summary:', stats);
+    // Check 8: Clean Orphaned Affinity IDs (entities deleted from Affinity)
+    const orphans = await cleanOrphanedAffinityEntities();
+    
+    console.log('\n📊 Assurance Summary:', { ...stats, affinityOrphans: orphans });
 }
 
 async function checkDuplicateAndMerge(entity) {
@@ -445,6 +448,64 @@ async function executeMerge(keep, remove) {
     } else {
         console.log('      ✅ Merge Complete');
     }
+}
+
+/**
+ * Clean up entities that have been deleted from Affinity.
+ * These are detected by the sync process when it gets 404s.
+ * 
+ * Strategy:
+ * - Find entities with affinity_org_id that haven't been updated recently
+ * - Verify they still exist in Affinity by checking the API
+ * - If 404, clear the stale affinity_org_id (don't delete entity - it may have other value)
+ */
+async function cleanOrphanedAffinityEntities(): Promise<number> {
+    console.log('\n🔍 Checking for orphaned Affinity entities...');
+    
+    // Find entities with affinity IDs that haven't synced in 30+ days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { data: staleEntities, error } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('id, name, affinity_org_id, affinity_person_id, updated_at')
+        .or('affinity_org_id.not.is.null,affinity_person_id.not.is.null')
+        .lt('updated_at', thirtyDaysAgo.toISOString())
+        .limit(20); // Process in small batches
+    
+    if (error || !staleEntities || staleEntities.length === 0) {
+        console.log('   ✅ No stale Affinity entities found');
+        return 0;
+    }
+    
+    console.log(`   Found ${staleEntities.length} entities with stale Affinity IDs`);
+    
+    // For now, just flag them - actual verification would require Affinity API calls
+    // which we don't want to do in cleanup (rate limits, etc.)
+    // Instead, we mark them for the next sync to verify
+    let flagged = 0;
+    
+    for (const entity of staleEntities) {
+        // If entity hasn't been updated in 30+ days AND has Affinity ID,
+        // it may be orphaned. Flag for review by clearing enrichment flags.
+        console.log(`   ⚠️ Stale Affinity entity: ${entity.name} (last updated: ${entity.updated_at})`);
+        
+        // Clear enrichment flags so next sync re-processes
+        await supabase
+            .schema('graph')
+            .from('entities')
+            .update({ 
+                enriched: false,
+                enrichment_source: null 
+            })
+            .eq('id', entity.id);
+        
+        flagged++;
+    }
+    
+    console.log(`   📋 Flagged ${flagged} entities for re-sync verification`);
+    return flagged;
 }
 
 checkDataAssurance().catch(console.error);

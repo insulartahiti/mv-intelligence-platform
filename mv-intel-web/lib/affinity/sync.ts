@@ -492,8 +492,11 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            // Only log non-404 errors (404 = entity deleted from Affinity)
-                            if (!e.message?.includes('404')) {
+                            // 404 = entity likely deleted from Affinity - mark for review
+                            if (e.message?.includes('404')) {
+                                // Silently track - could flag entity for cleanup later
+                                console.log(`   ⚠️ Affinity 404 for ${entry.entity.name} (ID: ${entry.entity_id}) - may be deleted from Affinity`);
+                            } else {
                                 const errMsg = `Failed emails for ${entry.entity.name}: ${e.message}`;
                                 errors.push(errMsg);
                                 await this.updateSyncProgress(stats.companiesProcessed, errMsg);

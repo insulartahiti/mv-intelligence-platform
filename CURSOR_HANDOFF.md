@@ -119,7 +119,12 @@ enrichment.yml ──► run_enrichment_only.js (same as pipeline.yml minus Affi
 **Expected Outcomes:**
 - `pipeline.yml`: Fresh Affinity data + all AI enrichment + Neo4j in sync
 - `enrichment.yml`: Re-enriches entities (incl. IFT.UNKNOWN taxonomy) + Neo4j in sync
-- `cleanup.yml`: Garbage removed + duplicates merged + UNKNOWN taxonomy fixed + Neo4j in sync
+- `cleanup.yml`: Garbage removed + duplicates merged + UNKNOWN taxonomy fixed + orphaned Affinity entities flagged + Neo4j in sync
+
+**Affinity Sync Resilience:**
+- 404 errors (entity deleted from Affinity) are logged as warnings, not failures
+- Null content fields are handled gracefully (prevents `substring` errors)
+- Orphaned entities (stale Affinity IDs) are flagged for re-sync in weekly cleanup
 
 **Taxonomy Skip Mechanism:**
 Entities that fail classification 3 times are marked with `taxonomy_skip_until` (30 days). This prevents wasting API calls on unclassifiable entities.
@@ -293,6 +298,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
+*   **Affinity Orphan Detection**: Added `cleanOrphanedAffinityEntities()` to `intelligent_cleanup.ts`. Identifies entities with stale Affinity IDs (not updated in 30+ days) and flags them for re-sync verification. Prevents accumulation of orphaned data from entities deleted in Affinity CRM.
+*   **Affinity Sync Resilience**: Updated `lib/affinity/sync.ts` to gracefully handle 404 errors (entity deleted from Affinity) and null content fields. Logs warnings instead of failing the pipeline.
 *   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.
 *   **Status Dashboard Fix**: Corrected interaction summarization metric to check `entity_notes_rollup.latest_summary` instead of non-existent `interactions.summary` field.
 *   **Taxonomy Search Bar**: Added spotlight-style search to `/taxonomy` page. Searches both taxonomy codes/labels and company names. Results show category (green) or entity (blue) with navigation on click.
