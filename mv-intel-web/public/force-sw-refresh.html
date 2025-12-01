@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Force Service Worker Refresh</title>
+</head>
+<body>
+    <h1>Force Service Worker Refresh</h1>
+    <button onclick="forceRefresh()">Force Refresh Service Worker</button>
+    <div id="status"></div>
+
+    <script>
+        async function forceRefresh() {
+            const status = document.getElementById('status');
+            status.innerHTML = 'Refreshing service worker...';
+            
+            try {
+                // Unregister all service workers
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (let registration of registrations) {
+                    console.log('Unregistering service worker:', registration.scope);
+                    await registration.unregister();
+                }
+                
+                // Clear all caches
+                const cacheNames = await caches.keys();
+                for (let cacheName of cacheNames) {
+                    console.log('Deleting cache:', cacheName);
+                    await caches.delete(cacheName);
+                }
+                
+                status.innerHTML = '✅ Service worker unregistered and caches cleared!<br>Now reload the main page.';
+                
+                // Redirect to main page after 2 seconds
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                status.innerHTML = '❌ Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

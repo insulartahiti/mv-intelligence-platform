@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Test - MV Intelligence Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .section h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+            color: #3b82f6;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status.success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        .status.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .status.warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+        
+        .btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn.danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        
+        .info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        
+        .log {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .card h3 {
+            color: #3b82f6;
+            margin-bottom: 10px;
+        }
+        
+        .card p {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 PWA Test Dashboard</h1>
+        
+        <div class="section">
+            <h2>Service Worker Status</h2>
+            <div id="sw-status">
+                <span class="status warning">Checking...</span>
+            </div>
+            <div class="info">
+                <strong>Current Version:</strong> <span id="sw-version">Unknown</span><br>
+                <strong>Registration:</strong> <span id="sw-registration">Unknown</span>
+            </div>
+            <div>
+                <button class="btn" onclick="checkServiceWorker()">Refresh Status</button>
+                <button class="btn secondary" onclick="updateServiceWorker()">Update SW</button>
+                <button class="btn danger" onclick="unregisterServiceWorker()">Unregister SW</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>PWA Installation</h2>
+            <div id="install-status">
+                <span class="status warning">Checking...</span>
+            </div>
+            <div class="info">
+                <strong>Install Prompt Available:</strong> <span id="install-prompt">Unknown</span><br>
+                <strong>Already Installed:</strong> <span id="installed-status">Unknown</span><br>
+                <strong>Display Mode:</strong> <span id="display-mode">Unknown</span>
+            </div>
+            <div>
+                <button class="btn" onclick="checkInstallation()">Check Installation</button>
+                <button class="btn" onclick="triggerInstall()" id="install-btn" style="display: none;">Install PWA</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Manifest & Icons</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>Manifest</h3>
+                    <p id="manifest-status">Checking...</p>
+                </div>
+                <div class="card">
+                    <h3>Icons</h3>
+                    <p id="icons-status">Checking...</p>
+                </div>
+                <div class="card">
+                    <h3>HTTPS</h3>
+                    <p id="https-status">Checking...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Console Log</h2>
+            <div id="console-log" class="log">Loading...</div>
+            <button class="btn secondary" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="section">
+            <h2>Quick Actions</h2>
+            <div>
+                <a href="/" class="btn">Go to App</a>
+                <a href="/knowledge-graph" class="btn">Knowledge Graph</a>
+                <button class="btn secondary" onclick="testOffline()">Test Offline</button>
+                <button class="btn secondary" onclick="clearCache()">Clear Cache</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let deferredPrompt;
+        let installButton;
+        
+        // Console logging
+        const originalLog = console.log;
+        const originalError = console.error;
+        const logElement = document.getElementById('console-log');
+        
+        function addToLog(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : 'ℹ️';
+            logElement.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToLog(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToLog(args.join(' '), 'error');
+        };
+        
+        function clearLog() {
+            logElement.textContent = '';
+        }
+        
+        // Service Worker functions
+        async function checkServiceWorker() {
+            addToLog('Checking service worker status...');
+            
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    
+                    if (registration) {
+                        document.getElementById('sw-status').innerHTML = '<span class="status success">Active</span>';
+                        document.getElementById('sw-registration').textContent = 'Registered';
+                        
+                        if (registration.active) {
+                            document.getElementById('sw-version').textContent = 'v2.0.0 (Active)';
+                            addToLog('Service worker is active and running');
+                        } else if (registration.installing) {
+                            document.getElementById('sw-version').textContent = 'v2.0.0 (Installing)';
+                            addToLog('Service worker is installing...');
+                        } else if (registration.waiting) {
+                            document.getElementById('sw-version').textContent = 'v2.0.0 (Waiting)';
+                            addToLog('Service worker is waiting to activate');
+                        }
+                    } else {
+                        document.getElementById('sw-status').innerHTML = '<span class="status error">Not Registered</span>';
+                        document.getElementById('sw-registration').textContent = 'Not Registered';
+                        document.getElementById('sw-version').textContent = 'None';
+                        addToLog('No service worker registered');
+                    }
+                } catch (error) {
+                    document.getElementById('sw-status').innerHTML = '<span class="status error">Error</span>';
+                    addToLog('Error checking service worker: ' + error.message, 'error');
+                }
+            } else {
+                document.getElementById('sw-status').innerHTML = '<span class="status error">Not Supported</span>';
+                addToLog('Service workers not supported in this browser', 'error');
+            }
+        }
+        
+        async function updateServiceWorker() {
+            addToLog('Updating service worker...');
+            
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        await registration.update();
+                        addToLog('Service worker update triggered');
+                        setTimeout(checkServiceWorker, 1000);
+                    }
+                } catch (error) {
+                    addToLog('Error updating service worker: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        async function unregisterServiceWorker() {
+            addToLog('Unregistering service worker...');
+            
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        await registration.unregister();
+                        addToLog('Service worker unregistered');
+                        setTimeout(checkServiceWorker, 1000);
+                    }
+                } catch (error) {
+                    addToLog('Error unregistering service worker: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        // Installation functions
+        function checkInstallation() {
+            addToLog('Checking PWA installation status...');
+            
+            const isInstalled = window.matchMedia('(display-mode: standalone)').matches || 
+                               window.navigator.standalone === true;
+            
+            if (isInstalled) {
+                document.getElementById('install-status').innerHTML = '<span class="status success">Installed</span>';
+                document.getElementById('installed-status').textContent = 'Yes';
+                addToLog('PWA is already installed');
+            } else {
+                document.getElementById('install-status').innerHTML = '<span class="status warning">Not Installed</span>';
+                document.getElementById('installed-status').textContent = 'No';
+                addToLog('PWA is not installed');
+            }
+            
+            const displayMode = window.matchMedia('(display-mode: standalone)').matches ? 'Standalone' : 'Browser';
+            document.getElementById('display-mode').textContent = displayMode;
+            
+            if (deferredPrompt) {
+                document.getElementById('install-prompt').textContent = 'Available';
+                document.getElementById('install-btn').style.display = 'inline-block';
+            } else {
+                document.getElementById('install-prompt').textContent = 'Not Available';
+                document.getElementById('install-btn').style.display = 'none';
+            }
+        }
+        
+        async function triggerInstall() {
+            if (deferredPrompt) {
+                addToLog('Triggering install prompt...');
+                await deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                addToLog('Install prompt outcome: ' + outcome);
+                deferredPrompt = null;
+                checkInstallation();
+            }
+        }
+        
+        // Manifest and icons check
+        async function checkManifest() {
+            addToLog('Checking manifest and icons...');
+            
+            try {
+                const response = await fetch('/manifest.json');
+                if (response.ok) {
+                    const manifest = await response.json();
+                    document.getElementById('manifest-status').textContent = 'Valid ✓';
+                    addToLog('Manifest loaded successfully');
+                    
+                    // Check icons
+                    const iconPromises = manifest.icons.map(async (icon) => {
+                        const iconResponse = await fetch(icon.src);
+                        return iconResponse.ok;
+                    });
+                    
+                    const iconResults = await Promise.all(iconPromises);
+                    const validIcons = iconResults.filter(Boolean).length;
+                    document.getElementById('icons-status').textContent = `${validIcons}/${manifest.icons.length} Icons ✓`;
+                    addToLog(`Found ${validIcons} valid icons out of ${manifest.icons.length}`);
+                } else {
+                    document.getElementById('manifest-status').textContent = 'Error ✗';
+                    addToLog('Failed to load manifest', 'error');
+                }
+            } catch (error) {
+                document.getElementById('manifest-status').textContent = 'Error ✗';
+                addToLog('Error checking manifest: ' + error.message, 'error');
+            }
+            
+            // Check HTTPS
+            const isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
+            document.getElementById('https-status').textContent = isHttps ? 'Secure ✓' : 'Not Secure ✗';
+            addToLog('HTTPS status: ' + (isHttps ? 'Secure' : 'Not Secure'));
+        }
+        
+        // Test functions
+        function testOffline() {
+            addToLog('Testing offline functionality...');
+            // Simulate offline by disabling network
+            window.addEventListener('online', () => {
+                addToLog('Back online');
+            });
+            window.addEventListener('offline', () => {
+                addToLog('Gone offline');
+            });
+        }
+        
+        async function clearCache() {
+            addToLog('Clearing cache...');
+            
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(
+                        cacheNames.map(cacheName => caches.delete(cacheName))
+                    );
+                    addToLog('Cache cleared successfully');
+                } catch (error) {
+                    addToLog('Error clearing cache: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        // Event listeners
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            addToLog('Install prompt available');
+            checkInstallation();
+        });
+        
+        window.addEventListener('appinstalled', () => {
+            addToLog('PWA installed successfully!');
+            checkInstallation();
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            addToLog('PWA Test Dashboard loaded');
+            checkServiceWorker();
+            checkInstallation();
+            checkManifest();
+        });
+    </script>
+</body>
+</html>

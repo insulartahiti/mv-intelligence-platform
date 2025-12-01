@@ -75,7 +75,8 @@ dist
 
 # Gatsby files
 .cache/
-public
+# Note: Don't ignore 'public' globally - Next.js needs mv-intel-web/public/
+# /public  # Only uncomment if using Gatsby at root level
 
 # Storybook build outputs
 .out
