@@ -72,7 +72,7 @@ export default function TaxonomyPage() {
     return { label, description, children: current };
   }, [selectedPath]);
 
-  // Robust Node Finder
+  // Robust Node Finder - now handles "discovered" categories not in schema
   const getNodeByPath = (path: string) => {
       const parts = path.split('.');
       if (parts[0] !== 'IFT') return null; // Root must be IFT
@@ -84,7 +84,15 @@ export default function TaxonomyPage() {
           if (current.children && current.children[parts[i]]) {
               current = current.children[parts[i]];
           } else {
-              return null;
+              // Return a synthetic node for discovered categories
+              const key = parts[parts.length - 1];
+              return {
+                  label: key.replace(/_/g, ' '),
+                  description: 'Discovered category (not in canonical schema)',
+                  children: {},
+                  key,
+                  isDiscovered: true
+              };
           }
       }
       return { ...current, key: parts[parts.length - 1] };
@@ -273,6 +281,12 @@ function TaxonomyDashboard({ path, node, allEntities, onNavigate, onCompanyClick
                             <span className="text-sm font-normal text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-800 font-mono">
                                 {parts[parts.length - 1]}
                             </span>
+                            {node.isDiscovered && (
+                                <span className="text-xs font-normal text-amber-400 bg-amber-900/30 px-2 py-1 rounded border border-amber-700/50 flex items-center gap-1">
+                                    <AlertTriangle size={12} />
+                                    Discovered
+                                </span>
+                            )}
                         </h1>
                         <p className="text-slate-400 max-w-2xl">{node.description || 'No description available.'}</p>
                     </div>
@@ -302,29 +316,38 @@ function TaxonomyDashboard({ path, node, allEntities, onNavigate, onCompanyClick
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {Object.entries(subCategories).map(([key, count]) => {
                                 const childNode = node.children?.[key];
+                                const isDiscovered = !childNode;
                                 const label = childNode?.label || key.replace(/_/g, ' '); // Fallback for discovered cats
-                                const desc = childNode?.description || 'Discovered Category';
+                                const desc = childNode?.description || 'Discovered Category (not in schema)';
 
                                 // Hide very small discovered categories (likely noise)
-                                if (!childNode && count < 3) return null;
+                                if (isDiscovered && count < 3) return null;
 
                                 return (
                                     <div 
                                         key={key}
                                         onClick={() => onNavigate(`${path}.${key}`)}
-                                        className="group p-5 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800 hover:border-emerald-500/30 rounded-xl cursor-pointer transition-all hover:scale-[1.02] shadow-sm"
+                                        className={`group p-5 bg-slate-900/40 hover:bg-slate-800/60 border rounded-xl cursor-pointer transition-all hover:scale-[1.02] shadow-sm ${
+                                            isDiscovered 
+                                                ? 'border-amber-800/50 hover:border-amber-500/50' 
+                                                : 'border-slate-800 hover:border-emerald-500/30'
+                                        }`}
                                     >
                                         <div className="flex justify-between items-start mb-2">
-                                            <div className="p-2 bg-emerald-900/20 text-emerald-400 rounded-lg group-hover:bg-emerald-900/30">
-                                                <Folder size={20} />
+                                            <div className={`p-2 rounded-lg group-hover:bg-opacity-30 ${
+                                                isDiscovered 
+                                                    ? 'bg-amber-900/20 text-amber-400' 
+                                                    : 'bg-emerald-900/20 text-emerald-400 group-hover:bg-emerald-900/30'
+                                            }`}>
+                                                {isDiscovered ? <AlertTriangle size={20} /> : <Folder size={20} />}
                                             </div>
                                             <span className="text-xs font-mono text-slate-500">{key}</span>
                                         </div>
                                         <h4 className="font-semibold text-slate-200 mb-1 group-hover:text-white">{label}</h4>
-                                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">{desc}</p>
+                                        <p className={`text-xs line-clamp-2 mb-3 ${isDiscovered ? 'text-amber-500/70' : 'text-slate-500'}`}>{desc}</p>
                                         <div className="flex items-center text-xs text-slate-400 font-medium">
                                             {count.toLocaleString()} Entities
-                                            <ArrowRight size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400" />
+                                            <ArrowRight size={12} className={`ml-auto opacity-0 group-hover:opacity-100 transition-opacity ${isDiscovered ? 'text-amber-400' : 'text-emerald-400'}`} />
                                         </div>
                                     </div>
                                 );
