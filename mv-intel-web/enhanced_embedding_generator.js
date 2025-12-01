@@ -433,13 +433,15 @@ Summary: ${analysis.summary}
     await this.loadTaxonomy()
     console.log('Taxonomy definition loaded.')
 
-    // Build query
+    // Build query - fetch organizations
     let query = supabase.schema('graph').from('entities').select('*').eq('type', 'organization')
     
     if (target) {
+        // Target specific entity by name
         query = query.ilike('name', `%${target}%`)
     } else if (incremental) {
-        query = query.is('business_analysis', null)
+        // Incremental mode: only unenriched entities
+        // This is handled via post-fetch filtering below for complex OR conditions
     }
     
     if (limit) {
@@ -468,6 +470,22 @@ Summary: ${analysis.summary}
         if (page > 100) break; 
     }
     
+    // Filter for incremental mode (complex OR conditions not supported by Supabase query builder)
+    if (incremental && !target) {
+        const beforeCount = allEntities.length;
+        allEntities = allEntities.filter(e => {
+            // Include if: no business_analysis, no taxonomy, or taxonomy is UNKNOWN/UNK
+            const needsAnalysis = !e.business_analysis;
+            const needsTaxonomy = !e.taxonomy || 
+                                  e.taxonomy === 'IFT.UNKNOWN' || 
+                                  e.taxonomy === 'IFT.UNK' ||
+                                  e.taxonomy.includes('UNKNOWN') ||
+                                  e.taxonomy.includes('UNK');
+            return needsAnalysis || needsTaxonomy;
+        });
+        console.log(`Filtered ${beforeCount} -> ${allEntities.length} entities needing enrichment`);
+    }
+    
     if (limit) allEntities = allEntities.slice(0, parseInt(limit));
 
     console.log(`Found ${allEntities.length} entities to process`)
@@ -488,6 +506,7 @@ async function main() {
   const generator = new EnhancedEmbeddingGenerator()
   const args = process.argv.slice(2)
   const incremental = args.includes('--incremental')
+  const reclassify = args.includes('--reclassify') // Only re-run taxonomy on UNKNOWN entities
   
   // Check for limit argument (e.g. --limit 50)
   let limit = null
@@ -501,6 +520,31 @@ async function main() {
   const targetIndex = args.indexOf('--target')
   if (targetIndex !== -1 && args[targetIndex + 1]) {
     target = args[targetIndex + 1]
+  }
+  
+  // Handle --reclassify mode (only entities with UNKNOWN taxonomy)
+  if (reclassify) {
+    console.log('🔄 Reclassify mode: Finding entities with UNKNOWN taxonomy...');
+    const { data: unknownEntities } = await supabase
+      .schema('graph')
+      .from('entities')
+      .select('*')
+      .eq('type', 'organization')
+      .or('taxonomy.eq.IFT.UNKNOWN,taxonomy.eq.IFT.UNK,taxonomy.ilike.%UNKNOWN%,taxonomy.is.null');
+    
+    console.log(`Found ${unknownEntities?.length || 0} entities with UNKNOWN/missing taxonomy`);
+    
+    if (unknownEntities && unknownEntities.length > 0) {
+      const toProcess = limit ? unknownEntities.slice(0, parseInt(limit)) : unknownEntities;
+      for (let i = 0; i < toProcess.length; i += generator.batchSize) {
+        const batch = toProcess.slice(i, i + generator.batchSize);
+        console.log(`Processing batch ${Math.floor(i / generator.batchSize) + 1}...`);
+        await generator.processBatch(batch);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    console.log('Reclassification completed');
+    return;
   }
   
   await generator.generateAllEnhancedEmbeddings({ incremental, limit, target })
