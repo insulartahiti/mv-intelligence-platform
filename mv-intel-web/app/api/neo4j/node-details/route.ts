@@ -28,7 +28,16 @@ export async function GET(request: NextRequest) {
     }, { status: 400 });
   }
 
-  const session = driver.session({ database: NEO4J_DATABASE });
+    // Verify driver is initialized
+    if (!driver) {
+        console.warn('Neo4j driver uninitialized');
+        return NextResponse.json({
+            success: false,
+            message: 'Graph service unavailable'
+        }, { status: 503 });
+    }
+
+    const session = driver.session({ database: NEO4J_DATABASE });
 
   try {
     console.log(`🔍 Fetching node details for: ${nodeId}`);
@@ -65,7 +74,7 @@ export async function GET(request: NextRequest) {
             .from('entities')
             .select('business_analysis, enrichment_data, employment_history, publications, areas_of_expertise, enrichment_source')
             .eq('id', dbId)
-            .single();
+            .maybeSingle();
         
         if (entityData) {
             postgresData = entityData;
