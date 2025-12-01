@@ -249,10 +249,23 @@ Output ONLY valid JSON:
 
       const result = JSON.parse(completion.choices[0].message.content);
       
-      // Validate Primary Code
-      if (result.primary && !result.primary.startsWith('IFT.')) {
-          console.warn(`[Taxonomy] Invalid code generated: ${result.primary}. Defaulting to IFT.UNKNOWN`);
+      // Validate Primary Code against canonical schema
+      let { isValidTaxonomyCode } = {};
+      try {
+          ({ isValidTaxonomyCode } = require('./lib/taxonomy/schema'));
+      } catch (e) {
+          // Fallback: just check prefix if schema not available
+          isValidTaxonomyCode = (code) => code?.startsWith('IFT.');
+      }
+      
+      if (!result.primary || !isValidTaxonomyCode(result.primary)) {
+          console.warn(`[Taxonomy] Invalid/unknown code: ${result.primary}. Defaulting to IFT.UNKNOWN`);
           result.primary = 'IFT.UNKNOWN';
+      }
+      
+      // Also validate secondary codes
+      if (result.secondary && Array.isArray(result.secondary)) {
+          result.secondary = result.secondary.filter(code => isValidTaxonomyCode(code));
       }
 
       return result;
