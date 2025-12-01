@@ -12,7 +12,15 @@ export async function GET(request: NextRequest) {
 
     // Verify driver is initialized
     if (!driver) {
-       throw new Error('Neo4j driver not initialized');
+       // Return empty dataset instead of crashing to prevent UI error flash
+       return NextResponse.json({
+         success: true,
+         data: {
+           nodes: [],
+           edges: [],
+           meta: { totalNodes: 0, totalEdges: 0, limit: limitInt, minImportance }
+         }
+       });
     }
 
     const session = driver.session({ database: NEO4J_DATABASE });
