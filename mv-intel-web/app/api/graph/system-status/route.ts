@@ -65,11 +65,25 @@ export async function GET(request: NextRequest) {
       .from('interactions')
       .select('*', { count: 'exact', head: true });
       
-    const { count: interactionsWithSummary } = await supabase
+    // Count interactions with embeddings (from embed_interactions.ts)
+    const { count: interactionsWithEmbedding } = await supabase
       .schema('graph')
       .from('interactions')
       .select('*', { count: 'exact', head: true })
-      .not('summary', 'is', null);
+      .not('embedding', 'is', null);
+    
+    // Count entity summaries (from summarize_interactions.ts -> entity_notes_rollup)
+    const { count: entitiesWithSummary } = await supabase
+      .schema('graph')
+      .from('entity_notes_rollup')
+      .select('*', { count: 'exact', head: true })
+      .not('latest_summary', 'is', null);
+    
+    // Count entities that have interactions (for coverage calculation)
+    const { count: entitiesWithInteractions } = await supabase
+      .schema('graph')
+      .from('interactions')
+      .select('entity_id', { count: 'exact', head: true });
 
     // Get Affinity Files
     const { count: totalFiles } = await supabase
@@ -106,7 +120,11 @@ export async function GET(request: NextRequest) {
       // Affinity
       affinityEntities: (affinityEntities || 0) + (affinityPersons || 0),
       totalInteractions: totalInteractions || 0,
-      interactionCoverage: totalInteractions ? Math.round(((interactionsWithSummary || 0) / totalInteractions) * 100) : 0,
+      // Interaction Embedding Coverage (embed_interactions.ts)
+      interactionEmbeddingCoverage: totalInteractions ? Math.round(((interactionsWithEmbedding || 0) / totalInteractions) * 100) : 0,
+      // Entity Summary Coverage (summarize_interactions.ts -> entity_notes_rollup)
+      interactionCoverage: entitiesWithInteractions ? Math.round(((entitiesWithSummary || 0) / (entitiesWithInteractions || 1)) * 100) : 0,
+      entitiesWithSummary: entitiesWithSummary || 0,
       totalFiles: totalFiles || 0,
 
       // Sync State
