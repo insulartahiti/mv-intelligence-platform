@@ -121,6 +121,12 @@ enrichment.yml ──► run_enrichment_only.js (same as pipeline.yml minus Affi
 - `enrichment.yml`: Re-enriches entities (incl. IFT.UNKNOWN taxonomy) + Neo4j in sync
 - `cleanup.yml`: Garbage removed + duplicates merged + UNKNOWN taxonomy fixed + Neo4j in sync
 
+**Taxonomy Skip Mechanism:**
+Entities that fail classification 3 times are marked with `taxonomy_skip_until` (30 days). This prevents wasting API calls on unclassifiable entities.
+- `taxonomy_attempts`: Count of failed attempts
+- `taxonomy_skip_until`: Skip date (null = not skipped)
+- Use `--force` flag to override and retry skipped entities
+
 | **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
 | **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
 
@@ -286,6 +292,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
+*   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.
+*   **Status Dashboard Fix**: Corrected interaction summarization metric to check `entity_notes_rollup.latest_summary` instead of non-existent `interactions.summary` field.
 *   **Taxonomy Search Bar**: Added spotlight-style search to `/taxonomy` page. Searches both taxonomy codes/labels and company names. Results show category (green) or entity (blue) with navigation on click.
 *   **Strict Taxonomy Enforcement**: Taxonomy page now only displays canonical categories from schema. Invalid paths show error state with "Return to Root" button. Enrichment pipeline validates codes against `isValidTaxonomyCode()`.
 *   **Service Worker Resilience**: Updated `sw.js` to v2.0.3 with `Promise.allSettled` for individual asset caching. Prevents installation failure from cached 404s.
