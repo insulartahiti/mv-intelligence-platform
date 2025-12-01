@@ -22,9 +22,9 @@ const openai = new OpenAI({ apiKey: openaiApiKey });
 
 async function generateEmbedding(text: string): Promise<number[]> {
     const response = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
+        model: 'text-embedding-3-large',
         input: text,
-        dimensions: 1536,
+        dimensions: 2000,
     });
     return response.data[0].embedding;
 }
