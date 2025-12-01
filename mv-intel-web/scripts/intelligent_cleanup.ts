@@ -20,26 +20,40 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
 // Configuration
-const DRY_RUN = process.argv.includes('--dry-run');
+const args = process.argv.slice(2);
+const DRY_RUN = args.includes('--dry-run');
+const FULL_SCAN = args.includes('--full');
+const MONTHS = args.includes('--months') ? parseInt(args[args.indexOf('--months') + 1]) : 3;
 const CONFIDENCE_THRESHOLD = 0.95;
-const BATCH_LIMIT = process.argv.includes('--full') ? 1000 : 50; // Default small batch for safety
+const BATCH_LIMIT = FULL_SCAN ? 1000 : 50; 
 
 async function checkDataAssurance() {
-    console.log(`🛡️ Starting Intelligent Data Assurance (Dry Run: ${DRY_RUN}, Limit: ${BATCH_LIMIT})...`);
+    console.log(`🛡️ Starting Intelligent Data Assurance (Dry Run: ${DRY_RUN}, Full: ${FULL_SCAN}, Stale: >${MONTHS}m, Limit: ${BATCH_LIMIT})...`);
 
-    // 1. Fetch Candidates: Entities with issues OR general audit
-    // We prioritize "risky" entities first
-    const { data: candidates, error } = await supabase
+    // Calculate stale date
+    const staleDate = new Date();
+    staleDate.setMonth(staleDate.getMonth() - MONTHS);
+    const staleIso = staleDate.toISOString();
+
+    // 1. Fetch Candidates
+    let query = supabase
         .schema('graph')
         .from('entities')
-        .select('id, name, type, description, taxonomy, domain, updated_at')
-        // Filter for specific issues to prioritize:
-        // - Parentheses in name
-        // - Missing taxonomy
-        // - Stale (> 6 months)
-        // - "Stealth" in name
-        .or('name.ilike.%(%),name.ilike.%stealth%,taxonomy.is.null,updated_at.lt.2025-06-01') 
-        .order('updated_at', { ascending: true }) // Oldest first
+        .select('id, name, type, description, taxonomy, domain, updated_at');
+
+    // Build filter logic
+    if (FULL_SCAN) {
+        // In full scan, we look for ANY issue
+        query = query.or(`name.ilike.%(%),name.ilike.%stealth%,taxonomy.is.null,updated_at.lt.${staleIso}`);
+    } else {
+        // Weekly maintenance: Focus on older entities
+        query = query.lt('updated_at', staleIso);
+        // And optionally prioritize ones with visible issues, or just check them all?
+        // Checking all stale entities is good.
+    }
+
+    const { data: candidates, error } = await query
+        .order('updated_at', { ascending: true }) // Process oldest first
         .limit(BATCH_LIMIT);
 
     if (error) {
