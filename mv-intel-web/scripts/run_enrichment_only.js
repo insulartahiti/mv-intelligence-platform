@@ -118,8 +118,8 @@ async function runEnrichmentPipeline() {
   }
 
   try {
-    // Set status to RUNNING
-    await updateSyncStatus('running_enrichment');
+    // Set status to RUNNING (Note: DB check constraint only allows 'idle', 'running', 'error')
+    await updateSyncStatus('running', 'Enrichment-Only Pipeline Started');
 
     log('⚡ Starting Parallel Processing Block (Enrichment & Embeddings)...');
     
