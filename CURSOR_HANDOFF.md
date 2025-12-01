@@ -84,6 +84,7 @@ Run these from the `mv-intel-web/` directory:
 | :--- | :--- | :--- |
 | **Start App** | `npm run dev` | Starts Next.js on localhost:3000 |
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
+| **Enrich Only** | `node scripts/run_enrichment_only.js` | Skips Affinity sync, runs AI enrichment & graph sync |
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
 | **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
 | **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
@@ -199,8 +200,10 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Duplicate Merge**: Evaluates "Company (Stealth)" → "Company" merges with 95% confidence threshold.
     *   **Type Verification**: Corrects misclassified entities (person vs. organization).
     *   **Taxonomy Validation**: Re-classifies organizations with invalid/missing taxonomy.
+    *   **Fake Founder Cleanup**: Downgrades "Founder" edges to "Works At" if the person's title explicitly indicates a non-founder role (e.g., "Associate", "VP").
+    *   **Location Enrichment**: Infers missing city/country using GPT-5.1 (internal data) or **Perplexity** (web search) if internal data is insufficient.
     *   **Stale Re-Enrichment**: Entities not updated in 6+ months are queued for re-enrichment (clears `enriched`, `enrichment_source`, `relationships_extracted_at` flags).
-3.  **Neo4j Sync** *(always runs)*: Pushes all cleanup changes to the graph database. Runs even if previous steps fail to ensure partial changes are persisted.
+ 3.  **Neo4j Sync** *(always runs)*: Pushes all cleanup changes to the graph database. Runs even if previous steps fail to ensure partial changes are persisted.
 
 **Manual Trigger**: Run with `--full` flag for a complete database scan (ignores date filter).
 
@@ -245,9 +248,11 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
 *   **Centralized Taxonomy Schema**: Created `lib/taxonomy/schema.ts` as single source of truth for IFT taxonomy. Exports tree structure, LLM prompt schema, and validation utilities. Eliminates duplication across taxonomy page and classifier.
+*   **Agent Strategy Enhancement**: Updated Chat Agent system prompt to support "Strategy-First" list building. Queries like "Who should I invite..." now trigger a segment-based multi-search workflow (e.g. "Vertical SaaS", "Competitors") rather than single keyword searches.
 *   **Taxonomy Threshold Fix**: Aligned confidence thresholds between `detectTaxonomy()` (0.85→0.7) and `universal-search/route.ts` (0.7) using shared `TAXONOMY_CONFIDENCE_THRESHOLD` constant. Prevents unnecessary LLM calls for high-confidence fast matches.
 *   **GPT-5.1 Taxonomy Classifier**: Updated `lib/search/taxonomy-classifier.ts` to use GPT-5.1. Now imports schema from centralized source.
 *   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
+*   **Location Enrichment with Perplexity**: Added `enrichLocation` to `intelligent_cleanup.ts`. Uses a two-step process (Internal GPT-5.1 → External Perplexity Sonar) to find headquarters location for entities with missing geographic data.
 *   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
 *   **Cleanup Resilience Fix**: Added `continue-on-error: true` and `if: always()` to ensure Neo4j sync runs regardless of cleanup failures.
 *   **Weekly Maintenance Workflow**: Updated `cleanup.yml` to run intelligent cleanup with live execution (removed dry-run default).
