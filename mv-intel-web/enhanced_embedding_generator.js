@@ -346,15 +346,32 @@ Summary: ${analysis.summary}
       taxonomyAssignment, 
       businessAnalysis,
       enrichmentSource,
-      name: entity.name
+      name: entity.name,
+      currentAttempts: entity.taxonomy_attempts || 0
     }
   }
 
   // ---------------------------------------------------------------------
   // DB update for all new fields
   // ---------------------------------------------------------------------
-  async updateEntityData({ id, richEmb, taxEmb, taxonomyAssignment, businessAnalysis, enrichmentSource }) {
+  async updateEntityData({ id, richEmb, taxEmb, taxonomyAssignment, businessAnalysis, enrichmentSource, currentAttempts = 0 }) {
     return this.retry(async () => {
+      const isUnknown = !taxonomyAssignment.primary || 
+                        taxonomyAssignment.primary === 'IFT.UNKNOWN' || 
+                        taxonomyAssignment.primary === 'IFT.UNK' ||
+                        taxonomyAssignment.primary.includes('UNKNOWN');
+      
+      const newAttempts = isUnknown ? (currentAttempts + 1) : 0;
+      
+      // If we've tried 3+ times and still UNKNOWN, skip for 30 days
+      const skipUntil = (isUnknown && newAttempts >= 3) 
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() 
+        : null;
+      
+      if (skipUntil) {
+        console.log(`   ⏭️ Marking ${id} to skip until ${skipUntil} (${newAttempts} failed attempts)`);
+      }
+      
       const { error } = await supabase
         .schema('graph')
         .from('entities')
@@ -366,10 +383,13 @@ Summary: ${analysis.summary}
           taxonomy_confidence: taxonomyAssignment.confidence,
           taxonomy_reasoning: taxonomyAssignment.reasoning,
           business_analysis: businessAnalysis,
-          ai_summary: businessAnalysis.summary || businessAnalysis.core_business, // Ensure legacy field is updated with fresh data
+          ai_summary: businessAnalysis.summary || businessAnalysis.core_business,
           enrichment_source: enrichmentSource,
           enriched: true,
-          last_enriched_at: new Date().toISOString()
+          last_enriched_at: new Date().toISOString(),
+          // Track failed taxonomy attempts
+          taxonomy_attempts: newAttempts,
+          taxonomy_skip_until: skipUntil
         })
         .eq('id', id)
       
@@ -413,7 +433,10 @@ Summary: ${analysis.summary}
     const tasks = entities.map(e => this.limit(async () => {
       try {
         const result = await this.processEntity(e)
-        await this.updateEntityData(result)
+        await this.updateEntityData({
+          ...result,
+          currentAttempts: result.currentAttempts
+        })
         await this.recordStatus(e.id, 'completed', 1)
         console.log(`✅ Processed ${e.name} -> ${result.taxonomyAssignment.primary}`)
       } catch (err) {
@@ -473,7 +496,19 @@ Summary: ${analysis.summary}
     // Filter for incremental mode (complex OR conditions not supported by Supabase query builder)
     if (incremental && !target) {
         const beforeCount = allEntities.length;
+        const now = new Date();
+        let skippedCount = 0;
+        
         allEntities = allEntities.filter(e => {
+            // Skip if marked to skip and skip date hasn't passed
+            if (e.taxonomy_skip_until) {
+                const skipUntil = new Date(e.taxonomy_skip_until);
+                if (skipUntil > now) {
+                    skippedCount++;
+                    return false; // Skip this entity
+                }
+            }
+            
             // Include if: no business_analysis, no taxonomy, or taxonomy is UNKNOWN/UNK
             const needsAnalysis = !e.business_analysis;
             const needsTaxonomy = !e.taxonomy || 
@@ -483,7 +518,11 @@ Summary: ${analysis.summary}
                                   e.taxonomy.includes('UNK');
             return needsAnalysis || needsTaxonomy;
         });
+        
         console.log(`Filtered ${beforeCount} -> ${allEntities.length} entities needing enrichment`);
+        if (skippedCount > 0) {
+            console.log(`   ⏭️ Skipped ${skippedCount} entities (taxonomy_skip_until not expired)`);
+        }
     }
     
     if (limit) allEntities = allEntities.slice(0, parseInt(limit));
@@ -523,6 +562,8 @@ async function main() {
   }
   
   // Handle --reclassify mode (only entities with UNKNOWN taxonomy)
+  const forceReclassify = args.includes('--force') // Ignore skip flag
+  
   if (reclassify) {
     console.log('🔄 Reclassify mode: Finding entities with UNKNOWN taxonomy...');
     const { data: unknownEntities } = await supabase
@@ -535,7 +576,31 @@ async function main() {
     console.log(`Found ${unknownEntities?.length || 0} entities with UNKNOWN/missing taxonomy`);
     
     if (unknownEntities && unknownEntities.length > 0) {
-      const toProcess = limit ? unknownEntities.slice(0, parseInt(limit)) : unknownEntities;
+      // Filter out entities that should be skipped (unless --force)
+      const now = new Date();
+      let toProcess = unknownEntities;
+      
+      if (!forceReclassify) {
+        const beforeFilter = toProcess.length;
+        toProcess = toProcess.filter(e => {
+          if (e.taxonomy_skip_until) {
+            const skipUntil = new Date(e.taxonomy_skip_until);
+            return skipUntil <= now; // Only include if skip period has expired
+          }
+          return true;
+        });
+        const skipped = beforeFilter - toProcess.length;
+        if (skipped > 0) {
+          console.log(`   ⏭️ Skipping ${skipped} entities (taxonomy_skip_until not expired, use --force to override)`);
+        }
+      } else {
+        console.log('   ⚠️ --force flag: Ignoring taxonomy_skip_until');
+      }
+      
+      if (limit) toProcess = toProcess.slice(0, parseInt(limit));
+      
+      console.log(`Processing ${toProcess.length} entities...`);
+      
       for (let i = 0; i < toProcess.length; i += generator.batchSize) {
         const batch = toProcess.slice(i, i + generator.batchSize);
         console.log(`Processing batch ${Math.floor(i / generator.batchSize) + 1}...`);
