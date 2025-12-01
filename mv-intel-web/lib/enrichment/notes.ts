@@ -10,7 +10,23 @@ export interface EnrichedNote {
 }
 
 export async function enrichNoteWithAI(content: string): Promise<EnrichedNote> {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    let apiKey = process.env.OPENAI_API_KEY || '';
+    // Sanitize key: remove whitespace, newlines, or quotes that might have crept in from env/secrets
+    apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
+
+    if (!apiKey) {
+         console.error('Missing OpenAI API Key');
+         return {
+            ai_summary: content.substring(0, 200),
+            ai_sentiment: 'neutral',
+            ai_key_points: [],
+            ai_action_items: [],
+            ai_risk_flags: [],
+            ai_themes: []
+        };
+    }
+
+    const openai = new OpenAI({ apiKey });
     
     if (!content || content.length < 50) {
         return {
