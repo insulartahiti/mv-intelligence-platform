@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import CollapsibleMenu from '@/app/components/CollapsibleMenu';
 import NodeDetailPanel from '@/app/components/NodeDetailPanel';
-import { ChevronRight, ChevronDown, Search, Folder, Tag, Layers, Building2, Zap, FolderOpen, ArrowRight, LayoutGrid, List, AlertTriangle } from 'lucide-react';
+import { ChevronRight, ChevronDown, Search, Folder, Tag, Layers, Building2, Zap, FolderOpen, ArrowRight, LayoutGrid, List, AlertTriangle, X, Hash, Building } from 'lucide-react';
 
 // Import centralized taxonomy schema (single source of truth)
 import { TAXONOMY_TREE, VALID_TAXONOMY_CODES, hasInvalidSegment, type TaxonomyNode } from '@/lib/taxonomy/schema';
@@ -19,6 +19,27 @@ interface Company {
   domain?: string;
 }
 
+interface TaxonomySearchResult {
+  type: 'taxonomy' | 'entity';
+  code?: string;
+  label?: string;
+  description?: string;
+  entity?: Company;
+}
+
+// Helper: Flatten taxonomy tree for search
+function flattenTaxonomy(node: TaxonomyNode, path: string, results: { code: string; label: string; description?: string }[] = []) {
+  results.push({ code: path, label: node.label, description: node.description });
+  if (node.children) {
+    Object.entries(node.children).forEach(([key, child]) => {
+      flattenTaxonomy(child, `${path}.${key}`, results);
+    });
+  }
+  return results;
+}
+
+const FLAT_TAXONOMY = flattenTaxonomy(TAXONOMY_TREE['IFT'], 'IFT');
+
 export default function TaxonomyPage() {
   const [selectedPath, setSelectedPath] = useState<string>('IFT');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -26,6 +47,10 @@ export default function TaxonomyPage() {
   // Global entity state
   const [allEntities, setAllEntities] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   // Initial Fetch - Load Everything
   useEffect(() => {
@@ -48,6 +73,58 @@ export default function TaxonomyPage() {
     };
 
     fetchAllEntities();
+  }, []);
+  
+  // Search results - combines taxonomy codes and entities
+  const searchResults = useMemo<TaxonomySearchResult[]>(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) return [];
+    
+    const query = searchQuery.toLowerCase();
+    const results: TaxonomySearchResult[] = [];
+    
+    // Search taxonomy codes and labels
+    FLAT_TAXONOMY.forEach(t => {
+      const codeMatch = t.code.toLowerCase().includes(query);
+      const labelMatch = t.label.toLowerCase().includes(query);
+      const descMatch = t.description?.toLowerCase().includes(query);
+      
+      if (codeMatch || labelMatch || descMatch) {
+        results.push({
+          type: 'taxonomy',
+          code: t.code,
+          label: t.label,
+          description: t.description
+        });
+      }
+    });
+    
+    // Search entities (limit to 20 for performance)
+    const entityMatches = allEntities
+      .filter(e => e.name.toLowerCase().includes(query))
+      .slice(0, 20);
+    
+    entityMatches.forEach(e => {
+      results.push({
+        type: 'entity',
+        entity: e
+      });
+    });
+    
+    return results;
+  }, [searchQuery, allEntities]);
+  
+  const handleSearchSelect = useCallback((result: TaxonomySearchResult) => {
+    if (result.type === 'taxonomy' && result.code) {
+      setSelectedPath(result.code);
+    } else if (result.type === 'entity' && result.entity) {
+      // Navigate to the entity's taxonomy and open detail panel
+      if (result.entity.taxonomy) {
+        setSelectedPath(result.entity.taxonomy);
+      }
+      setSelectedNodeId(result.entity.id);
+    }
+    setSearchQuery('');
+    setIsSearchFocused(false);
   }, []);
   const currentNodeData = useMemo(() => {
     const parts = selectedPath.split('.');
@@ -99,8 +176,70 @@ export default function TaxonomyPage() {
       
       {/* LEFT SIDEBAR: Tree Navigation */}
       <div className="w-[300px] border-r border-slate-800 bg-slate-900/30 flex flex-col pt-16">
-          <div className="p-4 border-b border-slate-800/50">
+          <div className="p-4 border-b border-slate-800/50 space-y-3">
               <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Taxonomy Tree</h2>
+              
+              {/* Search Bar */}
+              <div className="relative">
+                  <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                          type="text"
+                          placeholder="Search taxonomy or companies..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onFocus={() => setIsSearchFocused(true)}
+                          onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                          className="w-full pl-9 pr-8 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                      />
+                      {searchQuery && (
+                          <button 
+                              onClick={() => setSearchQuery('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-700 rounded transition-colors"
+                          >
+                              <X size={14} className="text-slate-400" />
+                          </button>
+                      )}
+                  </div>
+                  
+                  {/* Search Results Dropdown */}
+                  {isSearchFocused && searchResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-[400px] overflow-y-auto">
+                          {searchResults.map((result, i) => (
+                              <div
+                                  key={i}
+                                  onClick={() => handleSearchSelect(result)}
+                                  className="px-3 py-2.5 hover:bg-slate-800 cursor-pointer border-b border-slate-800/50 last:border-0 transition-colors"
+                              >
+                                  {result.type === 'taxonomy' ? (
+                                      <div className="flex items-start gap-2">
+                                          <Hash size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                                          <div className="min-w-0">
+                                              <div className="text-sm font-medium text-slate-200 truncate">{result.label}</div>
+                                              <div className="text-xs text-slate-500 font-mono truncate">{result.code}</div>
+                                          </div>
+                                      </div>
+                                  ) : (
+                                      <div className="flex items-start gap-2">
+                                          <Building size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
+                                          <div className="min-w-0">
+                                              <div className="text-sm font-medium text-slate-200 truncate">{result.entity?.name}</div>
+                                              <div className="text-xs text-slate-500 truncate">{result.entity?.brief_description || result.entity?.taxonomy || 'No description'}</div>
+                                          </div>
+                                      </div>
+                                  )}
+                              </div>
+                          ))}
+                      </div>
+                  )}
+                  
+                  {/* No Results */}
+                  {isSearchFocused && searchQuery.length >= 2 && searchResults.length === 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 p-4 text-center">
+                          <p className="text-sm text-slate-500">No results found</p>
+                      </div>
+                  )}
+              </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
               <TaxonomySidebarTree 
