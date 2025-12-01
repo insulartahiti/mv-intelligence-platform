@@ -112,6 +112,16 @@ Run these from the `mv-intel-web/` directory:
 *   `functions/`: Edge Functions for scheduled tasks and webhooks.
 *   `migrations/`: SQL schemas for `graph.conversations`, `graph.interactions`, etc.
 
+### Status & Admin Pages
+*   `/status`: **System Status Dashboard** — Real-time pipeline monitoring and data health metrics.
+    *   Pipeline status (running/idle), last sync timestamp, entities synced
+    *   Core metrics: Total Entities, Graph Edges, Interactions, Affinity Files
+    *   Coverage progress bars: AI Enhancement, Vector Embeddings, Interaction Summarization
+    *   Recent activity feed from `history_log` table
+*   `/admin`: **Admin Console** — User access control (add/remove authorized users, resend magic links).
+*   `/dashboard`: Alternative dashboard view with similar metrics.
+*   `/taxonomy`: Hierarchical taxonomy browser for entities.
+
 ---
 
 ## 4. Operational Runbook (Data Pipelines)
@@ -188,6 +198,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
+*   **Cleanup Resilience Fix**: Restored `continue-on-error: true` on garbage collection step so failures don't block Neo4j sync.
 *   **Weekly Maintenance Workflow**: Updated `cleanup.yml` to run intelligent cleanup with live execution (removed dry-run default).
 *   **Neo4j Sync After Cleanup**: Added `migrate-to-neo4j.ts` step after intelligent cleanup to sync merged/deleted entities to graph.
 *   **Stale Re-Enrichment**: `checkStale()` now actively queues entities for re-enrichment by clearing enrichment flags (previously only logged).
