@@ -25,14 +25,13 @@ const openai = new OpenAI({ apiKey: openaiApiKey });
 
 // Configuration
 const args = process.argv.slice(2);
-const DRY_RUN = args.includes('--dry-run');
 const FULL_SCAN = args.includes('--full');
 const MONTHS = args.includes('--months') ? parseInt(args[args.indexOf('--months') + 1]) : 3;
 const CONFIDENCE_THRESHOLD = 0.95;
 const BATCH_LIMIT = FULL_SCAN ? 1000 : 50; 
 
 async function checkDataAssurance() {
-    console.log(`🛡️ Starting Intelligent Data Assurance (Dry Run: ${DRY_RUN}, Full: ${FULL_SCAN}, Stale: >${MONTHS}m, Limit: ${BATCH_LIMIT})...`);
+    console.log(`🛡️ Starting Intelligent Data Assurance (Full: ${FULL_SCAN}, Stale: >${MONTHS}m, Limit: ${BATCH_LIMIT})...`);
 
     // Calculate stale date
     const staleDate = new Date();
@@ -126,7 +125,6 @@ async function validateTaxonomy(entity) {
         if (entity.type !== 'organization') return false;
 
         console.log(`   🏷️ Invalid Taxonomy: "${entity.taxonomy}". Re-classifying...`);
-        if (DRY_RUN) return false;
 
         try {
             const completion = await openai.chat.completions.create({
@@ -163,8 +161,25 @@ async function checkStale(entity) {
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     
     if (new Date(entity.updated_at) < sixMonthsAgo) {
-        console.log(`   🕰️ Stale Data (Last updated: ${entity.updated_at}). Flagging for refresh.`);
-        // In real run, we would trigger re-enrichment here or add to a queue
+        console.log(`   🕰️ Stale Data (Last updated: ${entity.updated_at}). Queueing for re-enrichment...`);
+        
+        // Clear enrichment flags to trigger re-enrichment on next pipeline run
+        const { error } = await supabase
+            .schema('graph')
+            .from('entities')
+            .update({ 
+                enriched: false, 
+                enrichment_source: null,
+                relationships_extracted_at: null // Also re-extract relationships
+            })
+            .eq('id', entity.id);
+        
+        if (error) {
+            console.error(`      ❌ Failed to queue ${entity.id} for re-enrichment: ${error.message}`);
+            return false;
+        }
+        
+        console.log(`      ✅ Queued for re-enrichment`);
         return true;
     }
     return false;
@@ -223,7 +238,6 @@ async function verifyType(entity) {
     if (entity.type === 'organization' && isPersonName(entity.name)) {
         // Potential misclassification
         console.log(`   🤔 Type Mismatch? "${entity.name}" is marked as Organization.`);
-        if (DRY_RUN) return false;
         
         // Ask LLM
         try {
@@ -247,11 +261,6 @@ async function verifyType(entity) {
 }
 
 async function executeMerge(keep, remove) {
-    if (DRY_RUN) {
-        console.log(`      [DRY RUN] Would merge ${remove.id} (${remove.name}) into ${keep.id} (${keep.name})`);
-        return;
-    }
-
     console.log(`      ⚡ Merging ${remove.id} -> ${keep.id}...`);
     
     // 1. Move Interactions

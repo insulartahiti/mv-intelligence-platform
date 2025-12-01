@@ -10,16 +10,20 @@ on:
         type: boolean
         required: false
         default: false
-      dry_run:
-        description: 'Dry Run (no changes)'
-        type: boolean
-        required: false
-        default: true
 
 jobs:
   maintenance:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+      NEO4J_URI: ${{ secrets.NEO4J_URI }}
+      NEO4J_USER: ${{ secrets.NEO4J_USER }}
+      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
     
     steps:
       - uses: actions/checkout@v4
@@ -35,47 +39,21 @@ jobs:
         working-directory: ./mv-intel-web
         run: npm ci --legacy-peer-deps
         
-      - name: Run Systematic Cleanup (Legacy)
+      - name: Run Systematic Cleanup (Garbage Collection)
         working-directory: ./mv-intel-web
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEO4J_URI: ${{ secrets.NEO4J_URI }}
-          NEO4J_USER: ${{ secrets.NEO4J_USER }}
-          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: node scripts/systematic_cleanup.js
-        continue-on-error: true # Don't fail the whole job if legacy cleanup fails
 
       - name: Run Intelligent Data Assurance
         working-directory: ./mv-intel-web
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
-          NEO4J_URI: ${{ secrets.NEO4J_URI }}
-          NEO4J_USER: ${{ secrets.NEO4J_USER }}
-          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
         run: |
-          # Determine flags based on inputs or schedule
           FLAGS=""
-          
-          # Check for full scan input (manual)
           if [ "${{ github.event.inputs.full_scan }}" == "true" ]; then
             FLAGS="$FLAGS --full"
           fi
-          
-          # Check for dry run (manual input or default for safety)
-          # Default to dry-run for cron unless explicitly changed in code later
-          if [ "${{ github.event_name }}" == "schedule" ] || [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            FLAGS="$FLAGS --dry-run"
-          fi
-          
           echo "Running Intelligent Cleanup with flags: $FLAGS"
-          
-          if [ -f "scripts/intelligent_cleanup.ts" ]; then
-            npx tsx scripts/intelligent_cleanup.ts $FLAGS
-          else
-            echo "Intelligent cleanup script not found, skipping."
-          fi
+          npx tsx scripts/intelligent_cleanup.ts $FLAGS
+
+      - name: Sync Changes to Neo4j
+        working-directory: ./mv-intel-web
+        run: npx tsx scripts/migrate-to-neo4j.ts
 
