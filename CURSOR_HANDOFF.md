@@ -72,7 +72,8 @@ Since the application lives in the `mv-intel-web` subdirectory, you **must** con
 *Without this setting, Git deployments will fail (404 Error / "No framework detected") because Vercel tries to build the repository root instead of the app folder.*
 
 1.  **Supabase Auth Redirects**: In the Supabase Dashboard > Authentication > URL Configuration, add `https://motivepartners.ai` to **Redirect URLs**. This is required for Magic Links to work in production (the code uses `window.location.origin` which resolves to the production domain).
-2.  **Edge Function Secrets**: Set the following secrets for production edge functions (specifically `linkedin-api-direct`):
+2.  **PWA Assets**: The `mv-intel-web/public/` folder contains critical PWA files (`sw.js`, `manifest.json`, `mv-icons-*.png`). Ensure these are tracked by Git (check `.gitignore` doesn't exclude them). The `vercel.json` configures proper headers for Service Worker registration.
+3.  **Edge Function Secrets**: Set the following secrets for production edge functions (specifically `linkedin-api-direct`):
     ```bash
     supabase secrets set LINKEDIN_REDIRECT_URI="https://motivepartners.ai/api/knowledge-graph/linkedin-callback"
     ```
@@ -171,7 +172,11 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
     *   Recent activity feed from `history_log` table
 *   `/admin`: **Admin Console** — User access control (add/remove authorized users, resend magic links).
 *   `/dashboard`: Alternative dashboard view with similar metrics.
-*   `/taxonomy`: Hierarchical taxonomy browser for entities.
+*   `/taxonomy`: **Taxonomy Browser** — Hierarchical taxonomy browser with:
+    *   Tree navigation sidebar (left)
+    *   Category dashboard with subcategory cards and entity grids (right)
+    *   **Spotlight-style search bar** for searching taxonomy codes/labels AND company names
+    *   Strict canonical taxonomy policy (non-schema paths show error state)
 
 ---
 
@@ -252,6 +257,10 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
+*   **Taxonomy Search Bar**: Added spotlight-style search to `/taxonomy` page. Searches both taxonomy codes/labels and company names. Results show category (green) or entity (blue) with navigation on click.
+*   **Strict Taxonomy Enforcement**: Taxonomy page now only displays canonical categories from schema. Invalid paths show error state with "Return to Root" button. Enrichment pipeline validates codes against `isValidTaxonomyCode()`.
+*   **Service Worker Resilience**: Updated `sw.js` to v2.0.3 with `Promise.allSettled` for individual asset caching. Prevents installation failure from cached 404s.
+*   **PWA Deployment Fix**: Fixed 404 errors for Service Worker, manifest, and icon files. Root cause: `.gitignore` had a broad `public` rule (from Gatsby) that ignored `mv-intel-web/public/`. Changed to `public/` and committed all PWA assets. Added `vercel.json` headers for proper caching and `Service-Worker-Allowed` header.
 *   **Centralized Taxonomy Schema**: Created `lib/taxonomy/schema.ts` as single source of truth for IFT taxonomy. Exports tree structure, LLM prompt schema, and validation utilities. Eliminates duplication across taxonomy page and classifier.
 *   **Agent Strategy Enhancement**: Updated Chat Agent system prompt to support "Strategy-First" list building. Queries like "Who should I invite..." now trigger a segment-based multi-search workflow (e.g. "Vertical SaaS", "Competitors") rather than single keyword searches.
 *   **Taxonomy Threshold Fix**: Aligned confidence thresholds between `detectTaxonomy()` (0.85→0.7) and `universal-search/route.ts` (0.7) using shared `TAXONOMY_CONFIDENCE_THRESHOLD` constant. Prevents unnecessary LLM calls for high-confidence fast matches.
