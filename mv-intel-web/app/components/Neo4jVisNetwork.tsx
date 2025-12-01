@@ -259,8 +259,13 @@ export default function Neo4jVisNetwork({
       } catch (err: any) {
         console.error("Graph error:", err);
         if (mounted) {
-            setError(err.message);
-            setLoading(false);
+             // If we already have nodes, don't show a blocking error overlay, just log it.
+             if (nodesDataSetRef.current && nodesDataSetRef.current.length > 0) {
+                 console.warn("Graph update failed, but keeping existing data:", err);
+             } else {
+                 setError(err.message);
+             }
+             setLoading(false);
         }
       }
     }
