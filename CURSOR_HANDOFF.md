@@ -86,6 +86,11 @@ Run these from the `mv-intel-web/` directory:
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
 | **Enrich Only** | `node scripts/run_enrichment_only.js` | Skips Affinity sync, runs AI enrichment & graph sync |
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
+
+### GitHub Actions Workflows
+*   **Data Pipeline Sync**: Runs daily at 6 AM UTC (Full Sync).
+*   **Enrichment Only Pipeline**: Manual trigger (`workflow_dispatch`). Use this to re-run AI processing without re-fetching data from Affinity.
+*   **Data Maintenance**: Runs weekly on Sundays (Garbage Collection + Intelligent Cleanup).
 | **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
 | **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
 
