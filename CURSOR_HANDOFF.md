@@ -97,9 +97,28 @@ Run these from the `mv-intel-web/` directory:
 *   `app/components/Neo4jGraphViewer.tsx`: Main graph visualization component (Vis.js).
 *   `app/components/ChatInterface.tsx`: Split-screen chat UI.
 *   `lib/search/postgres-vector.ts`: Hybrid search implementation.
+*   `lib/search/taxonomy-classifier.ts`: **GPT-5.1 IFT Taxonomy Classifier** (NEW).
 *   `lib/graph/`: Graph algorithms and helpers.
 
 **Note:** Components relying on `graphology` (e.g., `EnhancedClientGraph.tsx`) have been disabled to fix build issues.
+
+### Search Architecture (Hybrid Approach)
+The search agent uses **parallel signals** to rank results:
+
+1.  **Embedding Search**: Query → OpenAI `text-embedding-3-large` → Vector similarity against entity embeddings.
+2.  **Taxonomy Classification**: Query → GPT-5.1 → IFT taxonomy codes (e.g., `IFT.PAY.COM.GATEWAY`).
+3.  **Filter Extraction**: LLM extracts implicit filters (countries, entity types, portfolio status).
+
+**Flow:**
+```
+Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
+                     ↓                              ↓
+              Vector Search                   Taxonomy Filter
+                     ↓                              ↓
+                     └───────── Combined Ranking ──────────┘
+```
+
+**Taxonomy Policy:** Strict predefined codes only (no "discovered" categories). If confidence < 0.7, taxonomy filter is skipped and vector search alone is used.
 
 ### `mv-intel-web/scripts/` (Data Pipeline)
 *   `run_pipeline.js`: Master orchestrator script.
@@ -198,7 +217,10 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
-*   **Cleanup Resilience Fix**: Restored `continue-on-error: true` on garbage collection step so failures don't block Neo4j sync.
+*   **GPT-5.1 Taxonomy Classifier**: Added `lib/search/taxonomy-classifier.ts` for LLM-based IFT taxonomy detection. Uses hybrid approach: fast keyword matching → GPT-5.1 fallback. Strict predefined codes only (no discovered categories).
+*   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
+*   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
+*   **Cleanup Resilience Fix**: Added `continue-on-error: true` and `if: always()` to ensure Neo4j sync runs regardless of cleanup failures.
 *   **Weekly Maintenance Workflow**: Updated `cleanup.yml` to run intelligent cleanup with live execution (removed dry-run default).
 *   **Neo4j Sync After Cleanup**: Added `migrate-to-neo4j.ts` step after intelligent cleanup to sync merged/deleted entities to graph.
 *   **Stale Re-Enrichment**: `checkStale()` now actively queues entities for re-enrichment by clearing enrichment flags (previously only logged).

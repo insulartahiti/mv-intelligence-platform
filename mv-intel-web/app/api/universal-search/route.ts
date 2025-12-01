@@ -1,23 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { classifyIntent } from '@/lib/search/intent';
+import { detectTaxonomy } from '@/lib/search/taxonomy-classifier';
 
 export const dynamic = 'force-dynamic';
 
 import { searchEntities, SearchFilters } from '@/lib/search/postgres-vector';
-import { generateAndExecuteCypher } from '@/lib/search/cypher-generator';
-import { generateMarketInsight } from '@/lib/search/rag-service';
-
-// TAXONOMY_MAP (Copied for now, ideal to move to a shared constant file)
-const TAXONOMY_MAP: Record<string, string> = {
-    'payment gateway': 'IFT.PAY.COM.GATEWAY',
-    'neobank': 'IFT.DBK.RETAIL.NEO_BANK',
-    'wealthtech': 'IFT.WLT.FO.INVEST',
-    'insurtech': 'IFT.INS.DIGITAL_BROKERS_AGENTS',
-    'crypto': 'IFT.CRYP.EXCH.TRADE',
-    'regtech': 'IFT.RCI.REG.DYNAMIC_COMPLIANCE',
-    'ai ml': 'IFT.ENT.AI_ML_NLP',
-    // ... (Can import full map later)
-};
 
 export async function POST(request: NextRequest) {
     try {
@@ -37,98 +24,67 @@ export async function POST(request: NextRequest) {
 
         console.log('🌌 Universal Search Request:', { query });
 
-        // 1. Intent Classification
-        const classification = await classifyIntent(query);
-        console.log('🤖 Detected Intent:', classification);
-
-        // 2. Pre-processing (Common for all intents)
-        const lowerQuery = query.toLowerCase();
+        // 1. Parallel: Intent Classification + Taxonomy Detection
+        const [classification, taxonomyResult] = await Promise.all([
+            classifyIntent(query),
+            detectTaxonomy(query)
+        ]);
         
-        // Taxonomy Detection (Simplified for brevity, can share logic)
-        const detectedTaxonomies: string[] = [];
-        Object.entries(TAXONOMY_MAP).forEach(([keyword, code]) => {
-            if (lowerQuery.includes(keyword)) detectedTaxonomies.push(code);
-        });
-        if (detectedTaxonomies.length > 0) {
+        console.log('🤖 Detected Intent:', classification);
+        console.log('🏷️ Taxonomy Result:', taxonomyResult);
+
+        // 2. Apply taxonomy codes to filters (if confident)
+        if (taxonomyResult.codes.length > 0 && taxonomyResult.confidence >= 0.7) {
             if (!filters.taxonomy) filters.taxonomy = [];
-            detectedTaxonomies.forEach(code => {
+            taxonomyResult.codes.forEach(code => {
                 if (!filters.taxonomy!.includes(code)) filters.taxonomy!.push(code);
             });
         }
 
-        // 3. Routing
-        let results: any = {};
-        
-        switch (classification.intent) {
-            case 'RELATIONSHIP_QUERY':
-                console.log('🔗 Executing Text-to-Cypher Search...');
-                try {
-                    const graphResults = await generateAndExecuteCypher(query);
-                    results = {
-                        searchType: 'graph-cypher',
-                        data: graphResults.results,
-                        cypher: graphResults.cypher
-                    };
-                } catch (err) {
-                    console.error('Text-to-Cypher failed, falling back to Entity Search:', err);
-                    // Fallback to standard entity search if graph query fails
-                    const entityResults = await searchEntities(query, { limit }, filters);
-                    results = {
-                        ...entityResults,
-                        fallback: true,
-                        error: (err as Error).message
-                    };
-                }
-                break;
-
-            case 'MARKET_INSIGHT':
-                console.log('🧠 Executing Graph RAG Search...');
-                const history = (body as any).history || [];
-                try {
-                    // Pass filters and history to RAG service
-                    const insight = await generateMarketInsight(query, filters, history);
-                    results = {
-                        searchType: 'market-insight',
-                        data: insight,
-                        // We also return standard results to show below the insight
-                        ...(await searchEntities(query, { limit: 5 }, filters))
-                    };
-                } catch (err) {
-                    console.error('Graph RAG failed, falling back to Entity Search:', err);
-                    const entityResults = await searchEntities(query, { limit }, filters);
-                    results = {
-                        ...entityResults,
-                        fallback: true,
-                        error: (err as Error).message
-                    };
-                }
-                break;
-
-            case 'ENTITY_LOOKUP':
-            default:
-                // Entity Type Inference
-                const typeKeywords = {
-                    person: ['who', 'person', 'people', 'individual', 'founder', 'ceo'],
-                    organization: ['company', 'companies', 'firm', 'agency']
-                };
-                if (typeKeywords.person.some(kw => lowerQuery.includes(kw))) {
-                    if (!filters.types) filters.types = ['person'];
-                } else if (typeKeywords.organization.some(kw => lowerQuery.includes(kw))) {
-                    if (!filters.types) filters.types = ['organization'];
-                }
-
-                // Portfolio Inference
-                if (['portfolio', 'invested', 'investments'].some(kw => lowerQuery.includes(kw))) {
-                    filters.isPortfolio = true;
-                }
-
-                results = await searchEntities(query, { limit }, filters);
-                break;
+        // Apply extracted filters from taxonomy classifier
+        if (taxonomyResult.filters) {
+            if (taxonomyResult.filters.types && !filters.types) {
+                filters.types = taxonomyResult.filters.types;
+            }
+            if (taxonomyResult.filters.countries && !filters.countries) {
+                filters.countries = taxonomyResult.filters.countries;
+            }
+            if (taxonomyResult.filters.isPortfolio) {
+                filters.isPortfolio = true;
+            }
         }
+
+        const lowerQuery = query.toLowerCase();
+
+        // 3. Additional filter inference from query keywords
+        const typeKeywords = {
+            person: ['who', 'person', 'people', 'individual', 'founder', 'ceo'],
+            organization: ['company', 'companies', 'firm', 'agency']
+        };
+        if (!filters.types) {
+            if (typeKeywords.person.some(kw => lowerQuery.includes(kw))) {
+                filters.types = ['person'];
+            } else if (typeKeywords.organization.some(kw => lowerQuery.includes(kw))) {
+                filters.types = ['organization'];
+            }
+        }
+
+        // Portfolio Inference
+        if (['portfolio', 'invested', 'investments', 'my portfolio', 'our portfolio'].some(kw => lowerQuery.includes(kw))) {
+            filters.isPortfolio = true;
+        }
+
+        // 4. Execute search
+        const results = await searchEntities(query, { limit }, filters);
 
         return NextResponse.json({
             success: true,
             intent: classification.intent,
+            taxonomy: taxonomyResult.codes.length > 0 ? {
+                codes: taxonomyResult.codes,
+                confidence: taxonomyResult.confidence,
+                reasoning: taxonomyResult.reasoning
+            } : undefined,
             ...results
         });
 
