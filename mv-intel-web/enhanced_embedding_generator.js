@@ -54,8 +54,8 @@ const perplexity = new OpenAI({
 
 class EnhancedEmbeddingGenerator {
   constructor() {
-    this.batchSize = 5               // Reduced batch size for stability
-    this.concurrency = 5             // Reduced concurrency to respect rate limits
+    this.batchSize = 50              // Increased to keep p-limit queue full (was 5)
+    this.concurrency = 5             // Kept low to respect rate limits
     this.delayMs = 100                  
     this.maxRetries = 3               
     this.retryBaseDelay = 1000         

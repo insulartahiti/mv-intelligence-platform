@@ -52,7 +52,7 @@ const perplexity = new OpenAI({
 
 class EnhancedPersonEmbeddingGenerator {
   constructor() {
-    this.batchSize = 10               // Reduced for stability
+    this.batchSize = 50               // Increased for better pipeline utilization (was 10)
     this.concurrency = 5              // Reduced concurrency
     this.delayMs = 100                  
     this.maxRetries = 3               

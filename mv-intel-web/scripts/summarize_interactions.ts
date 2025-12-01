@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
+import pLimit from 'p-limit';
 
 // Load env vars from .env.local
 dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
@@ -30,6 +31,15 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
 async function summarizeInteractions() {
     console.log('🚀 Starting Interaction Summarization (Supabase Mode)...');
+
+    // Parse args
+    const args = process.argv.slice(2);
+    let limitTotal = Infinity;
+    const limitIdx = args.indexOf('--limit');
+    if (limitIdx !== -1 && args[limitIdx + 1]) {
+        limitTotal = parseInt(args[limitIdx + 1], 10);
+        console.log(`[Summarize] Running with limit: ${limitTotal}`);
+    }
 
     try {
         // 1. Get entities that have interactions
@@ -68,67 +78,84 @@ async function summarizeInteractions() {
 
         let processed = 0;
         let updated = 0;
-
-        for (const entity_id of entityIds) {
-            processed++;
-            
-            // 2. Fetch recent interactions (last 20)
-            const { data: interactions, error } = await supabase
-                .schema('graph')
-                .from('interactions')
-                .select('type, subject, content_preview, summary, occurred_at')
-                .eq('entity_id', entity_id)
-                .order('occurred_at', { ascending: false })
-                .limit(20);
-
-            if (error || !interactions || interactions.length === 0) continue;
-
-            // 3. Construct Context
-            let context = `Recent Interactions for Entity:\n`;
-            interactions.forEach((int: any) => {
-                const date = int.occurred_at ? new Date(int.occurred_at).toISOString().split('T')[0] : 'Unknown Date';
-                context += `- [${date}] ${int.type?.toUpperCase()}: ${int.subject || 'No Subject'}\n`;
-                if (int.summary) context += `  Summary: ${int.summary}\n`;
-                else if (int.content_preview) context += `  Preview: ${int.content_preview}\n`;
-            });
-
-            // 4. Generate Overall Summary with GPT-5.1
-            const completion = await openai.chat.completions.create({
-                model: "gpt-5.1",
-                messages: [
-                    { 
-                        role: "system", 
-                        content: "You are an executive assistant summarizing recent relationship history. detailed but concise. Focus on key themes, risks, and next steps." 
-                    },
-                    { role: "user", content: `Summarize the following interaction history into a single paragraph:\n\n${context}` }
-                ],
-                max_tokens: 300
-            });
-
-            const summary = completion.choices[0].message.content;
-            
-            // 5. Generate Embedding for the summary
-            const embedding = await generateEmbedding(summary || "");
-
-            // 6. Upsert into rollup table
-            const { error: upsertError } = await supabase
-                .schema('graph')
-                .from('entity_notes_rollup')
-                .upsert({
-                    entity_id: entity_id,
-                    latest_summary: summary,
-                    notes_count: interactions.length,
-                    last_updated: new Date().toISOString(),
-                    embedding: embedding
-                }, { onConflict: 'entity_id' });
-
-            if (upsertError) {
-                console.error(`Error upserting summary for ${entity_id}:`, upsertError);
-            } else {
-            console.log(`   ✅ Summarized ${entity_id} (${interactions.length} interactions)`);
-            updated++;
-            }
+        
+        // Apply limit if set
+        const allEntities = Array.from(entityIds);
+        const entitiesToProcess = (limitTotal < Infinity) ? allEntities.slice(0, limitTotal) : allEntities;
+        
+        if (limitTotal < Infinity) {
+            console.log(`[Summarize] Limiting processing to first ${entitiesToProcess.length} entities.`);
         }
+
+        // Concurrency limit
+        const limit = pLimit(10);
+
+        const tasks = entitiesToProcess.map(entity_id => limit(async () => {
+            try {
+                processed++;
+                
+                // 2. Fetch recent interactions (last 20)
+                const { data: interactions, error } = await supabase
+                    .schema('graph')
+                    .from('interactions')
+                    .select('type, subject, content_preview, summary, occurred_at')
+                    .eq('entity_id', entity_id)
+                    .order('occurred_at', { ascending: false })
+                    .limit(20);
+
+                if (error || !interactions || interactions.length === 0) return;
+
+                // 3. Construct Context
+                let context = `Recent Interactions for Entity:\n`;
+                interactions.forEach((int: any) => {
+                    const date = int.occurred_at ? new Date(int.occurred_at).toISOString().split('T')[0] : 'Unknown Date';
+                    context += `- [${date}] ${int.type?.toUpperCase()}: ${int.subject || 'No Subject'}\n`;
+                    if (int.summary) context += `  Summary: ${int.summary}\n`;
+                    else if (int.content_preview) context += `  Preview: ${int.content_preview}\n`;
+                });
+
+                // 4. Generate Overall Summary with GPT-5.1
+                const completion = await openai.chat.completions.create({
+                    model: "gpt-5.1", // Ensure this model name is correct/available to your key
+                    messages: [
+                        { 
+                            role: "system", 
+                            content: "You are an executive assistant summarizing recent relationship history. detailed but concise. Focus on key themes, risks, and next steps." 
+                        },
+                        { role: "user", content: `Summarize the following interaction history into a single paragraph:\n\n${context}` }
+                    ],
+                    max_tokens: 300
+                });
+
+                const summary = completion.choices[0].message.content;
+                
+                // 5. Generate Embedding for the summary
+                const embedding = await generateEmbedding(summary || "");
+
+                // 6. Upsert into rollup table
+                const { error: upsertError } = await supabase
+                    .schema('graph')
+                    .from('entity_notes_rollup')
+                    .upsert({
+                        entity_id: entity_id,
+                        latest_summary: summary,
+                        notes_count: interactions.length,
+                        last_updated: new Date().toISOString(),
+                        embedding: embedding
+                    }, { onConflict: 'entity_id' });
+
+                if (upsertError) {
+                    console.error(`Error upserting summary for ${entity_id}:`, upsertError);
+                } else {
+                    console.log(`   ✅ Summarized ${entity_id} (${interactions.length} interactions)`);
+                    updated++;
+                }
+            } catch (innerErr: any) {
+                console.error(`Error processing entity ${entity_id}:`, innerErr.message);
+            }
+        }));
+
+        await Promise.all(tasks);
 
         console.log(`\n🎉 Summarization Complete: Processed ${processed}, Updated ${updated}`);
 

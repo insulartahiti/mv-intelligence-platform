@@ -113,6 +113,15 @@ async function runPipeline() {
   log('      MV INTELLIGENCE PLATFORM - DATA PIPELINE    ');
   log('==================================================');
 
+  // Check for test mode
+  const args = process.argv.slice(2);
+  const isTestMode = args.includes('--test');
+  const limitArg = isTestMode ? ['--limit', '5'] : [];
+  
+  if (isTestMode) {
+      log('🧪 TEST MODE ACTIVE: All steps will run with --limit 5');
+  }
+
   try {
     // Set status to RUNNING
     await updateSyncStatus('running');
@@ -123,36 +132,37 @@ async function runPipeline() {
 
     // 2. Affinity Sync
     // Pull live data from Affinity pipeline first
-    await runScript('run_affinity_sync.ts');
+    await runScript('run_affinity_sync.ts', limitArg);
 
-    // 2.1. Embed Interactions
-    // Generate vector embeddings for new notes/emails so they are searchable
-    await runScript('embed_interactions.ts');
+    log('⚡ Starting Parallel Processing Block...');
+    
+    // PARALLEL BLOCK: Run independent processing tasks concurrently
+    // - embed_interactions: Updates `interactions` table (embeddings)
+    // - summarize_interactions: Updates `entity_notes_rollup` table
+    // - enhanced_embedding_generator: Updates `entities` table (org enrichment)
+    // These tasks touch disjoint data/tables and can run safely in parallel.
+    
+    await Promise.all([
+        runScript('embed_interactions.ts', limitArg),
+        runScript('summarize_interactions.ts', limitArg),
+        runScript('../enhanced_embedding_generator.js', ['--incremental', ...limitArg])
+    ]);
 
-    // 2a. Reset Stale Enrichment (Optional - run only if significant upgrades happened)
-    // Uncomment this line to force full re-enrichment
-    // await runScript('reset_enrichment.ts');
-
-    // 2b. Interaction Summarization
-    // Summarize recent emails/meetings for enrichment context
-    await runScript('summarize_interactions.ts');
-
-    // 3. Organization Enrichment
-    // Enrich companies first (context for people)
-    await runScript('../enhanced_embedding_generator.js', ['--incremental']);
+    log('✅ Parallel Processing Block Completed.');
 
     // 3. Neo4j Sync (Initial)
     // Sync existing edges (like Affinity data) to Neo4j so person enrichment can use graph context
     // This is CRITICAL for correctly identifying investors (Owner/Deal Team edges)
-    await runScript('migrate-to-neo4j.ts');
+    await runScript('migrate-to-neo4j.ts'); // Neo4j sync doesn't support limit easily, runs fast anyway
 
     // 4. Person Enrichment
     // Enrich people (using company context from Neo4j/Postgres edges)
-    await runScript('../enhanced_person_embedding_generator.js', ['--incremental']);
+    // Runs after Org enrichment to ensure we have company descriptions/sectors
+    await runScript('../enhanced_person_embedding_generator.js', ['--incremental', ...limitArg]);
 
     // 5. Relationship Extraction
     // Infer NEW edges from the newly enriched data
-    await runScript('generate_relationships.js', ['--run-once']);
+    await runScript('generate_relationships.js', ['--run-once']); // Inferencing might need limit? Usually runs on 'unenriched' things.
 
     // 5.1. Portfolio Flag Propagation
     // Ensure founders of portfolio companies inherit the portfolio status

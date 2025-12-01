@@ -37,11 +37,25 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 async function embedInteractions() {
     console.log('[Embed] Starting interaction embedding...');
     
+    // Parse args
+    const args = process.argv.slice(2);
+    let limitTotal = Infinity;
+    const limitIdx = args.indexOf('--limit');
+    if (limitIdx !== -1 && args[limitIdx + 1]) {
+        limitTotal = parseInt(args[limitIdx + 1], 10);
+        console.log(`[Embed] Running with limit: ${limitTotal}`);
+    }
+
     // Process in batches
     let processed = 0;
     const BATCH_SIZE = 50;
     
     while (true) {
+        if (processed >= limitTotal) {
+             console.log(`[Embed] Reached limit of ${limitTotal}. Stopping.`);
+             break;
+        }
+
         // Fetch interactions without embeddings
         const { data: interactions, error } = await supabase
             .schema('graph')
