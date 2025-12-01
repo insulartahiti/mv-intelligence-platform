@@ -60,7 +60,15 @@ AFFINITY_API_KEY=...
 For the production deployment at `https://motivepartners.ai`:
 
 **Deployment Target**: Ensure you are deploying to the correct Vercel project (`motive_intelligence`).
-**Domain Configuration**: The domain `motivepartners.ai` is currently assigned to the old project (`mv-intelligence-platform`). You must move it to `motive_intelligence` in the Vercel Dashboard (Settings > Domains) to resolve the 404 error.
+**Domain Configuration**: The domain `motivepartners.ai` is currently assigned to `motive_intelligence`.
+
+**Critical Project Setting (Action Required)**:
+Since the application lives in the `mv-intel-web` subdirectory, you **must** configure the Root Directory in Vercel:
+1.  Go to Vercel Dashboard > **motive_intelligence** > **Settings** > **General**.
+2.  Find **Root Directory**.
+3.  Click **Edit** and set it to `mv-intel-web`.
+4.  Click **Save**.
+*Without this setting, Git deployments will fail (404 Error / "No framework detected") because Vercel tries to build the repository root instead of the app folder.*
 
 1.  **Supabase Auth Redirects**: In the Supabase Dashboard > Authentication > URL Configuration, add `https://motivepartners.ai` to **Redirect URLs**. This is required for Magic Links to work in production (the code uses `window.location.origin` which resolves to the production domain).
 2.  **Edge Function Secrets**: Set the following secrets for production edge functions (specifically `linkedin-api-direct`):

@@ -38,15 +38,22 @@ export default function AdminPage() {
 
     const fetchUsers = async () => {
         setLoading(true);
-        const { data, error } = await supabase
-            .from('allowed_users')
-            .select('*')
-            .order('created_at', { ascending: false });
         
-        if (error) {
-            console.error('Error fetching users:', error);
-            setMessage({ text: 'Failed to fetch users. Table might not exist.', type: 'error' });
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token;
+
+        const res = await fetch('/api/auth/allowed-users', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            console.error('Error fetching users:', err);
+            setMessage({ text: err.error || 'Failed to fetch users', type: 'error' });
         } else {
+            const data = await res.json();
             setUsers(data || []);
         }
         setLoading(false);
@@ -57,12 +64,22 @@ export default function AdminPage() {
         setAdding(true);
         setMessage(null);
 
-        try {
-            const { error } = await supabase
-                .from('allowed_users')
-                .insert({ email: newEmail, name: newName });
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token;
 
-            if (error) throw error;
+        try {
+            const res = await fetch('/api/auth/allowed-users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ email: newEmail, name: newName })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Failed to add user');
 
             setMessage({ text: `User ${newEmail} added successfully.`, type: 'success' });
             setNewEmail('');
@@ -97,9 +114,19 @@ export default function AdminPage() {
         const confirm = window.confirm('Are you sure you want to remove this user? They will lose access.');
         if (!confirm) return;
 
-        const { error } = await supabase.from('allowed_users').delete().eq('id', id);
-        if (error) {
-            alert('Failed to delete user');
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token;
+
+        const res = await fetch(`/api/auth/allowed-users?id=${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            alert(err.error || 'Failed to delete user');
         } else {
             fetchUsers();
         }
