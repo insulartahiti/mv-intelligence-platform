@@ -1,7 +1,7 @@
 // Service Worker for MV Intelligence Platform
-const CACHE_NAME = 'mv-intel-v2.0.2';
-const STATIC_CACHE = 'mv-intel-static-v2.0.2';
-const DYNAMIC_CACHE = 'mv-intel-dynamic-v2.0.2';
+const CACHE_NAME = 'mv-intel-v2.0.3';
+const STATIC_CACHE = 'mv-intel-static-v2.0.3';
+const DYNAMIC_CACHE = 'mv-intel-dynamic-v2.0.3';
 
 const urlsToCache = [
   '/',
@@ -19,24 +19,47 @@ const staticAssets = [
   '/mv-icons-512.png'
 ];
 
+// Helper: Cache assets individually (resilient to failures)
+async function cacheAssetsIndividually(cache, urls) {
+  const results = await Promise.allSettled(
+    urls.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: 'reload' }); // Force fresh fetch
+        if (response.ok) {
+          await cache.put(url, response);
+          return { url, status: 'cached' };
+        }
+        return { url, status: 'failed', reason: response.status };
+      } catch (error) {
+        return { url, status: 'failed', reason: error.message };
+      }
+    })
+  );
+  
+  const cached = results.filter(r => r.value?.status === 'cached').length;
+  const failed = results.filter(r => r.value?.status === 'failed').length;
+  console.log(`[SW] Cached ${cached}/${urls.length} assets (${failed} failed)`);
+  return results;
+}
+
 // Install event
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker v2.0.2...');
+  console.log('[SW] Installing service worker v2.0.3...');
   
   event.waitUntil(
     Promise.all([
-      // Cache static assets
+      // Cache static assets (resilient - won't fail if some assets 404)
       caches.open(STATIC_CACHE).then((cache) => {
         console.log('[SW] Caching static assets...');
-        return cache.addAll(staticAssets);
+        return cacheAssetsIndividually(cache, staticAssets);
       }),
-      // Cache essential pages
+      // Cache essential pages (resilient)
       caches.open(CACHE_NAME).then((cache) => {
         console.log('[SW] Caching essential pages...');
-        return cache.addAll(urlsToCache);
+        return cacheAssetsIndividually(cache, urlsToCache);
       })
     ]).then(() => {
-      console.log('[SW] Static assets cached successfully');
+      console.log('[SW] Installation complete');
       return self.skipWaiting();
     })
   );
@@ -44,7 +67,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker v2.0.2...');
+  console.log('[SW] Activating service worker v2.0.3...');
   
   event.waitUntil(
     Promise.all([
