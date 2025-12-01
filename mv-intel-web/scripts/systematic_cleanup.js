@@ -310,9 +310,9 @@ async function deduplicateOrganizations() {
 async function main() {
   try {
     await cleanGarbage();
-    await deduplicatePeople();
-    await deduplicateOrganizations();
-    console.log('✅ Systematic Cleanup Complete.');
+    // await deduplicatePeople(); // Use intelligent_cleanup.ts for person/org merging to avoid aggressive merging
+    // await deduplicateOrganizations(); 
+    console.log('✅ Systematic Cleanup Complete (Garbage Collection Only).');
   } catch (err) {
     console.error('Cleanup Failed:', err);
     process.exit(1);
