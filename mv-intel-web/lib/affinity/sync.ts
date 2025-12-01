@@ -492,9 +492,12 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            const errMsg = `Failed emails for ${entry.entity.name}: ${e.message}`;
-                            errors.push(errMsg);
-                            await this.updateSyncProgress(stats.companiesProcessed, errMsg);
+                            // Only log non-404 errors (404 = entity deleted from Affinity)
+                            if (!e.message?.includes('404')) {
+                                const errMsg = `Failed emails for ${entry.entity.name}: ${e.message}`;
+                                errors.push(errMsg);
+                                await this.updateSyncProgress(stats.companiesProcessed, errMsg);
+                            }
                         }
 
                         // 3. MEETINGS (Store raw - embedding happens in parallel block)
@@ -520,7 +523,10 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            errors.push(`Failed meetings for ${entry.entity.name}: ${e.message}`);
+                            // Only log non-404 errors (404 = entity deleted from Affinity)
+                            if (!e.message?.includes('404')) {
+                                errors.push(`Failed meetings for ${entry.entity.name}: ${e.message}`);
+                            }
                         }
 
                         // 4. REMINDERS (Store raw - embedding happens in parallel block)
@@ -530,13 +536,15 @@ export class AffinitySyncService {
                                 stats.remindersProcessed++;
                                 if (await this.isInteractionSynced(reminder.id)) continue;
 
+                                const reminderContent = reminder.content || '';
+                                
                                 await this.upsertInteraction({
                                     affinity_interaction_id: reminder.id,
                                     entity_id: entityDbId,
                                     interaction_type: 'reminder',
                                     subject: 'Reminder',
-                                    content_full: reminder.content,
-                                    content_preview: reminder.content.substring(0, 250),
+                                    content_full: reminderContent,
+                                    content_preview: reminderContent.substring(0, 250),
                                     company_id: entityType === 'organization' ? entityDbId : null,
                                     started_at: reminder.created_at,
                                     ended_at: reminder.due_date,
@@ -546,7 +554,10 @@ export class AffinitySyncService {
                                 });
                             }
                         } catch (e: any) {
-                            errors.push(`Failed reminders for ${entry.entity.name}: ${e.message}`);
+                            // Only log non-404 errors (404 = entity deleted from Affinity)
+                            if (!e.message?.includes('404')) {
+                                errors.push(`Failed reminders for ${entry.entity.name}: ${e.message}`);
+                            }
                         }
 
                         // 5. FILES
