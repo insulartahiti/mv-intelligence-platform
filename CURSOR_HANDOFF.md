@@ -258,6 +258,9 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **GPT-5.1 Taxonomy Classifier**: Updated `lib/search/taxonomy-classifier.ts` to use GPT-5.1. Now imports schema from centralized source.
 *   **Enrichment-Only Pipeline**: Added `scripts/run_enrichment_only.js` and GitHub Action to allow re-running AI enrichment without full Affinity sync. Useful for error recovery.
 *   **Taxonomy Hallucination Fix**: Updated `enhanced_embedding_generator.js` to use centralized schema and force validation (invalid codes -> `IFT.UNKNOWN`). Prevents entities from disappearing from the dashboard.
+*   **Interaction Summary Fixes**: 
+    *   Corrected column mapping (`interaction_type`, `ai_summary`) in `summarize_interactions.ts`.
+    *   Updated OpenAI parameter (`max_tokens` → `max_completion_tokens`) for GPT-5.1 compatibility.
 *   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
 *   **Location Enrichment with Perplexity**: Added `enrichLocation` to `intelligent_cleanup.ts`. Uses a two-step process (Internal GPT-5.1 → External Perplexity Sonar) to find headquarters location for entities with missing geographic data.
 *   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
