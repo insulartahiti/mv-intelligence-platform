@@ -14,6 +14,7 @@ dotenv.config({ path: localEnvPath, override: true }); // Local overrides root
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const openaiApiKey = process.env.OPENAI_API_KEY;
+const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
 
 if (!supabaseUrl || !supabaseKey || !openaiApiKey) {
     console.error('❌ Missing environment variables');
@@ -42,17 +43,15 @@ async function checkDataAssurance() {
     let query = supabase
         .schema('graph')
         .from('entities')
-        .select('id, name, type, description, taxonomy, domain, updated_at');
+        .select('id, name, type, description, taxonomy, domain, updated_at, location_city, location_country, business_analysis, enrichment_data');
 
     // Build filter logic
     if (FULL_SCAN) {
         // In full scan, we look for ANY issue
-        query = query.or(`name.ilike.%(%),name.ilike.%stealth%,taxonomy.is.null,updated_at.lt.${staleIso}`);
+        query = query.or(`name.ilike.%(%),name.ilike.%stealth%,taxonomy.is.null,location_country.is.null,updated_at.lt.${staleIso}`);
     } else {
         // Weekly maintenance: Focus on older entities
         query = query.lt('updated_at', staleIso);
-        // And optionally prioritize ones with visible issues, or just check them all?
-        // Checking all stale entities is good.
     }
 
     const { data: candidates, error } = await query
@@ -66,7 +65,7 @@ async function checkDataAssurance() {
 
     console.log(`🔍 Analyzing ${candidates.length} candidates...`);
 
-    let stats = { merged: 0, retyped: 0, retax: 0, badUrls: 0, stale: 0 };
+    let stats = { merged: 0, retyped: 0, retax: 0, badUrls: 0, stale: 0, locEnriched: 0 };
 
     for (const entity of candidates) {
         console.log(`\n🧐 Analyzing: ${entity.name} [${entity.type}] (ID: ${entity.id.substring(0,8)}...)`);
@@ -92,10 +91,17 @@ async function checkDataAssurance() {
         const badUrl = await checkUrl(entity);
         if (badUrl) stats.badUrls++;
 
-        // Check 5: Stale Data
+        // Check 5: Location Enrichment (New)
+        const loc = await enrichLocation(entity);
+        if (loc) stats.locEnriched++;
+
+        // Check 6: Stale Data
         const stale = await checkStale(entity);
         if (stale) stats.stale++;
     }
+
+    // Check 6: Fix Fake Founders (Stand-alone check)
+    await fixFakeFounders();
 
     console.log('\n📊 Assurance Summary:', stats);
 }
@@ -260,6 +266,157 @@ async function verifyType(entity) {
     return false;
 }
 
+async function enrichLocation(entity) {
+    // Only run if location is completely missing or incomplete
+    if (entity.location_country && entity.location_city) return false;
+
+    // Don't waste tokens on entities with no descriptive data
+    const hasData = entity.description || entity.business_analysis || entity.enrichment_data;
+    if (!hasData && !perplexityApiKey) return false;
+
+    console.log(`   🌍 Missing Location (Current: ${entity.location_city || '?'}, ${entity.location_country || '?'}). Inferring...`);
+
+    let result = { city: null, country: null, confidence: 0 };
+
+    // 1. Try Internal Data (GPT-5.1)
+    if (hasData) {
+        try {
+            const prompt = `
+            Analyze the entity data below and extract the Primary Headquarters Location.
+            
+            Entity: ${entity.name} (${entity.type})
+            Description: ${entity.description || ''}
+            Analysis: ${JSON.stringify(entity.business_analysis || {}).substring(0, 500)}
+            Metadata: ${JSON.stringify(entity.enrichment_data || {}).substring(0, 500)}
+
+            Return JSON:
+            {
+                "city": "City Name" (or "City A, City B" if multiple major hubs),
+                "country": "Country Name" (e.g. "United States", "Germany", "United Kingdom"),
+                "confidence": 0.0 to 1.0
+            }
+            
+            If location is unknown, return null for city/country.
+            `;
+
+            const completion = await openai.chat.completions.create({
+                model: "gpt-5.1",
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" }
+            });
+
+            result = JSON.parse(completion.choices[0].message.content);
+        } catch (e) {
+            // ignore internal error
+        }
+    }
+
+    // 2. Fallback: External Search (Perplexity)
+    if ((!result.city && !result.country) || result.confidence < 0.7) {
+        if (perplexityApiKey) {
+            console.log(`      🌐 Internal data insufficient. Searching Perplexity...`);
+            try {
+                const ppRes = await fetch('https://api.perplexity.ai/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${perplexityApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'sonar-pro',
+                        messages: [
+                            { role: 'system', content: 'You are a precise data enrichment assistant. Return ONLY JSON.' },
+                            { role: 'user', content: `Where is the headquarters of ${entity.name} (${entity.type})? Return JSON: { "city": "City", "country": "Country" }` }
+                        ]
+                    })
+                });
+                
+                if (ppRes.ok) {
+                    const data = await ppRes.json();
+                    const content = data.choices[0].message.content;
+                    // Extract JSON from potential markdown code block
+                    const jsonMatch = content.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const ppResult = JSON.parse(jsonMatch[0]);
+                        if (ppResult.city || ppResult.country) {
+                            result = { ...ppResult, confidence: 0.9 };
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error(`      ❌ Perplexity Error: ${e.message}`);
+            }
+        }
+    }
+
+    if (result.confidence > 0.7 && (result.city || result.country)) {
+        const updates: any = {};
+        if (result.city && !entity.location_city) updates.location_city = result.city;
+        if (result.country && !entity.location_country) updates.location_country = result.country;
+
+        if (Object.keys(updates).length > 0) {
+            console.log(`      📍 Found Location: ${updates.location_city || ''}, ${updates.location_country || ''}`);
+            await supabase.schema('graph').from('entities').update(updates).eq('id', entity.id);
+            return true;
+        }
+    }
+    return false;
+}
+
+async function fixFakeFounders() {
+    console.log('\n👮‍♀️ Verifying Founder Edges...');
+    // 1. Get Founder Edges
+    const { data: edges, error } = await supabase
+        .schema('graph')
+        .from('edges')
+        .select('id, source, target, source_entity:source(id, name, enrichment_data, business_analysis)')
+        .eq('kind', 'founder')
+        .limit(FULL_SCAN ? 2000 : 200); // Process in batches
+
+    if (error) {
+        console.error('Error fetching founder edges:', error);
+        return;
+    }
+
+    if (!edges || edges.length === 0) return;
+
+    let fixed = 0;
+    for (const edge of edges) {
+        const personData = edge.source_entity;
+        // Handle potential array return from Supabase join
+        const person = Array.isArray(personData) ? personData[0] : personData;
+        
+        if (!person) continue;
+
+        const title = (
+            person.enrichment_data?.title || 
+            person.enrichment_data?.role || 
+            person.business_analysis?.seniority_level || 
+            ''
+        ).toLowerCase();
+
+        // If title is missing, skipping to be safe.
+        if (title && title.length > 2) {
+            const isFounder = title.includes('founder') || title.includes('ceo') || title.includes('owner') || title.includes('partner') || title.includes('president') || title.includes('chairman');
+            const isEmployee = title.includes('manager') || title.includes('lead') || title.includes('associate') || title.includes('analyst') || title.includes('developer') || title.includes('engineer') || title.includes('recruiter') || title.includes('specialist') || title.includes('consultant');
+
+            if (!isFounder && isEmployee) {
+                console.log(`   📉 Downgrading ${person.name} (${title}) from FOUNDER to WORKS_AT`);
+                
+                const { error: updateError } = await supabase.schema('graph').from('edges')
+                    .update({ 
+                        kind: 'works_at', 
+                        metadata: { source_fix: 'intelligent_cleanup', original_kind: 'founder', reason: 'title_mismatch' } 
+                    })
+                    .eq('id', edge.id);
+                
+                if (!updateError) fixed++;
+            }
+        }
+    }
+    console.log(`   ✅ Downgraded ${fixed} fake founders.`);
+}
+
 async function executeMerge(keep, remove) {
     console.log(`      ⚡ Merging ${remove.id} -> ${keep.id}...`);
     
@@ -291,4 +448,3 @@ async function executeMerge(keep, remove) {
 }
 
 checkDataAssurance().catch(console.error);
-

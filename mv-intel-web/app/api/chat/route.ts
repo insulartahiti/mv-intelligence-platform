@@ -188,7 +188,7 @@ async function getEntityConnections(entityId: string, supabase: any) {
         .from('edges')
         .select('source, kind')
         .eq('target', entityId)
-        .in('kind', ['works_at', 'owner', 'deal_team', 'advises', 'board_member', 'contact'])
+        .in('kind', ['works_at', 'owner', 'deal_team', 'advises', 'board_member', 'contact', 'founder', 'founder_of'])
         .limit(10);
 
     if (!edges || edges.length === 0) return "";
@@ -203,9 +203,10 @@ async function getEntityConnections(entityId: string, supabase: any) {
 
     if (!people || people.length === 0) return "";
 
-    const connections = people.map(p => {
-        const rel = edges.find(e => e.source === p.id)?.kind;
-        return `${p.name} (${rel})`;
+    return people.map(p => {
+        const edge = edges.find(e => e.source === p.id);
+        const kind = edge?.kind;
+        return `${p.name} (${kind})`;
     });
 
     return connections.join(', ');
@@ -570,6 +571,16 @@ export async function POST(req: NextRequest) {
                             - **LINKING**: Use the IDs found from 'search_knowledge_graph' to create markdown links: [Name](/knowledge-graph?nodeId=ID). If a company is NOT found in the graph, mention it as text but do not fake a link.
                             
                             REASONING STRATEGY (CHAIN OF THOUGHT):
+                            For "Target List" or "Event Invite" queries (e.g. "Who should I invite to a Pliant event?"):
+                            1. STRATEGIZE: Do NOT just search for "Pliant". Think: Who buys this? Who partners with this?
+                            2. SEGMENT: Break down the audience (e.g. "Vertical SaaS", "Spend Management Competitors", "Cross-Border Fintechs").
+                            3. EXECUTE: Run 3-4 distinct 'search_knowledge_graph' calls, one for each segment.
+                               - Query 1: "Vertical SaaS companies in New York"
+                               - Query 2: "Spend management companies"
+                               - Query 3: "Fintechs with European presence"
+                            4. PEOPLE: For the top companies found, search specifically for their leaders (e.g. "Founders of [Company] in New York").
+                            5. SYNTHESIZE: Group the results by segment in your final answer.
+
                             For complex queries (e.g. "Who can connect me to J.P. Morgan?"):
                             1. DYNAMIC QUERY EXPANSION: Break down the intent. Search for the target ("J.P. Morgan"). Search for the user's firm ("Motive Partners") to find colleagues.
                             2. PLAN: Identify the target node. Identify potential connectors (Portfolio Founders AND Senior Colleagues).
