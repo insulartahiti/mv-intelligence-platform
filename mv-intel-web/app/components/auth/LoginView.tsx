@@ -21,6 +21,19 @@ export default function LoginView({ onLoginSuccess }: { onLoginSuccess: () => vo
     setErrorMessage('');
     
     try {
+        // Check authorization first
+        const authCheck = await fetch('/api/auth/check-access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        
+        const authResult = await authCheck.json();
+        
+        if (!authCheck.ok || !authResult.allowed) {
+            throw new Error('You are not authorized to access this platform.');
+        }
+
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: {
