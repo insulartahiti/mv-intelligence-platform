@@ -98,9 +98,9 @@ async function summarizeInteractions() {
             const { data: interactions, error } = await supabase
                 .schema('graph')
                 .from('interactions')
-                .select('type, subject, content_preview, summary, occurred_at')
+                .select('interaction_type, subject, content_preview, ai_summary, created_at')
                 .eq('entity_id', entity_id)
-                .order('occurred_at', { ascending: false })
+                .order('created_at', { ascending: false })
                 .limit(20);
 
                 if (error) {
@@ -117,9 +117,9 @@ async function summarizeInteractions() {
             // 3. Construct Context
             let context = `Recent Interactions for Entity:\n`;
             interactions.forEach((int: any) => {
-                const date = int.occurred_at ? new Date(int.occurred_at).toISOString().split('T')[0] : 'Unknown Date';
-                context += `- [${date}] ${int.type?.toUpperCase()}: ${int.subject || 'No Subject'}\n`;
-                if (int.summary) context += `  Summary: ${int.summary}\n`;
+                const date = int.created_at ? new Date(int.created_at).toISOString().split('T')[0] : 'Unknown Date';
+                context += `- [${date}] ${int.interaction_type?.toUpperCase()}: ${int.subject || 'No Subject'}\n`;
+                if (int.ai_summary) context += `  Summary: ${int.ai_summary}\n`;
                 else if (int.content_preview) context += `  Preview: ${int.content_preview}\n`;
             });
 
