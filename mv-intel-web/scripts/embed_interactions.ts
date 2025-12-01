@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
+import pLimit from 'p-limit';
 
 // Robust Env Loading
 const __filename = fileURLToPath(import.meta.url);
@@ -76,7 +77,9 @@ async function embedInteractions() {
 
         console.log(`[Embed] Processing batch of ${interactions.length} interactions...`);
 
-        await Promise.all(interactions.map(async (note) => {
+        const limit = pLimit(10); // Limit concurrency to avoid connection errors
+
+        const tasks = interactions.map((note) => limit(async () => {
             // Construct text to embed
             const text = `Type: ${note.interaction_type || 'note'}\nSubject: ${note.subject || ''}\nContent: ${note.content_preview || ''}`.trim();
             
@@ -102,6 +105,8 @@ async function embedInteractions() {
                 console.error(`[Embed] Failed to embed ${note.id}: ${err.message}`);
             }
         }));
+
+        await Promise.all(tasks);
 
         // Small delay to respect rate limits if needed
         await new Promise(r => setTimeout(r, 500));

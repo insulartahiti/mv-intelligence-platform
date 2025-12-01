@@ -14,6 +14,7 @@ export default function Home() {
   const [userName, setUserName] = useState<string | null>(null);
   const [userFullName, setUserFullName] = useState<string | null>(null);
   const [userEntity, setUserEntity] = useState<any>(null);
+  const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
     // 1. Check active session
@@ -36,6 +37,30 @@ export default function Home() {
   }, []);
 
   const handleUserSetup = async (user: any) => {
+      // 0. Security Check: Verify against allowed_users allowlist
+      if (user.email) {
+          try {
+              const res = await fetch('/api/auth/verify-access', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email: user.email })
+              });
+              
+              if (!res.ok) {
+                  console.warn(`Unauthorized access attempt by ${user.email}`);
+                  setUnauthorized(true);
+                  setLoading(false);
+                  await supabase.auth.signOut();
+                  return;
+              }
+          } catch (e) {
+              console.error('Error verifying access:', e);
+              setUnauthorized(true);
+              setLoading(false);
+              return;
+          }
+      }
+
       // 1. Extract Name
       let firstName = 'User';
       let fullName = 'User';
@@ -96,6 +121,18 @@ export default function Home() {
   return (
         <div className="flex h-screen bg-slate-950 items-center justify-center">
              <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+        </div>
+      );
+  }
+
+  if (unauthorized) {
+      return (
+        <div className="flex h-screen bg-slate-950 items-center justify-center p-4">
+             <div className="bg-slate-900 border border-red-500/50 rounded-lg p-8 max-w-md text-center">
+                 <h2 className="text-xl text-red-400 font-bold mb-4">Access Denied</h2>
+                 <p className="text-slate-300 mb-6">Your email is not on the allowed list. Please contact the administrator.</p>
+                 <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-white transition-colors">Return to Login</button>
+             </div>
         </div>
       );
   }
