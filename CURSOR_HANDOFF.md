@@ -19,9 +19,10 @@ The Motive Intelligence Platform is a **Conversational Knowledge Graph** that ag
 
 ### Data Flow Architecture
 1.  **Ingestion**: `run_affinity_sync.ts` fetches People, Organizations, Notes, and Files from Affinity CRM.
-2.  **Enrichment Loop**:
+2.  **Enrichment Loop (Parallelized)**:
     *   **Enrichment**: Entities are processed by Perplexity (web search) and GPT-5.1 to extract descriptions, sectors, and metadata.
     *   **Vectorization**: `embed_interactions.ts` generates embeddings for unstructured text (notes, emails) using OpenAI `text-embedding-3-small`.
+    *   **Summarization**: `summarize_interactions.ts` generates concise interaction histories for entities (concurrently).
     *   **Relationship Extraction**: `generate_relationships.js` infers connections (e.g., "Competitor", "Investor") from unstructured text.
 3.  **Graph Sync**: `migrate-to-neo4j.ts` pushes the enriched schemas from Supabase to Neo4j.
 4.  **Query Execution**:
@@ -83,6 +84,7 @@ Run these from the `mv-intel-web/` directory:
 | :--- | :--- | :--- |
 | **Start App** | `npm run dev` | Starts Next.js on localhost:3000 |
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
+| **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
 | **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
 | **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
 
@@ -119,11 +121,15 @@ The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data r
 
 **Pipeline Stages:**
 1.  **Sync**: Fetches delta updates from Affinity.
-2.  **Embed**: Vectorizes new notes/meetings.
-3.  **Summarize**: Generates 1-paragraph summaries of interaction history.
-4.  **Enrich**: Fills missing fields for Organizations/People via Web Search.
-5.  **Relate**: Extracts 2nd-degree connections.
-6.  **Push**: Updates Neo4j.
+2.  **Parallel Enrichment Block**:
+    *   **Embed**: Vectorizes new notes/meetings.
+    *   **Summarize**: Generates 1-paragraph summaries of interaction history (p-limit: 10).
+    *   **Enrich (Orgs)**: Fills missing fields for Organizations via Web Search (batch: 50).
+3.  **Sync & Person Enrichment**:
+    *   **Graph Sync**: Updates Neo4j with Org data.
+    *   **Enrich (People)**: Enriches People using newly enriched Company context.
+4.  **Relate**: Extracts 2nd-degree connections.
+5.  **Final Push**: Updates Neo4j with all new inferences.
 
 ### Common Issues & Debugging
 *   **"Supabase 0-row bug"**: If scripts fail to fetch data, ensure the `supabase-js` client is initialized with the *Service Role Key*, not the Anon Key.
@@ -164,6 +170,9 @@ The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data r
 
 ## Appendix: Recent Changelog (Dec 01, 2025)
 
+*   **Pipeline Optimization**: Parallelized ingestion, summarization, and enrichment steps to solve 6-hour timeout issues.
+*   **Concurrency Controls**: Added `p-limit` to summarization and increased batch sizes (5 -> 50) for enrichment to maximize throughput.
+*   **Test Mode**: Added `--test` flag to `run_pipeline.js` for rapid verification (dry run).
 *   **Security Fix**: Removed hardcoded `SUPABASE_SERVICE_ROLE_KEY` from all API routes.
 *   **Deployment Fix**: Refactored ~20 API routes to initialize Supabase client lazily (inside handlers) to prevent Vercel build failures.
 *   **Deployment Fix**: Disabled unused `graphology` components causing build errors.
