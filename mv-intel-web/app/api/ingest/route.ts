@@ -214,11 +214,15 @@ export async function POST(req: NextRequest) {
                 }
             }
             
-            // Final fallback: use current month
+            // Final fallback: FAIL instead of using current date
+            // Using current date would silently corrupt temporal accuracy of financial records
             if (!periodDate) {
-                const now = new Date();
-                periodDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-                console.warn(`[Ingest] Could not determine period, using current month: ${periodDate}`);
+                console.error(`[Ingest] CRITICAL: Could not determine reporting period for ${fileMeta.filename}`);
+                throw new Error(
+                    `Could not determine reporting period for file '${fileMeta.filename}'. ` +
+                    `Please rename the file to include a date (e.g., 'Company_Q3_2024.pdf' or 'Company_Sep_2024.xlsx') ` +
+                    `or ensure the document contains clear date references.`
+                );
             }
             
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
