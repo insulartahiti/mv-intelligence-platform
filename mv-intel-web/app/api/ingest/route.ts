@@ -118,25 +118,36 @@ function extractPeriodDateFromFilename(filename: string): string | null {
 // Process files from Storage - POST handler for financial data ingestion
 // Accepts: { companySlug: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
-  // Initialize Supabase client inside handler (lazy initialization)
-  const supabase = getSupabaseClient();
-  
-  // Lazy load all modules to prevent import failures breaking the route
-  const {
-    loadPortcoGuide,
-    loadFile,
-    deleteFile,
-    parsePDF,
-    parseExcel,
-    mapDataToSchema,
-    computeMetricsForPeriod,
-    saveMetricsToDb,
-    loadCommonMetrics,
-    getMetricById,
-    extractPageSnippet
-  } = await getModules();
-  
   try {
+    // Initialize Supabase client inside handler (lazy initialization)
+    const supabase = getSupabaseClient();
+    
+    // Lazy load all modules to prevent import failures breaking the route
+    let modules;
+    try {
+      modules = await getModules();
+    } catch (moduleError) {
+      console.error('Failed to load modules:', moduleError);
+      return NextResponse.json({ 
+        error: 'Module load failed', 
+        details: String(moduleError),
+        status: 'error'
+      }, { status: 500 });
+    }
+    
+    const {
+      loadPortcoGuide,
+      loadFile,
+      deleteFile,
+      parsePDF,
+      parseExcel,
+      mapDataToSchema,
+      computeMetricsForPeriod,
+      saveMetricsToDb,
+      loadCommonMetrics,
+      getMetricById,
+      extractPageSnippet
+    } = modules;
     const json = await req.json();
     const { companySlug, filePaths, notes } = json;
 
@@ -497,7 +508,8 @@ export async function POST(req: NextRequest) {
     console.error('Ingestion error:', error);
     return NextResponse.json({ 
       error: 'Internal Server Error',
-      status: 'error'  // Include status field for frontend consistency
+      details: error instanceof Error ? error.message : String(error),
+      status: 'error'
     }, { status: 500 });
   }
 }
