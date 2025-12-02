@@ -161,7 +161,7 @@ A comprehensive system for ingesting portfolio company financials (PDF, Excel) a
     *   `map_to_schema.ts`: Semantic mapping logic (supports Nelly-style complex guides).
     *   `ocr_service.ts`: Stub for future OCR integration.
     *   `audit/`: Snippet generation for audit trails.
-*   `app/import/`: Drag-and-drop UI for file uploads. Uses **Client-to-Storage** pattern to bypass serverless payload limits.
+*   `app/import/`: Drag-and-drop UI for file uploads. Uses **Client-to-Storage** pattern to bypass serverless payload limits. Includes auth state detection and proper handling of partial ingestion failures.
 *   `app/api/ingest/`: API route handling uploads and triggering ingestion.
 
 ### Centralized Taxonomy Architecture
@@ -321,7 +321,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Large File Support**: Implemented Client-to-Storage upload pattern to bypass Vercel 4.5MB payload limits.
     *   **Bug Fixes (Dec 02 - Latest)**:
         *   **Data Integrity**: Fixed silent data loss when multiple line items share the same `line_item_id`. Now aggregates (sums) duplicate values and logs aggregations for audit visibility.
-        *   **Error Handling**: API now returns proper HTTP status codes (500 for all failures, 207 for partial success) instead of always 200. Frontend can now correctly detect failures.
+        *   **Error Handling**: API now returns proper HTTP status codes (500 for all failures, 207 for partial success) instead of always 200. Frontend now parses response body `status` field to correctly distinguish 'success', 'partial', and 'error' states.
+        *   **Auth State Detection**: Import page now checks authentication status and shows warning banner when user is not logged in (required for storage RLS).
         *   **Metrics Upsert**: Fixed `onConflict` parameter to use column names (`company_id,period,metric_id`) instead of constraint name.
         *   **File Retention**: Failed files are now retained in storage for debugging; only successful ingestions trigger cleanup.
         *   **Build Pipeline**: Fixed module resolution errors by installing dependencies (`pdf-parse`, `xlsx`, `pdf-lib`) in `mv-intel-web` and tracking `pdf_snippet.ts`.

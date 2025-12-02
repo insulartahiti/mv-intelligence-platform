@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, Check, AlertCircle, Loader2, LogIn } from 'lucide-react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function ImportPage() {
@@ -12,8 +12,28 @@ export default function ImportPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const supabase = createClientComponentClient();
+
+  // Check authentication status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session);
+      if (!session) {
+        console.warn('[Import] User not authenticated - storage uploads will fail RLS');
+      }
+    };
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
 
   // Auto-detect company when files are added
   useEffect(() => {
@@ -51,8 +71,9 @@ export default function ImportPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (e.target.files && e.target.files.length > 0) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files)]);
+    const fileList = e.target.files;
+    if (fileList && fileList.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(fileList)]);
     }
   };
 
@@ -106,9 +127,13 @@ export default function ImportPage() {
             })
         });
         
-        if (res.ok) {
+        const data = await res.json();
+        
+        // Check response body status, not just HTTP status
+        // API returns: 'success' (all files), 'partial' (some failed), 'error' (all failed)
+        if (data.status === 'success') {
             setUploadStatus('success');
-            setStatusMessage('Ingestion Complete');
+            setStatusMessage(`Ingestion Complete: ${data.summary?.success || 0} files processed`);
             setTimeout(() => {
                 setUploadStatus('idle');
                 setFiles([]);
@@ -116,9 +141,16 @@ export default function ImportPage() {
                 setSelectedCompany('');
                 setStatusMessage('');
             }, 3000);
-        } else {
+        } else if (data.status === 'partial') {
+            // Partial success - some files failed
             setUploadStatus('error');
-            setStatusMessage('Processing failed');
+            const failedFiles = data.results?.filter((r: any) => r.status === 'error') || [];
+            const failedNames = failedFiles.map((f: any) => f.file?.split('/').pop() || f.file).join(', ');
+            setStatusMessage(`Partial failure: ${data.summary?.error || 0} of ${data.summary?.total || 0} files failed. Check: ${failedNames}`);
+        } else {
+            // Complete failure
+            setUploadStatus('error');
+            setStatusMessage(data.error || 'Processing failed - all files had errors');
         }
     } catch (err) {
         console.error(err);
@@ -142,6 +174,17 @@ export default function ImportPage() {
             Upload board decks, financial models, or paste investor updates.
           </p>
         </div>
+
+        {/* Auth Warning Banner */}
+        {isAuthenticated === false && (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300">
+            <LogIn size={20} />
+            <div>
+              <p className="font-medium">Authentication Required</p>
+              <p className="text-sm text-yellow-300/70">Please log in to upload files. Storage uploads require an authenticated session.</p>
+            </div>
+          </div>
+        )}
 
         {/* Company Selector */}
         <div className="glass-panel p-6 rounded-xl border border-white/10 bg-white/5">
