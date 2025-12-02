@@ -601,6 +601,8 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues
     *   Implemented **LLM Cross-Check** for Excel ingestion: Now runs GPT-4 extraction alongside deterministic mapping to verify values and catch missing items.
     *   **Fixed DOMMatrix not defined error**: Added polyfill in `parse_pdf.ts` for serverless environments. The `pdf-parse` library uses `pdfjs-dist` which requires browser APIs (`DOMMatrix`) not available in Node.js/Vercel serverless.
+    *   **Fixed Nelly guide format incompatibility**: Portco loader now normalizes different YAML structures. Nelly uses `company:` and `metrics_mapping` instead of `company_metadata:` and `mapping_rules`. The loader now extracts line items from `document_structure.*.kpi_tables.*.metric_rows`.
+    *   **Fixed EUR number parsing corruption**: Added `parseLocalizedNumber()` that detects EUR format (1.234,56) vs US format (1,234.56) based on separator positions and guide currency. Previously, EUR numbers were silently corrupted (1.234,56 → 1.234 instead of 1234.56).
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)
