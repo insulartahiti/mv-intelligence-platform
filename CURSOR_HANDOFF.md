@@ -334,10 +334,27 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
     *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates (searching `graph.entities`).
     *   **Constraint**: Target company MUST exist in the Knowledge Graph.
 3.  **Processing**:
+    *   **PDF Extraction**: Uses **GPT-4 Vision** to extract text and tables (replaced `pdf-parse` which failed in Vercel serverless).
+    *   **Excel Extraction**: Uses `xlsx` library with LLM cross-check.
     *   **Financials**: Parsed from Excel/PDF tables -> `fact_financials`.
     *   **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
     *   **Insights**: Extracted via GPT-4 -> `company_insights`.
-4.  **Audit**: Source snippets (PDF crops) saved to `financial-snippets` bucket.
+4.  **Audit**: Source snippets (PDF page crops via `pdf-lib`) saved to `financial-snippets` bucket.
+
+### PDF Extraction Architecture
+**Current Implementation: GPT-4 Vision (Option A)**
+
+| Component | Library | Purpose |
+| :--- | :--- | :--- |
+| Page count/metadata | `pdf-lib` | Lightweight, works in serverless |
+| Text/Table extraction | `gpt-4o` (Vision) | Sends PDF as base64, extracts structured content |
+| Audit snippets | `pdf-lib` | Extracts single pages for source linking |
+
+**Why Vision over Text Extraction:**
+- `pdf-parse` (pdfjs-dist) fails in Vercel serverless ("r is not a function" error)
+- GPT-4V handles complex layouts, scanned docs, and tables better
+- Single API call does OCR + semantic understanding
+- Trade-off: Higher cost per page, but reliable
 
 ### RAG & Search Strategy (Roadmap)
 To enable "Financial Intelligence" in the chat agent:
@@ -533,6 +550,22 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 - **Audit Trail**: Aggregations are logged for visibility
 - **Real-World Fit**: Financial data often has multiple rows that should aggregate (e.g., revenue by product line)
 
+### Why GPT-4 Vision for PDF Extraction?
+**Decision**: Use GPT-4 Vision (`gpt-4o`) instead of `pdf-parse` for extracting text/tables from PDFs.
+
+**Rationale**:
+- **Serverless Compatibility**: `pdf-parse` (pdfjs-dist) fails in Vercel with "r is not a function" error due to missing browser APIs
+- **Complex Layouts**: Vision handles tables, multi-column layouts, and scanned docs better than text extraction
+- **Single API**: OCR + semantic understanding in one call (no separate OCR step)
+- **Reliability**: Works consistently across different PDF types
+
+**Trade-offs**:
+- **Cost**: ~$0.01-0.03 per page (vs. free for text extraction)
+- **Latency**: ~2-5s per page (vs. <1s for text extraction)
+- **Rate Limits**: Subject to OpenAI API limits
+
+**Implementation**: `lib/financials/ingestion/parse_pdf_vision.ts` uses `pdf-lib` for metadata and `gpt-4o` for content extraction.
+
 ---
 
 ## Appendix A: Changelog (Dec 02, 2025)
@@ -584,7 +617,6 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed zero-extraction files being deleted (now retained with `needs_review` status for debugging)
     *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues
     *   Implemented **LLM Cross-Check** for Excel ingestion: Now runs GPT-4 extraction alongside deterministic mapping to verify values and catch missing items.
-    *   **Fixed DOMMatrix not defined error**: Added polyfill in `parse_pdf.ts` for serverless environments. The `pdf-parse` library uses `pdfjs-dist` which requires browser APIs (`DOMMatrix`) not available in Node.js/Vercel serverless.
     *   **Fixed Nelly guide format incompatibility**: Portco loader now normalizes different YAML structures. Nelly uses `company:` and `metrics_mapping` instead of `company_metadata:` and `mapping_rules`. The loader now extracts line items from `document_structure.*.kpi_tables.*.metric_rows`.
     *   **Fixed EUR number parsing corruption**: Added `parseLocalizedNumber()` that detects EUR format (1.234,56) vs US format (1,234.56) based on separator positions and guide currency. Previously, EUR numbers were silently corrupted (1.234,56 → 1.234 instead of 1234.56).
     *   **Fixed onConflict parameter for fact_metrics upsert**: Changed from column names to constraint name `fact_metrics_company_period_metric_key` as required by Supabase v2 for composite unique constraints.
@@ -593,7 +625,9 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Fixed false negative detection in parseLocalizedNumber**: `rawNum.includes('-')` matched any hyphen (e.g., in company names like "acme-corp-123"), causing false positive negative number detection. Now only checks for leading minus signs or parentheses notation.
     *   **Added env var validation in ingest API**: Missing `OPENAI_API_KEY` or Supabase env vars now throw descriptive errors instead of cryptic 500s.
     *   **Improved frontend error handling**: `import/page.tsx` now handles non-JSON responses (like Vercel error pages) gracefully and alerts the user with the actual error text.
-    *   **Lazy loaded `pdf-parse`**: Moved `require('pdf-parse')` inside the `parsePDF` function to prevent module-level crashes (e.g., due to missing dependencies or canvas issues) from bringing down the entire API route during cold start.
+    *   **Replaced `pdf-parse` with GPT-4 Vision**: The `pdf-parse` library (pdfjs-dist) fails in Vercel serverless with "r is not a function" error. Now using `parsePDFWithVision()` which sends PDFs to GPT-4V for extraction. More reliable and better at complex layouts.
+    *   **Embedded Nelly guide for serverless**: YAML files aren't bundled by Vercel. Added embedded Nelly guide as JavaScript object fallback in `loader.ts`.
+    *   **Added Dry Run mode**: `dryRun: true` parameter skips all DB writes, defaults to Nelly guide, and returns full extracted data for testing.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)
