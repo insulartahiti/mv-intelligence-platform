@@ -5,6 +5,13 @@ import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
 import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod } from '@/lib/financials/metrics/compute_metrics';
+import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase Admin for snippet uploads
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Process a file from Storage
 export async function POST(req: NextRequest) {
@@ -38,12 +45,46 @@ export async function POST(req: NextRequest) {
             } else if (fileMeta.filename.endsWith('.xlsx')) {
                 extractedData = await parseExcel(fileMeta);
                 fileType = 'xlsx';
+            } else {
+                throw new Error(`Unsupported file type: ${fileMeta.filename}`);
             }
 
             // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
             const periodDate = '2025-09-01'; 
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
             
+            // 4b. Generate Audit Snippets (PDF Pages)
+            // We do this BEFORE metrics computation so we can attach snippet URLs to the facts if needed.
+            // For now, we'll just generate them for every line item that has a page number.
+            
+            // Cache snippets to avoid re-generating same page multiple times
+            const processedPages = new Set<number>();
+            
+            for (const item of lineItems) {
+                if (fileType === 'pdf' && item.source_location.page) {
+                    const pageNum = item.source_location.page;
+                    if (!processedPages.has(pageNum)) {
+                        console.log(`[Ingest] Generating audit snippet for page ${pageNum}...`);
+                        const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum);
+                        
+                        // Upload to 'financial-snippets' bucket
+                        const snippetPath = `${companySlug}/${Date.now()}_page_${pageNum}.pdf`;
+                        const { error: uploadError } = await supabase.storage
+                            .from('financial-snippets')
+                            .upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
+                            
+                        if (uploadError) {
+                            console.error('Failed to upload snippet:', uploadError);
+                        } else {
+                            // Link snippet to the item (in a real DB save, we'd update the fact row)
+                            // item.source_location.snippet_url = ...
+                        }
+                        
+                        processedPages.add(pageNum);
+                    }
+                }
+            }
+
             // 5. Compute Metrics
             // Convert lineItems array to Record<string, number>
             const facts: Record<string, number> = {};
@@ -105,8 +146,6 @@ export async function GET(req: NextRequest) {
         detected = slug;
         break;
     }
-    if (slug === 'acme-corp' && filename.toLowerCase().includes('acme')) detected = 'acme-corp';
-    if (slug === 'nelly' && filename.toLowerCase().includes('nelly')) detected = 'nelly';
   }
 
   return NextResponse.json({ detected_slug: detected });
