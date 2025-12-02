@@ -135,34 +135,60 @@ export async function POST(req: NextRequest) {
             }
 
             // 2b. Resolve Company ID from Database
-            // Use exact match (eq) instead of ilike to avoid ambiguous matches
-            const { data: companyData, error: companyError } = await supabase
+            // Strategy: Try exact match first, then fuzzy match (ILIKE) as fallback
+            // This handles cases where guide says "Nelly Solutions GmbH" but DB has "Nelly Solutions"
+            let companyId: string | null = null;
+            
+            // Step 1: Try exact match
+            const { data: exactMatch, error: exactError } = await supabase
                 .from('companies')
-                .select('id')
+                .select('id, name')
                 .eq('name', companyName)
-                .single();
-
-            // Handle specific error codes:
-            // PGRST116 = No rows found
-            // PGRST122 = Multiple rows found (ambiguous match)
-            if (companyError) {
-                if (companyError.code === 'PGRST116') {
-                    console.error(`[Ingest] Error: Company '${companyName}' not found in DB.`);
-                    throw new Error(`Company '${companyName}' not found in database. Please ensure the company exists before ingesting.`);
-                } else if (companyError.code === 'PGRST122') {
-                    console.error(`[Ingest] Error: Multiple companies match '${companyName}'. Name is ambiguous.`);
-                    throw new Error(`Multiple companies match '${companyName}'. Please use a more specific company name in the guide.`);
+                .maybeSingle();  // Returns null instead of error if not found
+            
+            if (exactMatch) {
+                companyId = exactMatch.id;
+                console.log(`[Ingest] Found exact company match: ${exactMatch.name}`);
+            } else {
+                // Step 2: Try fuzzy match (contains the guide name OR guide name contains DB name)
+                // Extract core name without legal suffixes for matching
+                const coreName = companyName
+                    .replace(/\s+(GmbH|Inc\.?|LLC|Ltd\.?|Corp\.?|AG|SE|SA|SAS|BV|NV)$/i, '')
+                    .trim();
+                
+                console.log(`[Ingest] No exact match for '${companyName}', trying fuzzy match with '${coreName}'...`);
+                
+                const { data: fuzzyMatches, error: fuzzyError } = await supabase
+                    .from('companies')
+                    .select('id, name')
+                    .or(`name.ilike.%${coreName}%,name.ilike.${coreName}%`);
+                
+                if (fuzzyError) {
+                    console.error('Database error during fuzzy company lookup:', fuzzyError);
+                    throw new Error(`Database error looking up company: ${fuzzyError.message}`);
+                }
+                
+                if (fuzzyMatches && fuzzyMatches.length === 1) {
+                    // Single fuzzy match - use it
+                    companyId = fuzzyMatches[0].id;
+                    console.log(`[Ingest] Found fuzzy company match: '${fuzzyMatches[0].name}' for guide name '${companyName}'`);
+                } else if (fuzzyMatches && fuzzyMatches.length > 1) {
+                    // Multiple matches - ambiguous
+                    const matchNames = fuzzyMatches.map(m => m.name).join(', ');
+                    console.error(`[Ingest] Ambiguous: Multiple companies match '${coreName}': ${matchNames}`);
+                    throw new Error(
+                        `Multiple companies match '${companyName}': ${matchNames}. ` +
+                        `Please update the guide to use the exact company name from the database.`
+                    );
                 } else {
-                    console.error('Database error looking up company:', companyError);
-                    throw new Error(`Database error looking up company: ${companyError.message}`);
+                    // No matches at all
+                    console.error(`[Ingest] Error: Company '${companyName}' not found in DB (tried exact and fuzzy).`);
+                    throw new Error(
+                        `Company '${companyName}' not found in database. ` +
+                        `This company must exist in the main companies table (synced from Affinity) before ingesting financials.`
+                    );
                 }
             }
-
-            if (!companyData?.id) {
-                console.error(`[Ingest] Error: Company '${companyName}' not found in DB.`);
-                throw new Error(`Company '${companyName}' not found in database. Please ensure the company exists before ingesting.`);
-            }
-            const companyId = companyData.id;
             
             // 3. Parse & Map
             // Register source file in DB

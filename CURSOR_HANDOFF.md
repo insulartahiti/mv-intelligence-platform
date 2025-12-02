@@ -389,10 +389,21 @@ Located in `lib/financials/extraction/llm_extractor.ts`. Uses OpenAI GPT-4:
 3. Files uploaded via `/api/upload` (service role, bypasses RLS)
 4. `/api/ingest` called with file paths
 5. Backend loads guide, parses files, maps to schema
-6. Line items saved to `fact_financials`
-7. Metrics computed and saved to `fact_metrics`
-8. PDF snippets extracted for audit trail → `financial-snippets` bucket
-9. Source files deleted from `financial-docs` (success only)
+6. **Company Resolution**: Looks up company in `companies` table (Affinity-synced)
+   - Tries exact match first
+   - Falls back to fuzzy match (strips legal suffixes like GmbH, Inc.)
+   - Fails if company not found (must exist in main DB first)
+7. Line items saved to `fact_financials`
+8. Metrics computed and saved to `fact_metrics`
+9. PDF snippets extracted for audit trail → `financial-snippets` bucket
+10. Source files deleted from `financial-docs` (success only)
+
+### Important: Company Name Matching
+The Portco Guide's `company.name` (or `company_metadata.name`) must match a company that **already exists** in the `companies` table. This table is synced from Affinity CRM.
+
+- **Exact Match**: `Nelly Solutions` matches `Nelly Solutions`
+- **Fuzzy Match**: `Nelly Solutions GmbH` matches `Nelly Solutions` (legal suffix stripped)
+- **No Match**: If the company doesn't exist in Affinity, add it there first and run the sync pipeline
 
 ### Error Handling
 - **Success (200)**: All files ingested with data extracted
