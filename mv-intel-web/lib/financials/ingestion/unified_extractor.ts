@@ -24,6 +24,7 @@ import OpenAI from 'openai';
 import * as XLSX from 'xlsx';
 import { PDFDocument } from 'pdf-lib';
 import { FileMetadata } from './load_file';
+import { PortcoGuide } from '../portcos/types';
 
 // Lazy initialization
 let openaiClient: OpenAI | null = null;
@@ -127,7 +128,7 @@ export interface UnifiedExtractionResult {
  * For PDFs: Uses OpenAI Files API + Responses API for vision-based extraction
  * For Excel: Uses xlsx library + GPT-5.1 for structured analysis
  */
-export async function extractFinancialDocument(file: FileMetadata): Promise<UnifiedExtractionResult> {
+export async function extractFinancialDocument(file: FileMetadata, guide?: PortcoGuide): Promise<UnifiedExtractionResult> {
   const openai = getOpenAI();
   const filenameLower = file.filename.toLowerCase();
   
@@ -145,7 +146,7 @@ export async function extractFinancialDocument(file: FileMetadata): Promise<Unif
   
   if (isPDF) {
     // For PDFs: Upload to Files API, then use Responses API with vision
-    structuredResult = await extractWithVisionAPI(openai, file, 'application/pdf');
+    structuredResult = await extractWithVisionAPI(openai, file, 'application/pdf', guide);
     
   } else {
     // For Excel: Same approach as PDF - upload to Files API for vision extraction
@@ -158,7 +159,7 @@ export async function extractFinancialDocument(file: FileMetadata): Promise<Unif
       ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       : 'application/vnd.ms-excel';
     
-    structuredResult = await extractWithVisionAPI(openai, file, excelMimeType);
+    structuredResult = await extractWithVisionAPI(openai, file, excelMimeType, guide);
     
     // Merge deterministic data for precise cell lookups
     if (structuredResult.info) {
@@ -203,7 +204,8 @@ export async function extractFinancialDocument(file: FileMetadata): Promise<Unif
 async function extractWithVisionAPI(
   openai: OpenAI,
   file: FileMetadata,
-  mimeType: string
+  mimeType: string,
+  guide?: PortcoGuide
 ): Promise<Partial<UnifiedExtractionResult>> {
   const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel';
   console.log(`[Vision API] Uploading ${file.filename} (${fileType}) to Files API...`);
@@ -217,101 +219,82 @@ async function extractWithVisionAPI(
     
     console.log(`[Vision API] File uploaded: ${uploadedFile.id}`);
     
-    // Step 2: Use Responses API with the file
+    // Step 2: Build system prompt with guide context
     const documentType = mimeType.includes('pdf') ? 'PDF report' : 'Excel spreadsheet';
+    
+    // Generate guide context for the LLM
+    let guideContext = '';
+    if (guide) {
+      guideContext = `\n\nCOMPANY-SPECIFIC CONTEXT (use these hints to find metrics):
+Company: ${guide.company_metadata?.name || 'Unknown'}
+Business Model: ${(guide.company_metadata?.business_models || []).join(', ')}
+Currency: ${guide.company_metadata?.currency || 'EUR'}
+
+KNOWN METRIC LABELS TO LOOK FOR:`;
+      
+      // Add mapping hints from guide
+      if (guide.mapping_rules?.line_items) {
+        for (const [key, rule] of Object.entries(guide.mapping_rules.line_items)) {
+          if (rule.label_match) {
+            guideContext += `\n- "${rule.label_match}" → map to "${key}"`;
+          }
+        }
+      }
+    }
+    
     const systemPrompt = `You are a senior financial analyst extracting data from a portfolio company ${documentType}.
 
-Extract ALL financial data and return structured JSON:
+TASK: Extract ALL financial metrics you find and return structured JSON.
 
+RESPONSE FORMAT (use actual values from the document, NOT these examples):
 {
-  "pageCount": <number>,
+  "pageCount": <actual page count>,
   "pages": [
     {
-      "pageNumber": 1,
-      "text": "Key content from this page",
-      "tables": [
-        {
-          "title": "Table name",
-          "headers": ["Metric", "Actual", "Budget", "Variance"],
-          "rows": [["MRR", 782800, 750000, 32800]],
-          "confidence": 0.95
-        }
-      ]
+      "pageNumber": <page number where data was found>,
+      "text": "<summary of financial content on this page>",
+      "tables": [{"title": "...", "headers": [...], "rows": [...], "confidence": 0.95}]
     }
   ],
   "financial_summary": {
     "actuals": {
-      "arr": 9393600,
-      "mrr": 782800,
-      "mrr_saas": 429800,
-      "mrr_finos": 353000,
-      "customers": 106,
-      "customers_saas": 61,
-      "customers_finos": 45,
-      "gross_margin": 0.75,
-      "monthly_burn": 130000,
-      "cash_balance": 3250000,
-      "runway_months": 25,
-      "arr_growth_yoy": 0.45,
-      "nrr": 1.15,
-      "logo_churn": 0.02
+      "<metric_id>": <actual value from document>
     },
     "budget": {
-      "arr": 9000000,
-      "mrr": 750000,
-      "customers": 100
+      "<metric_id>": <budget value if found>
     },
-    "period": "September 2025",
-    "period_type": "month",
-    "currency": "EUR",
-    "business_model": "saas",
+    "period": "<reporting period found in document>",
+    "period_type": "month|quarter|year",
+    "currency": "<currency>",
+    "business_model": "saas|marketplace|fintech",
     "source_locations": {
-      "mrr": { "page": 1, "bbox": { "x": 0.6, "y": 0.3, "width": 0.15, "height": 0.03 } },
-      "arr": { "page": 1, "bbox": { "x": 0.6, "y": 0.35, "width": 0.15, "height": 0.03 } }
+      "<metric_id>": { "page": <page number>, "bbox": { "x": 0.5, "y": 0.5, "width": 0.1, "height": 0.05 } }
     }
   }
 }
 
-STANDARD METRIC IDs (use these exact keys):
-- arr: Annual Recurring Revenue (MRR * 12)
+STANDARD METRIC IDs (use these exact keys when you find matching data):
 - mrr: Monthly Recurring Revenue (total)
-- mrr_saas: MRR from SaaS segment
-- mrr_finos: MRR from FinOS/other segment
+- arr: Annual Recurring Revenue (MRR * 12, calculate if not explicit)
+- mrr_saas: MRR from SaaS/subscription segment
+- mrr_finos: MRR from FinOS/factoring segment  
 - customers: Total customer count
-- customers_saas: SaaS customer count
-- customers_finos: FinOS customer count
-- gross_margin: Gross margin percentage (0.75 = 75%)
-- monthly_burn: Monthly cash burn
+- gross_margin: Gross margin as decimal (0.75 = 75%)
+- monthly_burn: Monthly net cash burn
 - cash_balance: Current cash position
-- runway_months: Cash runway in months
-- arr_growth_yoy: Year-over-year ARR growth (0.45 = 45%)
-- nrr: Net Revenue Retention (1.15 = 115%)
+- runway_months: Months of runway remaining
+- nrr: Net Revenue Retention as decimal (1.15 = 115%)
 - grr: Gross Revenue Retention
-- logo_churn: Customer churn rate (0.02 = 2%)
-- cac: Customer Acquisition Cost
-- ltv: Customer Lifetime Value
-- payback_months: CAC payback period
+- logo_churn: Customer churn rate as decimal
 
-CRITICAL - Actual vs Budget:
-- Separate "actuals" (reported/actual numbers) from "budget" (plan/forecast)
-- Look for columns labeled "Actual", "Budget", "Plan", "Forecast", "Variance"
-- If only one set of numbers, assume they are "actuals"
-
-CRITICAL - Period Detection:
-- Look for "Q3 2025", "September 2025", "Month ending...", "As of..."
-- "period" = REPORTING PERIOD of the data
-
-CRITICAL - Metrics:
-- Map ALL metrics to standard IDs above
-- Calculate ARR = MRR * 12 if only MRR is given
-- Preserve exact numbers (no rounding)
-- Convert percentages to decimals (75% = 0.75)
-
-CRITICAL - Source Locations (for audit trail):
-- For each metric in "actuals" and "budget", provide its location in "source_locations"
-- "bbox" = bounding box as percentage of page (0-1 range): x=left edge, y=top edge
-- This enables visual highlighting of where each number was found
-- If you cannot determine exact location, provide "page" number only`;
+RULES:
+1. ONLY extract values that actually appear in the document
+2. DO NOT invent or hallucinate numbers - if a metric isn't in the document, omit it
+3. Separate "actuals" from "budget/plan" based on column headers
+4. For source_locations, provide the page number where each metric was found
+5. bbox coordinates are percentages (0-1): x=left edge, y=top edge from document
+6. Preserve exact numbers from document (no rounding)
+7. Convert percentages to decimals (75% → 0.75)${guideContext}`;
 
     // Use the responses.create endpoint with GPT-5.1 for best extraction quality
     const response = await openai.responses.create({
@@ -356,77 +339,11 @@ CRITICAL - Source Locations (for audit trail):
     
   } catch (error: any) {
     console.error('[Vision API] Extraction failed:', error?.message || error);
-    
-    // Fallback: Try base64 inline approach if Files API fails
-    console.log('[Vision API] Trying base64 fallback...');
-    return extractWithBase64Fallback(openai, file, mimeType);
+    // Fail fast - don't degrade to fallback methods
+    throw new Error(`Document extraction failed for ${file.filename}: ${error?.message || 'Unknown error'}`);
   }
 }
 
-/**
- * Fallback: Send file as base64 inline (for when Files API is unavailable)
- * Works for both PDF and Excel files
- */
-async function extractWithBase64Fallback(
-  openai: OpenAI,
-  file: FileMetadata,
-  mimeType: string
-): Promise<Partial<UnifiedExtractionResult>> {
-  const base64Data = file.buffer.toString('base64');
-  const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel spreadsheet';
-  
-  const systemPrompt = `You are a senior financial analyst. Extract ALL financial data from this ${fileType} as JSON.
-
-Return:
-{
-  "pageCount": <number>,
-  "pages": [{"pageNumber": 1, "text": "...", "tables": [...]}],
-  "financial_summary": {
-    "key_metrics": {"arr": ..., "mrr": ..., "gross_margin": ...},
-    "period": "Q3 2025",
-    "period_type": "quarter", 
-    "currency": "EUR",
-    "business_model": "saas"
-  }
-}`;
-
-  try {
-    // Try using chat completions with file content type
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5.1',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: `Extract financial data from: "${file.filename}"` },
-            {
-              type: 'file',
-              file: {
-                filename: file.filename,
-                file_data: `data:${mimeType};base64,${base64Data}`
-              }
-            } as any
-          ]
-        }
-      ],
-      max_tokens: 16000,
-      temperature: 0.1
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      return createEmptyResult(file.filename, 'base64_no_response');
-    }
-
-    const method = mimeType.includes('pdf') ? 'pdf-base64-fallback' : 'excel-base64-fallback';
-    return parseJsonResponse(content, file.filename, method);
-    
-  } catch (error: any) {
-    console.error('[Base64 Fallback] Also failed:', error?.message);
-    return createEmptyResult(file.filename, 'all_methods_failed');
-  }
-}
 
 // ============================================================================
 // Deterministic Excel Parsing

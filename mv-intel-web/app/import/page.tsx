@@ -681,6 +681,7 @@ export default function ImportPage() {
                                                   <tr className="text-gray-500">
                                                       <th className="py-1 px-2">Line Item ID</th>
                                                       <th className="py-1 px-2">Amount</th>
+                                                      <th className="py-1 px-2">Scenario</th>
                                                       <th className="py-1 px-2">Source</th>
                                                   </tr>
                                               </thead>
@@ -689,6 +690,15 @@ export default function ImportPage() {
                                                       <tr key={k} className="border-b border-white/5 hover:bg-white/5">
                                                           <td className="py-1 px-2 font-mono text-gray-400">{row.line_item_id}</td>
                                                           <td className="py-1 px-2 text-white">{typeof row.amount === 'number' ? row.amount.toLocaleString() : row.amount}</td>
+                                                          <td className="py-1 px-2">
+                                                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                                                  row.scenario === 'budget' 
+                                                                      ? 'bg-purple-500/20 text-purple-400' 
+                                                                      : 'bg-green-500/20 text-green-400'
+                                                              }`}>
+                                                                  {row.scenario || 'Actual'}
+                                                              </span>
+                                                          </td>
                                                           <td className="py-1 px-2">
                                                               {row.snippet_url ? (
                                                                   <a 

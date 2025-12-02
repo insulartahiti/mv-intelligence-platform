@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 02, 2025 (v3.1 - Visual Audit Highlighting)
+**Last Updated:** Dec 02, 2025 (v3.2 - Guide-Aware Extraction)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -649,16 +649,18 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### Features Added
 
-*   **Financial Data Ingestion System v3.1**: Unified extraction with visual audit highlighting.
-    *   **Visual Audit Highlighting** (NEW): Ellipse annotations drawn around extracted values in PDF snippets
-    *   **Bounding Box Extraction**: GPT-4o returns `source_locations` with bbox coordinates (% of page)
+*   **Financial Data Ingestion System v3.2**: Guide-aware extraction with improved accuracy.
+    *   **Guide-Aware Extraction** (NEW): Portco Guide context injected into LLM prompt
+    *   **No Hallucination**: Prompt uses placeholders, not example values that could be copied
+    *   **Fail-Fast**: Removed fallback methods - extraction fails clearly instead of degrading
+    *   **Scenario Separation**: Actuals vs Budget clearly separated in UI and computation
+    *   **Deduplication**: Same metric from multiple sources uses latest value, not sum
+    *   **Visual Audit Highlighting**: Ellipse annotations drawn around extracted values in PDF snippets
+    *   **Bounding Box Extraction**: GPT-5.1 returns `source_locations` with bbox coordinates (% of page)
     *   **Enhanced `pdf_snippet.ts`**: Draws ellipses and labels on extracted pages using `pdf-lib`
     *   **Unified Extractor** (`unified_extractor.ts`): Single pipeline for PDF + Excel
-    *   **Parallel LLM Processing**: GPT-4o Vision + GPT-5.1 Structured run in parallel
-    *   **Cross-Validation**: Reconciliation step merges results and flags discrepancies
     *   **Perplexity Benchmarks**: Industry comparison via Sonar Pro API
     *   **Smart Period Detection**: Extracts reporting period from document content (not just filename)
-    *   **Budget vs Actual Separation**: Distinguishes actuals from budget/plan numbers
     *   **Standard Metric ID Normalization**: Maps variations to consistent IDs (mrr, arr, nrr, etc.)
     *   Common Metrics dictionary with SaaS/Fintech KPIs
     *   YAML-based Portco Guides for company-specific mapping

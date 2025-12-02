@@ -277,9 +277,9 @@ export async function POST(req: NextRequest) {
                 console.log(`[Dry Run] Skipping dim_source_files insert`);
             }
 
-            // 3. Unified Extraction (GPT-5.1 Vision + Perplexity)
+            // 3. Unified Extraction (GPT-5.1 Vision + Perplexity) - pass guide for context
             console.log(`[Ingest] Starting unified extraction for ${fileMeta.filename}`);
-            const extractedData: UnifiedExtractionResult = await extractFinancialDocument(fileMeta);
+            const extractedData: UnifiedExtractionResult = await extractFinancialDocument(fileMeta, guide);
             const fileType = extractedData.fileType;
             
             console.log(`[Ingest] Extraction complete: ${extractedData.pageCount} pages, ${Object.keys(extractedData.financial_summary?.key_metrics || {}).length} metrics`);
@@ -464,15 +464,17 @@ export async function POST(req: NextRequest) {
                 console.log(`[Dry Run] Skipping fact_financials insert (${factRows.length} rows)`);
             }
 
-            // 5. Compute Metrics
+            // 5. Compute Metrics (only from Actuals, not Budget)
             const facts: Record<string, number> = {};
             
             lineItems.forEach(item => {
-                if (facts[item.line_item_id] !== undefined) {
-                    facts[item.line_item_id] += item.amount;
-                } else {
-                    facts[item.line_item_id] = item.amount;
+                // Only include Actuals in metric computation (Budget is stored but not used for derived metrics)
+                if (item.scenario && item.scenario !== 'actual') {
+                    return; // Skip budget/forecast items
                 }
+                
+                // Deduplicate: use latest value instead of summing (prevents double-counting)
+                facts[item.line_item_id] = item.amount;
             });
             
             // Use mock ID for metrics computation if company not resolved (dry run)
