@@ -414,7 +414,7 @@ The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data r
 2.  **Affinity Sync** (Fast, ~15-30 min): Fetches all entities and raw interactions from Affinity. **No AI calls** — stores raw data only.
 3.  **Parallel Enrichment Block** (runs concurrently):
     *   **Embed**: `embed_interactions.ts` vectorizes interactions where `embedding IS NULL`.
-    *   **Summarize**: `summarize_interactions.ts` generates entity summaries (p-limit: 10).
+    *   **Summarize**: `summarize_interactions.ts` generates entity summaries (p-limit: 10). **Incremental**: Checks `last_updated` timestamp and only re-summarizes if new interactions exist.
     *   **Enrich (Orgs)**: `enhanced_embedding_generator.js` fills missing fields via Perplexity/GPT (batch: 50).
 4.  **Neo4j Sync**: Updates graph with enriched Org data.
 5.  **Person Enrichment**: Enriches People using Company context.
@@ -586,6 +586,10 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### Bug Fixes
 
+*   **Enrichment Pipeline**:
+    *   Fixed **Schema Mismatch** in `enhanced_embedding_generator.js` by adding a robust fallback mechanism that retries updates without new columns if the database migration hasn't been applied.
+    *   Added missing migration `20251202000005_add_taxonomy_tracking.sql` to add `taxonomy_attempts` and `taxonomy_skip_until` columns.
+
 *   **Financial Ingestion**:
     *   Fixed silent data loss when duplicate line items share same ID (now sums with audit log)
     *   Fixed API returning 200 for failures (now proper 500/207 status codes)
@@ -634,6 +638,11 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Affinity sync stores raw interactions (no OpenAI calls)
     *   Embeddings/Summaries generated in parallel block
     *   Schedule changed: Daily 6 AM UTC (was hourly)
+
+*   **Interaction Summarization Optimization**: Refactored `summarize_interactions.ts` to be fully incremental.
+    *   Checks `last_updated` timestamp against the entity's most recent interaction date.
+    *   Skips AI summarization if the summary is already up-to-date.
+    *   Reduces runtime from ~1 hour to minutes for incremental runs.
 
 *   **Concurrency Controls**: Added `p-limit` to summarization, increased enrichment batch sizes (5 → 50)
 
