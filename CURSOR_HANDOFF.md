@@ -69,6 +69,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 7. [Roadmap & Priorities](#7-roadmap--priorities)
 8. [Key Architectural Decisions](#8-key-architectural-decisions)
 - [Appendix A: Changelog](#appendix-a-changelog-dec-02-2025)
+- [Appendix B: Maintaining This Document](#appendix-b-maintaining-this-document)
 
 ---
 
@@ -599,3 +600,124 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   Updated Handoff doc with Production Auth Configuration and Deployment Target
 *   Added PWA assets documentation
 *   Added Financial Ingestion system documentation
+
+---
+
+## Appendix B: Maintaining This Document
+
+This section provides guidelines for keeping CURSOR_HANDOFF.md consistent and useful over time.
+
+### When to Update
+
+| Trigger | Action |
+| :--- | :--- |
+| New API route created | Add to Quick Reference → API Endpoints table |
+| New database table created | Add to Quick Reference → Database Tables |
+| New storage bucket created | Add to Quick Reference → Storage Buckets |
+| New major feature shipped | Add to Appendix A → Features Added |
+| Bug fixed | Add to Appendix A → Bug Fixes (under appropriate subsystem) |
+| Performance improvement | Add to Appendix A → Infrastructure & Performance |
+| Security change | Add to Appendix A → Security |
+| New pipeline script added | Update Section 2 → Pipeline Scripts Mapping |
+| New portco guide created | No doc update needed (self-documenting via YAML) |
+| Architectural decision made | Add to Section 8 → Key Architectural Decisions |
+| Status of feature changes | Update Section 6 → Status Summary |
+
+### Changelog Categorization Rules
+
+**Features Added** — New user-facing capabilities or major backend systems:
+- New pages, UI components, or workflows
+- New API endpoints with distinct functionality
+- New data pipelines or processing systems
+- New integrations (external APIs, services)
+
+**Bug Fixes** — Corrections to existing functionality:
+- Error handling improvements
+- Data integrity fixes
+- Build/deployment fixes
+- UI/UX corrections
+
+**Infrastructure & Performance** — Non-functional improvements:
+- Speed optimizations
+- Concurrency/scaling changes
+- Monitoring/logging additions
+- CI/CD workflow changes
+
+**Security** — Auth, authorization, and data protection:
+- New auth mechanisms
+- RLS policy changes
+- Secret management updates
+- Access control modifications
+
+### What NOT to Include
+
+- Transient debugging sessions or experiments
+- Work-in-progress code not yet merged
+- Minor refactors that don't change behavior
+- Dependency version bumps (unless they fix a specific issue)
+- Code formatting or linting changes
+
+### Entry Format Guidelines
+
+**Feature entries** should describe what the user/system can now do:
+```markdown
+*   **Feature Name**: Brief description of capability.
+    *   Sub-bullet for key implementation details
+    *   Sub-bullet for notable design choices
+```
+
+**Bug fix entries** should describe what was broken and how it was fixed:
+```markdown
+*   Fixed [symptom] by [solution] (e.g., "Fixed silent data loss by summing duplicate line items")
+```
+
+**Architectural decisions** should follow this template:
+```markdown
+### Why [Decision Name]?
+**Decision**: One sentence describing what was decided.
+
+**Rationale**:
+- Bullet point explaining why
+- Another reason
+- Trade-offs considered
+```
+
+### Quick Reference Table Templates
+
+**New API Endpoint:**
+```markdown
+| `/api/endpoint` | METHOD | Brief purpose description |
+```
+
+**New Database Table:**
+```markdown
+| `table_name` | What it stores and why |
+```
+
+**New Storage Bucket:**
+```markdown
+| `bucket-name` | Purpose | Retention policy |
+```
+
+### Update Checklist
+
+When making significant changes, verify:
+
+- [ ] "Last Updated" date at top of document reflects today
+- [ ] Table of Contents links still work (if section names changed)
+- [ ] Quick Reference tables are current
+- [ ] Status Summary reflects actual deployment state
+- [ ] No duplicate entries in changelog (search before adding)
+
+### File Location Constants
+
+If key files move, update these sections:
+1. Quick Reference → Key File Locations
+2. Section 3 → Codebase Map
+3. Section 4 → Financial Ingestion (if applicable)
+
+### Versioning Philosophy
+
+This document tracks the **current state** of the system, not its history. The changelog provides a rolling window of recent changes (current release cycle). For historical archaeology, use `git log` on this file.
+
+When the changelog grows too long (>100 entries), archive older entries to a separate `CHANGELOG_ARCHIVE.md` file, keeping only the most recent ~50 entries in this document.

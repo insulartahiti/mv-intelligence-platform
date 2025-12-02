@@ -14,7 +14,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Process a file from Storage
+// Process files from Storage - POST handler for financial data ingestion
+// Accepts: { companySlug: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
   try {
     const json = await req.json();

@@ -28,14 +28,20 @@ export async function parseExcel(file: FileMetadata): Promise<ExtractedSheet[]> 
 }
 
 /**
- * Helper to get value from a specific cell address like "B5"
+ * Helper to get value from a specific cell address like "B5" or "b5"
  */
 export function getCellValue(sheet: ExtractedSheet, cellAddress: string): any {
-  // Simple A1 parser
-  const colMatch = cellAddress.match(/[A-Z]+/);
-  const rowMatch = cellAddress.match(/\d+/);
+  // Normalize to uppercase for consistent parsing
+  const normalizedAddress = cellAddress.toUpperCase();
+  
+  // Simple A1 parser (case-insensitive via normalization)
+  const colMatch = normalizedAddress.match(/[A-Z]+/);
+  const rowMatch = normalizedAddress.match(/\d+/);
 
-  if (!colMatch || !rowMatch) return null;
+  if (!colMatch || !rowMatch) {
+    console.warn(`[Excel] Invalid cell address format: ${cellAddress}`);
+    return null;
+  }
 
   const colStr = colMatch[0];
   const rowIdx = parseInt(rowMatch[0], 10) - 1; // 1-based to 0-based
@@ -49,9 +55,10 @@ export function getCellValue(sheet: ExtractedSheet, cellAddress: string): any {
 }
 
 function colStrToIdx(colStr: string): number {
+  // colStr is already uppercase from normalization
   let idx = 0;
   for (let i = 0; i < colStr.length; i++) {
-    idx = idx * 26 + (colStr.charCodeAt(i) - 64);
+    idx = idx * 26 + (colStr.charCodeAt(i) - 64); // 'A' is 65, so 'A'-64=1
   }
   return idx - 1;
 }
