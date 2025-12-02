@@ -62,7 +62,7 @@ create index if not exists idx_fact_financials_company_date on fact_financials(c
 create index if not exists idx_fact_metrics_company_period on fact_metrics(company_id, period);
 create index if not exists idx_dim_source_files_company on dim_source_files(company_id);
 
--- Storage Bucket for Financial Docs
+-- Storage Bucket for Financial Docs (Temporary Uploads)
 insert into storage.buckets (id, name, public) 
 values ('financial-docs', 'financial-docs', false)
 on conflict (id) do nothing;
