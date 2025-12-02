@@ -34,6 +34,18 @@ export async function POST(req: NextRequest) {
             
             // 2. Load Guide
             const guide = loadPortcoGuide(companySlug);
+
+            // 2b. Resolve Company ID from Database
+            const { data: companyData } = await supabase
+                .from('companies')
+                .select('id')
+                .ilike('name', guide.company_metadata.name)
+                .single();
+
+            if (!companyData?.id) {
+                console.warn(`[Ingest] Warning: Company '${guide.company_metadata.name}' not found in DB. Metrics will use placeholder ID.`);
+            }
+            const companyId = companyData?.id || '00000000-0000-0000-0000-000000000000';
             
             // 3. Parse & Map
             let extractedData;
@@ -78,9 +90,8 @@ export async function POST(req: NextRequest) {
                         } else {
                             // Link snippet to the item (in a real DB save, we'd update the fact row)
                             // item.source_location.snippet_url = ...
+                            processedPages.add(pageNum);
                         }
-                        
-                        processedPages.add(pageNum);
                     }
                 }
             }
@@ -92,7 +103,7 @@ export async function POST(req: NextRequest) {
                 facts[item.line_item_id] = item.amount;
             });
 
-            const metrics = computeMetricsForPeriod(companySlug, periodDate, facts);
+            const metrics = computeMetricsForPeriod(companyId, periodDate, facts);
 
             results.push({
                 file: fileMeta.filename,
