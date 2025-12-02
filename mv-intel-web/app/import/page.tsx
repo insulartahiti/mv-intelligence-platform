@@ -15,6 +15,7 @@ export default function ImportPage() {
   const [resolutionCandidates, setResolutionCandidates] = useState<{id: string, name: string}[]>([]);
   const [targetCompanyName, setTargetCompanyName] = useState('');
   const [resolvedCompanyId, setResolvedCompanyId] = useState('');
+  const [dryRunResults, setDryRunResults] = useState<any[]>([]);
   
   // Search state for modal
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,6 +102,72 @@ export default function ImportPage() {
 
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleTestRun = async () => {
+      if (files.length === 0) {
+          alert('Please upload at least one file to test.');
+          return;
+      }
+      
+      // For dry runs, default to 'nelly' if no company selected (our test case)
+      const testCompany = selectedCompany || 'nelly';
+      
+      setIsUploading(true);
+      setUploadStatus('idle');
+      setStatusMessage(`Running dry run with ${testCompany} guide...`);
+      setDryRunResults([]); // Clear previous results
+
+      try {
+          // Reuse upload logic
+          const uploadedPaths: string[] = [];
+          for (let i = 0; i < files.length; i++) {
+              const file = files[i];
+              setStatusMessage(`Uploading test file ${i + 1}...`);
+              const urlRes = await fetch(
+                  `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(testCompany)}`
+              );
+              const urlData = await urlRes.json();
+              if (urlData.status !== 'success') throw new Error(urlData.error);
+              
+              const uploadRes = await fetch(urlData.signedUrl, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                  body: file
+              });
+              if (!uploadRes.ok) throw new Error('Upload failed');
+              uploadedPaths.push(urlData.path);
+          }
+
+          setStatusMessage('Processing test run...');
+          
+          const res = await fetch('/api/ingest', { 
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  companySlug: testCompany,
+                  filePaths: uploadedPaths,
+                  dryRun: true
+              })
+          });
+          
+          const data = await res.json();
+          
+          if (res.ok) {
+              setDryRunResults(data.results || []);
+              setUploadStatus('success');
+              setStatusMessage(`Test Run Complete (using ${data.company || testCompany} guide)`);
+          } else {
+              throw new Error(data.error || 'Test run failed');
+          }
+      } catch (err: any) {
+          console.error('Dry run error:', err);
+          setUploadStatus('error');
+          setStatusMessage(`Test failed: ${err.message}`);
+          alert(`Test failed: ${err.message}`);
+      } finally {
+          setIsUploading(false);
+      }
   };
 
   const handleSubmit = async (overrideCompanyId?: string) => {
@@ -502,41 +569,153 @@ export default function ImportPage() {
         </div>
 
         {/* Submit Action */}
-        <div className="flex justify-end pt-6 border-t border-white/10">
-          <button
-            onClick={() => handleSubmit()}
-            disabled={isUploading || files.length === 0}
-            className={`
-              flex items-center gap-2 px-8 py-3 rounded-xl font-medium transition-all duration-200
-              ${uploadStatus === 'success' 
-                ? 'bg-green-500 hover:bg-green-600 text-white' 
-                : uploadStatus === 'error'
-                ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white'}
-              disabled:opacity-50 disabled:cursor-not-allowed
-            `}
-          >
-            {isUploading ? (
-              <>
-                <Loader2 size={20} className="animate-spin" />
-                {statusMessage || 'Processing...'}
-              </>
-            ) : uploadStatus === 'success' ? (
-              <>
-                <Check size={20} />
-                Ingestion Complete
-              </>
-            ) : uploadStatus === 'error' ? (
+        <div className="flex flex-col gap-6 pt-6 border-t border-white/10">
+          <div className="flex justify-end gap-4">
+            <button
+                onClick={handleTestRun}
+                disabled={isUploading || files.length === 0}
+                className="px-6 py-3 rounded-xl font-medium text-blue-400 border border-blue-500/30 hover:bg-blue-500/10 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Test extraction using Nelly guide (no database writes)"
+            >
+                Test Run (Nelly)
+            </button>
+            
+            <button
+                onClick={() => handleSubmit()}
+                disabled={isUploading || files.length === 0}
+                className={`
+                flex items-center gap-2 px-8 py-3 rounded-xl font-medium transition-all duration-200
+                ${uploadStatus === 'success' 
+                    ? 'bg-green-500 hover:bg-green-600 text-white' 
+                    : uploadStatus === 'error'
+                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                    : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white'}
+                disabled:opacity-50 disabled:cursor-not-allowed
+                `}
+            >
+                {isUploading ? (
                 <>
-                  <AlertCircle size={20} />
-                  Failed - Retry
+                    <Loader2 size={20} className="animate-spin" />
+                    {statusMessage || 'Processing...'}
                 </>
-            ) : (
-              <>
-                Start Ingestion
-              </>
-            )}
-          </button>
+                ) : uploadStatus === 'success' ? (
+                <>
+                    <Check size={20} />
+                    Ingestion Complete
+                </>
+                ) : uploadStatus === 'error' ? (
+                    <>
+                    <AlertCircle size={20} />
+                    Failed - Retry
+                    </>
+                ) : (
+                <>
+                    Start Ingestion
+                </>
+                )}
+            </button>
+          </div>
+
+          {/* Dry Run Results */}
+          {dryRunResults.length > 0 && (
+              <div className="bg-black/40 rounded-xl border border-white/10 overflow-hidden">
+                  <div className="p-4 border-b border-white/10 bg-white/5">
+                      <h3 className="text-lg font-semibold text-blue-400">Dry Run Results</h3>
+                  </div>
+                  <div className="p-4 space-y-6">
+                      {dryRunResults.map((res, idx) => (
+                          <div key={idx} className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                  <h4 className="font-medium text-white">{res.file}</h4>
+                                  <span className={`px-2 py-1 rounded text-xs ${res.status === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                      {res.status}
+                                  </span>
+                              </div>
+                              
+                              {res.computed_metrics && res.computed_metrics.length > 0 && (
+                                  <div className="overflow-x-auto">
+                                      <table className="w-full text-sm text-left">
+                                          <thead className="text-xs text-gray-400 uppercase bg-white/5">
+                                              <tr>
+                                                  <th className="px-4 py-2">Metric</th>
+                                                  <th className="px-4 py-2">Value</th>
+                                                  <th className="px-4 py-2">Unit</th>
+                                                  <th className="px-4 py-2">Period</th>
+                                              </tr>
+                                          </thead>
+                                          <tbody>
+                                              {res.computed_metrics.map((m: any, i: number) => (
+                                                  <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                                                      <td className="px-4 py-2 font-medium text-gray-300">{m.metric_id}</td>
+                                                      <td className="px-4 py-2 text-white">
+                                                          {typeof m.value === 'number' 
+                                                              ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) 
+                                                              : m.value}
+                                                      </td>
+                                                      <td className="px-4 py-2 text-gray-400">{m.unit}</td>
+                                                      <td className="px-4 py-2 text-gray-400">{m.period}</td>
+                                                  </tr>
+                                              ))}
+                                          </tbody>
+                                      </table>
+                                  </div>
+                              )}
+                              
+                              {res.extracted_data && res.extracted_data.length > 0 && (
+                                  <details className="group" open>
+                                      <summary className="cursor-pointer text-sm text-blue-400 hover:text-blue-300 mb-2">
+                                          View {res.extracted_data.length} Raw Line Items
+                                      </summary>
+                                      <div className="overflow-x-auto mt-2 pl-4 border-l-2 border-white/10">
+                                          <table className="w-full text-xs text-left">
+                                              <thead>
+                                                  <tr className="text-gray-500">
+                                                      <th className="py-1 px-2">Line Item ID</th>
+                                                      <th className="py-1 px-2">Amount</th>
+                                                      <th className="py-1 px-2">Source</th>
+                                                  </tr>
+                                              </thead>
+                                              <tbody>
+                                                  {res.extracted_data.map((row: any, k: number) => (
+                                                      <tr key={k} className="border-b border-white/5 hover:bg-white/5">
+                                                          <td className="py-1 px-2 font-mono text-gray-400">{row.line_item_id}</td>
+                                                          <td className="py-1 px-2 text-white">{typeof row.amount === 'number' ? row.amount.toLocaleString() : row.amount}</td>
+                                                          <td className="py-1 px-2">
+                                                              {row.snippet_url ? (
+                                                                  <a 
+                                                                      href={row.snippet_url} 
+                                                                      target="_blank" 
+                                                                      rel="noopener noreferrer"
+                                                                      className="text-blue-400 hover:text-blue-300 underline"
+                                                                  >
+                                                                      Page {row.source_location?.page || '?'}
+                                                                  </a>
+                                                              ) : row.source_location?.page ? (
+                                                                  <span className="text-gray-500">Page {row.source_location.page}</span>
+                                                              ) : row.source_location?.sheet ? (
+                                                                  <span className="text-gray-500">{row.source_location.sheet}</span>
+                                                              ) : (
+                                                                  <span className="text-gray-600">-</span>
+                                                              )}
+                                                          </td>
+                                                      </tr>
+                                                  ))}
+                                              </tbody>
+                                          </table>
+                                      </div>
+                                  </details>
+                              )}
+                              
+                              {res.error && (
+                                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
+                                      {res.error}
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
         </div>
 
       </div>

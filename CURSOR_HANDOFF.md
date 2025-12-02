@@ -294,6 +294,30 @@ This module extends the Knowledge Graph by attaching structured financial perfor
 3.  **RAG-Ready**: Narrative content (board deck summaries, risks, strategy) is stored in `company_insights` and will be vector-embedded for semantic search.
 4.  **Agent-Accessible**: Structured metrics (ARR, Growth, Burn) will be exposed to the Chat Agent via a dedicated tool (`get_financial_metrics`), allowing queries like *"Compare the burn multiple of SaaS portcos"*.
 
+### Dry Run Mode (Testing)
+The ingestion API supports a `dryRun: true` parameter that allows testing the extraction and mapping pipeline **without writing to the database**.
+
+**Usage:**
+- Frontend: Click "Test Run (Nelly)" button on `/import` page - no company selection required
+- API: POST `/api/ingest` with `{ filePaths: [...], dryRun: true }` - defaults to `nelly` guide if no `companySlug` provided
+
+**Behavior:**
+- Defaults to Nelly guide if no company specified (our primary test case)
+- Skips strict company resolution (uses mock ID if entity not found)
+- Skips all database inserts (`dim_line_item`, `fact_financials`, `fact_metrics`)
+- **Still generates audit snippets** (uploaded to `_dry_run/` prefix in `financial-snippets` bucket)
+- Returns full extracted data in response:
+  - `extracted_data`: Array of fact rows with `line_item_id`, `amount`, `source_location`, `snippet_url`
+  - `computed_metrics`: Array of metric rows with `metric_id`, `value`, `unit`, `period`
+
+**Why:** Allows validating parsing logic and Portco Guide mappings when the database schema or entity resolution is blocked.
+
+### Parked Issues
+| Issue | Status | Workaround |
+| :--- | :--- | :--- |
+| **Entity Resolution Mismatch** | Parked | Migration `20251203000000_migrate_financials_to_graph.sql` created but not applied. `graph.entities` may not have all portfolio companies. Use Dry Run mode to test extraction. |
+| **`fact_financials` FK constraint** | Parked | Foreign key still points to old table until migration is run. Dry Run bypasses this. |
+
 ### Data Flow
 ```
 [Source Files] -> [Ingestion Pipeline] -> [Normalized DB Schema] <---(Linked via graph.entities.id)---> [Knowledge Graph]
