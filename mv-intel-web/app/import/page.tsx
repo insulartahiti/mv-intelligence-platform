@@ -72,12 +72,12 @@ export default function ImportPage() {
     setStatusMessage('Uploading files...');
 
     try {
-        const uploadedPaths: string[] = [];
-
         // 1. Upload files to Supabase Storage
+        const timestamp = Date.now();
+        const uploadedPaths: string[] = [];
+        
         for (const file of files) {
-            // Use a single consistent timestamp for the file path
-            const timestamp = Date.now();
+            // Use a single consistent timestamp for the batch
             const relativePath = `${selectedCompany}/${timestamp}_${file.name}`;
             
             const { data, error } = await supabase.storage

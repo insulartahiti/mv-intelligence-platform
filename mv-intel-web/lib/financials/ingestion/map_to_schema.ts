@@ -93,9 +93,47 @@ export async function mapDataToSchema(
             
             console.log(`[Ingestion] Found potential table '${tableKey}' on page(s) ${targetPages.join(', ')}`);
             
-            // If we had the LLM connected here:
-            // const values = await extractMetricsFromPage(pdfContent.pages[targetPages[0]-1].text, tableConfig.metric_rows);
-            // results.push(...values);
+            // Basic Heuristic Extraction (Stub for LLM)
+            // Attempt to find metric labels on the page and extract the nearest number
+            if (tableConfig.metric_rows) {
+                const pageText = pdfContent.pages[targetPages[0] - 1].text;
+                
+                for (const [metricKey, label] of Object.entries(tableConfig.metric_rows)) {
+                    // Simple regex: Label followed by some chars and then a number
+                    // We escape the label for regex safety
+                    const escapedLabel = (label as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    // Look for label, allowing for whitespace, then capturing a number (including decimals/commas)
+                    // This is very naive and assumes the number is to the right or below.
+                    const regex = new RegExp(`${escapedLabel}[^\\d\\n]*([\\d,.]+)`, 'i');
+                    const match = pageText.match(regex);
+                    
+                    if (match && match[1]) {
+                        // Normalize number (remove commas if they are thousands separators, handle EUR style)
+                        // Assuming 1.234,56 format or 1,234.56
+                        let rawNum = match[1];
+                        // Heuristic: if contains ',' and '.', and ',' comes before '.', it's 1,234.56
+                        // If '.' comes before ',', it's 1.234,56 (EUR)
+                        // For now, let's assume standard US/UK if not specified or just strip non-numeric/dot
+                        
+                        // Simple parse: remove all non-digits/dots, unless it looks like EUR
+                        // actually, just safe parse float for now
+                        const cleanNum = parseFloat(rawNum.replace(/,/g, ''));
+                        
+                        if (!isNaN(cleanNum)) {
+                            results.push({
+                                line_item_id: metricKey,
+                                amount: cleanNum,
+                                date: periodDate,
+                                source_location: {
+                                    file_type: 'pdf',
+                                    page: targetPages[0],
+                                    context: `Extracted via regex from '${label}'`
+                                }
+                            });
+                        }
+                    }
+                }
+            }
          }
        }
     }
