@@ -6,6 +6,72 @@ This document serves as the primary onboarding and operational guide for the Mot
 
 ---
 
+## Quick Reference
+
+### Key File Locations
+
+| Purpose | Path |
+| :--- | :--- |
+| **Frontend App** | `mv-intel-web/` |
+| **API Routes** | `mv-intel-web/app/api/` |
+| **Pipeline Scripts** | `mv-intel-web/scripts/` |
+| **Financial Ingestion** | `mv-intel-web/lib/financials/` |
+| **Taxonomy Schema** | `mv-intel-web/lib/taxonomy/schema.ts` |
+| **Search Logic** | `mv-intel-web/lib/search/` |
+| **Supabase Migrations** | `supabase/migrations/` |
+| **Edge Functions** | `supabase/functions/` |
+| **Portco Guides** | `mv-intel-web/lib/financials/portcos/{slug}/guide.yaml` |
+
+### Database Tables
+
+| Table | Purpose |
+| :--- | :--- |
+| `companies` | Organization entities (CRM + enriched) |
+| `people` | Person entities |
+| `interactions` | Notes, emails, meetings from Affinity |
+| `entity_notes_rollup` | AI-generated interaction summaries |
+| `graph.conversations` | Chat session state |
+| `graph.messages` | Chat message history |
+| `fact_financials` | Normalized financial line items |
+| `fact_metrics` | Computed KPIs (ARR growth, margins, etc.) |
+| `dim_line_item` | Standard chart of accounts |
+| `dim_source_files` | Ingested file metadata |
+
+### Storage Buckets
+
+| Bucket | Purpose | Retention |
+| :--- | :--- | :--- |
+| `financial-docs` | Uploaded source files (PDF/Excel) | Temporary (deleted after ingestion) |
+| `financial-snippets` | Audit trail snippets (page extracts) | Permanent |
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+| :--- | :--- | :--- |
+| `/api/chat` | POST | Conversational agent |
+| `/api/universal-search` | POST | Hybrid vector + taxonomy search |
+| `/api/ingest` | POST | Financial file ingestion |
+| `/api/upload` | GET | Generate signed upload URL |
+| `/api/upload` | POST | Direct storage upload (fallback) |
+| `/api/auth/check-access` | POST | Email authorization check |
+| `/api/taxonomy/entities` | GET | Entities by taxonomy code |
+
+---
+
+## Table of Contents
+
+1. [System Overview & Architecture](#1-system-overview--architecture)
+2. [Development Setup](#2-development-setup)
+3. [Codebase Map](#3-codebase-map)
+4. [Financial Data Ingestion System](#4-financial-data-ingestion-system)
+5. [Operational Runbook](#5-operational-runbook-data-pipelines)
+6. [Current Status & Known Issues](#6-current-status--known-issues)
+7. [Roadmap & Priorities](#7-roadmap--priorities)
+8. [Key Architectural Decisions](#8-key-architectural-decisions)
+- [Appendix A: Changelog](#appendix-a-changelog-dec-02-2025)
+
+---
+
 ## 1. System Overview & Architecture
 
 The Motive Intelligence Platform is a **Conversational Knowledge Graph** that aggregates data from Affinity (CRM), external enrichment sources, and interaction logs into a unified graph database. It enables users to query their network using natural language.
@@ -60,8 +126,8 @@ AFFINITY_API_KEY=...
 ### Production Configuration
 For the production deployment at `https://motivepartners.ai`:
 
-**Deployment Target**: Ensure you are deploying to the correct Vercel project (`motive_intelligence`).
-**Domain Configuration**: The domain `motivepartners.ai` is currently assigned to `motive_intelligence`.
+- **Deployment Target**: Ensure you are deploying to the correct Vercel project (`motive_intelligence`).
+- **Domain Configuration**: The domain `motivepartners.ai` is currently assigned to `motive_intelligence`.
 
 **Critical Project Setting (Action Required)**:
 Since the application lives in the `mv-intel-web` subdirectory, you **must** configure the Root Directory in Vercel:
@@ -69,8 +135,10 @@ Since the application lives in the `mv-intel-web` subdirectory, you **must** con
 2.  Find **Root Directory**.
 3.  Click **Edit** and set it to `mv-intel-web`.
 4.  Click **Save**.
+
 *Without this setting, Git deployments will fail (404 Error / "No framework detected") because Vercel tries to build the repository root instead of the app folder.*
 
+**Additional Production Requirements:**
 1.  **Supabase Auth Redirects**: In the Supabase Dashboard > Authentication > URL Configuration, add `https://motivepartners.ai` to **Redirect URLs**. This is required for Magic Links to work in production (the code uses `window.location.origin` which resolves to the production domain).
 2.  **PWA Assets**: The `mv-intel-web/public/` folder contains critical PWA files (`sw.js`, `manifest.json`, `mv-icons-*.png`). Ensure these are tracked by Git (check `.gitignore` doesn't exclude them). The `vercel.json` configures proper headers for Service Worker registration.
 3.  **Edge Function Secrets**: Set the following secrets for production edge functions (specifically `linkedin-api-direct`):
@@ -87,6 +155,8 @@ Run these from the `mv-intel-web/` directory:
 | **Run Pipeline** | `node scripts/run_pipeline.js` | Triggers full data sync & enrichment |
 | **Enrich Only** | `npm run pipeline:enrich` | Skips sync; runs AI/Embeddings/Graph only |
 | **Test Pipeline** | `node scripts/run_pipeline.js --test` | Runs a dry run (limit 5) to verify logic |
+| **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
+| **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
 
 ### GitHub Actions Workflows
 
@@ -121,20 +191,6 @@ enrichment.yml ──► run_enrichment_only.js (same as pipeline.yml minus Affi
 - `enrichment.yml`: Re-enriches entities (incl. IFT.UNKNOWN taxonomy) + Neo4j in sync
 - `cleanup.yml`: Garbage removed + duplicates merged + UNKNOWN taxonomy fixed + orphaned Affinity entities flagged + Neo4j in sync
 
-**Affinity Sync Resilience:**
-- 404 errors (entity deleted from Affinity) are logged as warnings, not failures
-- Null content fields are handled gracefully (prevents `substring` errors)
-- Orphaned entities (stale Affinity IDs) are flagged for re-sync in weekly cleanup
-
-**Taxonomy Skip Mechanism:**
-Entities that fail classification 3 times are marked with `taxonomy_skip_until` (30 days). This prevents wasting API calls on unclassifiable entities.
-- `taxonomy_attempts`: Count of failed attempts
-- `taxonomy_skip_until`: Skip date (null = not skipped)
-- Use `--force` flag to override and retry skipped entities
-
-| **Manual Sync** | `tsx scripts/run_affinity_sync.ts` | Syncs only Affinity data (skips enrichment) |
-| **Sync Graph** | `tsx scripts/migrate-to-neo4j.ts` | Pushes current Postgres data to Neo4j |
-
 ---
 
 ## 3. Codebase Map
@@ -150,19 +206,6 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   `lib/graph/`: Graph algorithms and helpers.
 
 **Note:** Components relying on `graphology` (e.g., `EnhancedClientGraph.tsx`) have been disabled to fix build issues.
-
-### Financial Data Ingestion System (New)
-A comprehensive system for ingesting portfolio company financials (PDF, Excel) and computing auditable KPIs.
-*   `lib/financials/metrics/`: Common metrics dictionary (`common_metrics.json`) and computation logic.
-*   `lib/financials/portcos/`: Per-company "Guides" (`guide.yaml`) defining mapping rules.
-*   `lib/financials/ingestion/`: ETL pipeline components:
-    *   `load_file.ts`: File handling (supports Supabase Storage paths).
-    *   `parse_pdf.ts` & `parse_excel.ts`: Extraction engines.
-    *   `map_to_schema.ts`: Semantic mapping logic (supports Nelly-style complex guides).
-    *   `ocr_service.ts`: Stub for future OCR integration.
-    *   `audit/`: Snippet generation for audit trails.
-*   `app/import/`: Drag-and-drop UI for file uploads. Uses **Client-to-Storage** pattern to bypass serverless payload limits. Includes auth state detection and proper handling of partial ingestion failures.
-*   `app/api/ingest/`: API route handling uploads and triggering ingestion.
 
 ### Centralized Taxonomy Architecture
 The IFT (Integrated Fintech Taxonomy) is defined in a **single source of truth**: `lib/taxonomy/schema.ts`.
@@ -235,7 +278,109 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
 
 ---
 
-## 4. Operational Runbook (Data Pipelines)
+## 4. Financial Data Ingestion System
+
+A comprehensive system for ingesting portfolio company financials (PDF, Excel) and computing auditable KPIs. **Status: Staging**
+
+### Architecture Overview
+```
+Upload (UI) → Storage → Ingestion API → Parser → Mapper → Database
+                                           ↓
+                                    Snippet Generator → Audit Storage
+```
+
+### Key Components
+
+| Component | Path | Purpose |
+| :--- | :--- | :--- |
+| **Import UI** | `app/import/page.tsx` | Drag-and-drop file upload with company detection |
+| **Upload API** | `app/api/upload/route.ts` | Service-role storage upload (bypasses RLS) |
+| **Ingest API** | `app/api/ingest/route.ts` | Orchestrates parsing, mapping, and storage |
+| **File Loader** | `lib/financials/ingestion/load_file.ts` | Loads from Supabase Storage or local FS |
+| **PDF Parser** | `lib/financials/ingestion/parse_pdf.ts` | Extracts text per page |
+| **Excel Parser** | `lib/financials/ingestion/parse_excel.ts` | Extracts sheets as row-major grids |
+| **Schema Mapper** | `lib/financials/ingestion/map_to_schema.ts` | Maps raw data to standardized line items |
+| **Metrics Engine** | `lib/financials/metrics/compute_metrics.ts` | Computes KPIs from normalized data |
+| **Snippet Generator** | `lib/financials/audit/pdf_snippet.ts` | Extracts source page for audit trail |
+
+### Database Schema (Financial Tables)
+
+```sql
+-- Dimension: Standardized Line Items
+dim_line_item (id, name, category, description)
+
+-- Dimension: Source Files
+dim_source_files (id, company_id, filename, storage_path, file_type, ingested_at, ingestion_status, metadata)
+
+-- Fact: Normalized Financial Data
+fact_financials (id, company_id, date, period_type, scenario, line_item_id, amount, currency, source_file_id, source_location)
+
+-- Fact: Computed KPIs
+fact_metrics (id, company_id, period, metric_id, value, unit, calculation_version, inputs)
+```
+
+### Portco Guide Format
+Each portfolio company has a `guide.yaml` defining how to map their specific file formats:
+
+```yaml
+company_metadata:
+  name: "Acme Corp"
+  currency: "USD"
+  business_models: ["saas"]
+
+source_docs:
+  - type: "financials"
+    format: "xlsx"
+    pattern: "Acme_Financials_*.xlsx"
+
+mapping_rules:
+  line_items:
+    revenue_recurring:
+      source: "financials"
+      sheet: "Summary P&L"
+      label_match: "Subscription Revenue"
+    arr_current:
+      source: "financials"
+      sheet: "KPIs"
+      label_match: "Ending ARR"
+
+validation_rules:
+  - check: "revenue_recurring + revenue_services == revenue_total"
+    tolerance: 0.01
+```
+
+### Common Metrics
+Defined in `lib/financials/metrics/common_metrics.json`. Includes:
+- ARR Growth YoY
+- Gross Margin
+- Net Revenue Retention (NRR)
+- LTV/CAC
+- CAC Payback
+- Burn Multiple
+- Rule of 40
+
+Each metric specifies: `id`, `name`, `formula`, `inputs`, `unit`, `benchmark_bands` (poor/good/great).
+
+### Upload Flow
+1. User drops files on `/import` page
+2. Frontend detects company from filename (slug matching with word boundaries)
+3. Files uploaded via `/api/upload` (service role, bypasses RLS)
+4. `/api/ingest` called with file paths
+5. Backend loads guide, parses files, maps to schema
+6. Line items saved to `fact_financials`
+7. Metrics computed and saved to `fact_metrics`
+8. PDF snippets extracted for audit trail → `financial-snippets` bucket
+9. Source files deleted from `financial-docs` (success only)
+
+### Error Handling
+- **Partial Success (207)**: Some files ingested, others failed
+- **Full Failure (500)**: All files failed
+- **Data Integrity**: Duplicate line items are summed (with audit log)
+- **File Retention**: Failed files kept in storage for debugging
+
+---
+
+## 5. Operational Runbook (Data Pipelines)
 
 ### The "Self-Healing" Pipeline
 The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data refresh. It runs **daily at 6 AM UTC** via GitHub Actions.
@@ -268,9 +413,20 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Fake Founder Cleanup**: Downgrades "Founder" edges to "Works At" if the person's title explicitly indicates a non-founder role (e.g., "Associate", "VP").
     *   **Location Enrichment**: Infers missing city/country using GPT-5.1 (internal data) or **Perplexity** (web search) if internal data is insufficient.
     *   **Stale Re-Enrichment**: Entities not updated in 6+ months are queued for re-enrichment (clears `enriched`, `enrichment_source`, `relationships_extracted_at` flags).
- 3.  **Neo4j Sync** *(always runs)*: Pushes all cleanup changes to the graph database. Runs even if previous steps fail to ensure partial changes are persisted.
+3.  **Neo4j Sync** *(always runs)*: Pushes all cleanup changes to the graph database. Runs even if previous steps fail to ensure partial changes are persisted.
 
 **Manual Trigger**: Run with `--full` flag for a complete database scan (ignores date filter).
+
+### Affinity Sync Resilience
+- 404 errors (entity deleted from Affinity) are logged as warnings, not failures
+- Null content fields are handled gracefully (prevents `substring` errors)
+- Orphaned entities (stale Affinity IDs) are flagged for re-sync in weekly cleanup
+
+### Taxonomy Skip Mechanism
+Entities that fail classification 3 times are marked with `taxonomy_skip_until` (30 days). This prevents wasting API calls on unclassifiable entities.
+- `taxonomy_attempts`: Count of failed attempts
+- `taxonomy_skip_until`: Skip date (null = not skipped)
+- Use `--force` flag to override and retry skipped entities
 
 ### Common Issues & Debugging
 *   **"Supabase 0-row bug"**: If scripts fail to fetch data, ensure the `supabase-js` client is initialized with the *Service Role Key*, not the Anon Key.
@@ -280,7 +436,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ---
 
-## 5. Current Status & Known Issues
+## 6. Current Status & Known Issues
 
 ### Status Summary
 *   **Conversational Agent**: **Live**. Uses GPT-5.1 with query expansion and tool calling (`search_notes`, `traverse_graph`).
@@ -296,7 +452,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ---
 
-## 6. Roadmap & Priorities
+## 7. Roadmap & Priorities
 
 ### Immediate Priorities (This Week)
 1.  **Monitor Edge Creation**: Verify `owner` and `sourced_by` fields are correctly creating edges in Neo4j.
@@ -311,70 +467,135 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ---
 
-## Appendix: Recent Changelog (Dec 02, 2025)
+## 8. Key Architectural Decisions
 
-*   **Financial Data Ingestion**: Added a new subsystem (`lib/financials`) for ingesting portfolio financials.
-    *   **Common Metrics**: Standardized dictionary of SaaS/Fintech KPIs.
-    *   **Portco Guides**: YAML-based configuration for mapping company-specific files (e.g. `nelly/guide.yaml`) to the standard schema.
-    *   **Import UI**: New `/import` page with drag-and-drop support and company auto-detection.
-    *   **Auditability**: System generates cropped PDF/image snippets for every data point and stores them in `financial-snippets` bucket.
-    *   **Large File Support**: Implemented Client-to-Storage upload pattern to bypass Vercel 4.5MB payload limits.
-    *   **Bug Fixes (Dec 02 - Latest)**:
-        *   **Data Integrity**: Fixed silent data loss when multiple line items share the same `line_item_id`. Now aggregates (sums) duplicate values and logs aggregations for audit visibility.
-        *   **Error Handling**: API now returns proper HTTP status codes (500 for all failures, 207 for partial success) instead of always 200. Frontend now parses response body `status` field to correctly distinguish 'success', 'partial', and 'error' states.
-        *   **Auth State Detection**: Import page now checks authentication status and shows warning banner when user is not logged in (required for storage RLS).
-        *   **Company Detection**: Fixed slug matching to use word boundaries and prefer longest matches, preventing `nelly` from matching `nellyland`.
-        *   **Empty Submission**: Backend now rejects empty file arrays with clear error; frontend disables submit button when no files selected.
-        *   **Upload via API (RLS Bypass)**: Created `/api/upload` route that uses service role key for file uploads, bypassing RLS entirely. Frontend no longer needs authenticated Supabase client for storage operations.
-        *   **Consistent Error Response**: Top-level error handler now includes `status: 'error'` field for frontend consistency.
-        *   **Metrics Upsert**: Fixed `onConflict` parameter to use column names (`company_id,period,metric_id`) instead of constraint name.
-        *   **File Retention**: Failed files are now retained in storage for debugging; only successful ingestions trigger cleanup.
-        *   **Build Pipeline**: Fixed module resolution errors by installing dependencies (`pdf-parse`, `xlsx`, `pdf-lib`) in `mv-intel-web` and tracking `pdf_snippet.ts`.
-        *   **Guide Parsing**: Added resilience for varying YAML structures (`company:` vs `company_metadata:`) to support Nelly-style guides.
-        *   **Database**: Created `financial-snippets` bucket with correct RLS policies and added unique constraints to `fact_metrics` for upserts.
-        *   **Logic**: Fixed snippet retry loop and ensured Company ID resolution handles missing rows gracefully.
-        *   **Stability**: Fixed critical bugs in company lookup (null ID prevention) and guide parsing (optional currency fallback).
-*   **Affinity Orphan Detection**: Added `cleanOrphanedAffinityEntities()` to `intelligent_cleanup.ts`. Identifies entities with stale Affinity IDs (not updated in 30+ days) and flags them for re-sync verification. Prevents accumulation of orphaned data from entities deleted in Affinity CRM.
-*   **Affinity Sync Resilience**: Updated `lib/affinity/sync.ts` to gracefully handle 404 errors (entity deleted from Affinity) and null content fields. Logs warnings instead of failing the pipeline.
-*   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.
-*   **Status Dashboard Fix**: Corrected interaction summarization metric to check `entity_notes_rollup.latest_summary` instead of non-existent `interactions.summary` field.
-*   **Taxonomy Search Bar**: Added spotlight-style search to `/taxonomy` page. Searches both taxonomy codes/labels and company names. Results show category (green) or entity (blue) with navigation on click.
-*   **Strict Taxonomy Enforcement**: Taxonomy page now only displays canonical categories from schema. Invalid paths show error state with "Return to Root" button. Enrichment pipeline validates codes against `isValidTaxonomyCode()`.
-*   **Service Worker Resilience**: Updated `sw.js` to v2.0.3 with `Promise.allSettled` for individual asset caching. Prevents installation failure from cached 404s.
-*   **PWA Deployment Fix**: Fixed 404 errors for Service Worker, manifest, and icon files. Root cause: `.gitignore` had a broad `public` rule (from Gatsby) that ignored `mv-intel-web/public/`. Changed to `public/` and committed all PWA assets. Added `vercel.json` headers for proper caching and `Service-Worker-Allowed` header.
-*   **Centralized Taxonomy Schema**: Created `lib/taxonomy/schema.ts` as single source of truth for IFT taxonomy. Exports tree structure, LLM prompt schema, and validation utilities. Eliminates duplication across taxonomy page and classifier.
-*   **Agent Strategy Enhancement**: Updated Chat Agent system prompt to support "Strategy-First" list building. Queries like "Who should I invite..." now trigger a segment-based multi-search workflow (e.g. "Vertical SaaS", "Competitors") rather than single keyword searches.
-*   **Taxonomy Threshold Fix**: Aligned confidence thresholds between `detectTaxonomy()` (0.85→0.7) and `universal-search/route.ts` (0.7) using shared `TAXONOMY_CONFIDENCE_THRESHOLD` constant. Prevents unnecessary LLM calls for high-confidence fast matches.
-*   **GPT-5.1 Taxonomy Classifier**: Updated `lib/search/taxonomy-classifier.ts` to use GPT-5.1. Now imports schema from centralized source.
-*   **Enrichment-Only Pipeline**: Added `scripts/run_enrichment_only.js` and GitHub Action to allow re-running AI enrichment without full Affinity sync. Useful for error recovery.
-*   **Taxonomy Hallucination Fix**: Updated `enhanced_embedding_generator.js` to use centralized schema and force validation (invalid codes -> `IFT.UNKNOWN`). Prevents entities from disappearing from the dashboard.
-*   **Interaction Summary Fixes**: 
-    *   Corrected column mapping (`interaction_type`, `ai_summary`) in `summarize_interactions.ts`.
-    *   Updated OpenAI parameter (`max_tokens` → `max_completion_tokens`) for GPT-5.1 compatibility.
-*   **Search Architecture Upgrade**: Universal search now runs embedding generation and taxonomy classification in parallel. Taxonomy codes are applied as filters when confidence >= 0.7.
-*   **Location Enrichment with Perplexity**: Added `enrichLocation` to `intelligent_cleanup.ts`. Uses a two-step process (Internal GPT-5.1 → External Perplexity Sonar) to find headquarters location for entities with missing geographic data.
-*   **Spotlight Search Placeholders**: Updated example queries to showcase key capabilities (portfolio, draft messages).
-*   **Cleanup Resilience Fix**: Added `continue-on-error: true` and `if: always()` to ensure Neo4j sync runs regardless of cleanup failures.
-*   **Weekly Maintenance Workflow**: Updated `cleanup.yml` to run intelligent cleanup with live execution (removed dry-run default).
-*   **Neo4j Sync After Cleanup**: Added `migrate-to-neo4j.ts` step after intelligent cleanup to sync merged/deleted entities to graph.
-*   **Stale Re-Enrichment**: `checkStale()` now actively queues entities for re-enrichment by clearing enrichment flags (previously only logged).
-*   **Major Pipeline Refactor**: Separated data fetching from AI processing for 10-20x speedup.
-    *   Affinity sync now stores raw interactions (no OpenAI calls during sync).
-    *   Embeddings generated by `embed_interactions.ts` in parallel block.
-    *   Summaries generated by `summarize_interactions.ts` in parallel block.
-*   **Schedule Change**: Pipeline now runs daily at 6 AM UTC (was hourly).
-*   **Disabled Naive Deduplication**: `systematic_cleanup.js` now only does garbage collection; intelligent deduplication handled by weekly `intelligent_cleanup.ts`.
-*   **Pipeline Optimization**: Parallelized ingestion, summarization, and enrichment steps to solve 6-hour timeout issues.
-*   **Concurrency Controls**: Added `p-limit` to summarization and increased batch sizes (5 -> 50) for enrichment to maximize throughput.
-*   **Test Mode**: Added `--test` flag to `run_pipeline.js` for rapid verification (dry run).
-*   **Security Fix**: Removed hardcoded `SUPABASE_SERVICE_ROLE_KEY` from all API routes.
-*   **Deployment Fix**: Refactored ~20 API routes to initialize Supabase client lazily (inside handlers) to prevent Vercel build failures.
-*   **Deployment Fix**: Disabled unused `graphology` components causing build errors.
-*   **Fixed**: Refactored all pipeline scripts to use `supabase-js` client, bypassing server-side DNS issues.
-*   **Added**: `graph.conversations` and `graph.messages` tables for chat state.
-*   **Added**: Taxonomy View (`/taxonomy`) with hierarchical filtering.
-*   **Added**: "Spotlight Login" with Magic Link auth.
-*   **Added**: "Magic Code" OTP login support to bypass corporate email scanners (Antigena).
-*   **Documentation**: Updated Handoff doc with Production Auth Configuration (Redirect URLs) and Deployment Target (`motive_intelligence`).
-*   **Security Enforced**: Added strict server-side authorization check (`/api/auth/check-access`) before sending OTP codes. Unauthorized users are blocked immediately with a clear error message.
-*   **Improved**: Search recall boosted (10 -> 30 results) and portfolio prioritization (+0.25 score).
+### Why Separate Affinity Sync from AI Processing?
+**Decision**: The pipeline fetches raw data first, then runs AI enrichment in a separate parallel block.
+
+**Rationale**:
+- **Speed**: Raw sync completes in 15-30 min vs. 6+ hours when AI was inline
+- **Resilience**: Sync failures don't lose AI work; AI failures don't block sync
+- **Cost**: AI only processes new/changed data (incremental)
+- **Debuggability**: Clear separation makes failures easier to diagnose
+
+### Why Client-to-Storage Upload Pattern?
+**Decision**: Frontend uploads files directly to Supabase Storage via `/api/upload`, then passes storage paths to `/api/ingest`.
+
+**Rationale**:
+- **Vercel Limits**: Serverless functions have a 4.5MB payload limit
+- **Performance**: Large files don't transit through the API twice
+- **RLS Bypass**: `/api/upload` uses service role key to avoid auth complexity
+
+### Why Centralized Taxonomy Schema?
+**Decision**: All taxonomy codes defined in a single TypeScript file (`lib/taxonomy/schema.ts`).
+
+**Rationale**:
+- **Single Source of Truth**: Eliminates drift between UI, classifier, and validation
+- **Type Safety**: TypeScript exports enable compile-time checks
+- **LLM Consistency**: Same schema string used for all classification prompts
+- **No Hallucination**: Invalid codes immediately rejected via `isValidTaxonomyCode()`
+
+### Why YAML Portco Guides?
+**Decision**: Each portfolio company has a `guide.yaml` defining file mappings.
+
+**Rationale**:
+- **Flexibility**: Each company's reporting format is different
+- **Non-Technical Editing**: YAML is readable by non-engineers
+- **Version Control**: Changes tracked in Git
+- **Extensibility**: Easy to add new companies without code changes
+
+### Why Sum Duplicate Line Items?
+**Decision**: When multiple values map to the same `line_item_id`, they are summed.
+
+**Rationale**:
+- **Data Integrity**: Prevents silent data loss
+- **Audit Trail**: Aggregations are logged for visibility
+- **Real-World Fit**: Financial data often has multiple rows that should aggregate (e.g., revenue by product line)
+
+---
+
+## Appendix A: Changelog (Dec 02, 2025)
+
+### Features Added
+
+*   **Financial Data Ingestion System**: New subsystem (`lib/financials`) for ingesting portfolio financials.
+    *   Common Metrics dictionary with SaaS/Fintech KPIs
+    *   YAML-based Portco Guides for company-specific mapping
+    *   Import UI (`/import`) with drag-and-drop support
+    *   Audit snippets stored in `financial-snippets` bucket
+    *   Client-to-Storage upload pattern for large files
+
+*   **Taxonomy Browser**: `/taxonomy` page with hierarchical navigation, spotlight search, and strict schema enforcement.
+
+*   **Centralized Taxonomy Schema**: `lib/taxonomy/schema.ts` as single source of truth for IFT taxonomy.
+
+*   **Agent Strategy Enhancement**: Chat Agent now supports "Strategy-First" list building for queries like "Who should I invite..."
+
+*   **Enrichment-Only Pipeline**: `scripts/run_enrichment_only.js` and GitHub Action for re-running AI enrichment without Affinity sync.
+
+*   **Location Enrichment**: Two-step process (Internal GPT-5.1 → External Perplexity) for missing geographic data.
+
+*   **Affinity Orphan Detection**: `cleanOrphanedAffinityEntities()` identifies stale Affinity IDs for re-sync verification.
+
+*   **Taxonomy Skip Mechanism**: Entities failing classification 3x are skipped for 30 days (`taxonomy_skip_until`).
+
+*   **"Spotlight Login"**: Magic Link auth with OTP code support (bypasses corporate email scanners).
+
+*   **Database Tables**: `graph.conversations`, `graph.messages` for chat state persistence.
+
+### Bug Fixes
+
+*   **Financial Ingestion**:
+    *   Fixed silent data loss when duplicate line items share same ID (now sums with audit log)
+    *   Fixed API returning 200 for failures (now proper 500/207 status codes)
+    *   Fixed company slug matching (word boundaries, longest match preference)
+    *   Fixed empty file submission handling
+    *   Fixed `onConflict` parameter (column names vs. constraint name)
+    *   Fixed guide parsing for varying YAML structures (`company:` vs `company_metadata:`)
+    *   Fixed null Company ID prevention and optional currency fallback
+    *   Fixed case-sensitive file extension matching (now handles `.PDF`, `.XLSX`)
+    *   Fixed snippet path collisions when processing multiple PDFs in same batch
+
+*   **Pipeline & Enrichment**:
+    *   Fixed Affinity sync 404 handling (warnings, not failures)
+    *   Fixed null content field handling (prevents `substring` errors)
+    *   Fixed taxonomy hallucination (invalid codes → `IFT.UNKNOWN`)
+    *   Fixed interaction summary column mapping (`interaction_type`, `ai_summary`)
+    *   Fixed OpenAI parameter (`max_tokens` → `max_completion_tokens` for GPT-5.1)
+    *   Aligned taxonomy confidence thresholds (0.7) between classifier and search
+
+*   **Deployment & Build**:
+    *   Fixed PWA 404 errors (`.gitignore` was excluding `mv-intel-web/public/`)
+    *   Fixed Service Worker installation (individual asset caching with `Promise.allSettled`)
+    *   Fixed Vercel build errors (lazy Supabase client initialization)
+    *   Disabled unused `graphology` components causing build failures
+    *   Removed hardcoded `SUPABASE_SERVICE_ROLE_KEY` from API routes
+
+*   **Status Dashboard**: Fixed interaction summarization metric (checks `entity_notes_rollup.latest_summary`)
+
+### Infrastructure & Performance
+
+*   **Major Pipeline Refactor**: Separated data fetching from AI processing (10-20x speedup)
+    *   Affinity sync stores raw interactions (no OpenAI calls)
+    *   Embeddings/Summaries generated in parallel block
+    *   Schedule changed: Daily 6 AM UTC (was hourly)
+
+*   **Concurrency Controls**: Added `p-limit` to summarization, increased enrichment batch sizes (5 → 50)
+
+*   **Cleanup Resilience**: `continue-on-error: true` and `if: always()` ensure Neo4j sync runs regardless of failures
+
+*   **Search Architecture Upgrade**: Parallel embedding generation + taxonomy classification
+
+*   **Storage Buckets**: Created `financial-docs` (temporary) and `financial-snippets` (permanent) with RLS policies
+
+### Security
+
+*   **Auth Check Endpoint**: Strict server-side authorization (`/api/auth/check-access`) before OTP
+
+*   **Signed URL Uploads**: `/api/upload` GET endpoint generates signed URLs using service role, enabling direct client-to-storage uploads that bypass both RLS and Vercel's 4.5MB limit
+
+### Documentation
+
+*   Updated Handoff doc with Production Auth Configuration and Deployment Target
+*   Added PWA assets documentation
+*   Added Financial Ingestion system documentation

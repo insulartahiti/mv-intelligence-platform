@@ -89,14 +89,16 @@ export async function POST(req: NextRequest) {
             let extractedData;
             let fileType: 'pdf' | 'xlsx' = 'pdf';
             
-            if (fileMeta.filename.endsWith('.pdf')) {
+            // Case-insensitive extension matching
+            const filenameLower = fileMeta.filename.toLowerCase();
+            if (filenameLower.endsWith('.pdf')) {
                 extractedData = await parsePDF(fileMeta);
                 fileType = 'pdf';
-            } else if (fileMeta.filename.endsWith('.xlsx')) {
+            } else if (filenameLower.endsWith('.xlsx') || filenameLower.endsWith('.xls')) {
                 extractedData = await parseExcel(fileMeta);
                 fileType = 'xlsx';
             } else {
-                throw new Error(`Unsupported file type: ${fileMeta.filename}`);
+                throw new Error(`Unsupported file type: ${fileMeta.filename}. Supported: .pdf, .xlsx, .xls`);
             }
 
             // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
             
             // 4b. Generate Audit Snippets & Prepare Fact Rows
-            const processedPages = new Set<number>();
+            const processedPages = new Set<string>(); // Tracks file+page combos to avoid duplicate snippets
             const factRows = [];
             const uniqueLineItems = new Map<string, { name: string, category: string }>();
 
@@ -178,12 +180,16 @@ export async function POST(req: NextRequest) {
                 if (fileType === 'pdf' && item.source_location.page) {
                     const pageNum = item.source_location.page;
                     
-                    // Generate snippet if not cached
-                    if (!processedPages.has(pageNum)) {
-                        console.log(`[Ingest] Generating audit snippet for page ${pageNum}...`);
+                    // Generate snippet if not cached for this file+page combo
+                    // Use filename in key to avoid collisions across files in same batch
+                    const snippetKey = `${fileMeta.filename}_page_${pageNum}`;
+                    if (!processedPages.has(snippetKey)) {
+                        console.log(`[Ingest] Generating audit snippet for ${fileMeta.filename} page ${pageNum}...`);
                         try {
                             const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum);
-                            const snippetPath = `${companySlug}/${Date.now()}_page_${pageNum}.pdf`;
+                            // Include sanitized filename to ensure uniqueness across files
+                            const safeFilename = fileMeta.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+                            const snippetPath = `${companySlug}/${Date.now()}_${safeFilename}_page_${pageNum}.pdf`;
                             
                             const { error: uploadError } = await supabase.storage
                                 .from('financial-snippets')
@@ -199,7 +205,7 @@ export async function POST(req: NextRequest) {
                             console.error(`Failed to generate/upload snippet for page ${pageNum}`, err);
                         } finally {
                             // Mark processed regardless of success to prevent endless retries in this request
-                            processedPages.add(pageNum);
+                            processedPages.add(snippetKey);
                         }
                     }
                 }

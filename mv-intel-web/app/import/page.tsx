@@ -74,27 +74,40 @@ export default function ImportPage() {
     setStatusMessage('Uploading files...');
 
     try {
-        // 1. Upload files via API route (bypasses RLS using service role)
+        // 1. Upload files using signed URLs (bypasses Vercel 4.5MB limit)
         const uploadedPaths: string[] = [];
         
-        for (const file of files) {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('companySlug', selectedCompany);
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            setStatusMessage(`Uploading file ${i + 1} of ${files.length}...`);
             
-            const uploadRes = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
+            // Step 1: Get signed upload URL from our API
+            const urlRes = await fetch(
+                `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(selectedCompany)}`
+            );
+            const urlData = await urlRes.json();
             
-            const uploadData = await uploadRes.json();
-            
-            if (uploadData.status !== 'success') {
-                console.error('Upload failed:', uploadData.error);
-                throw new Error(`Upload failed for ${file.name}: ${uploadData.error}`);
+            if (urlData.status !== 'success') {
+                console.error('Failed to get upload URL:', urlData.error);
+                throw new Error(`Failed to get upload URL for ${file.name}: ${urlData.error}`);
             }
             
-            uploadedPaths.push(uploadData.path);
+            // Step 2: Upload directly to Supabase Storage using signed URL
+            const uploadRes = await fetch(urlData.signedUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': file.type || 'application/octet-stream',
+                },
+                body: file
+            });
+            
+            if (!uploadRes.ok) {
+                const errorText = await uploadRes.text();
+                console.error('Direct upload failed:', errorText);
+                throw new Error(`Upload failed for ${file.name}: ${uploadRes.status}`);
+            }
+            
+            uploadedPaths.push(urlData.path);
         }
 
         setStatusMessage('Processing files...');

@@ -6,6 +6,67 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+/**
+ * GET: Generate a signed upload URL for direct client-to-storage upload
+ * This bypasses Vercel's 4.5MB payload limit by having the client upload directly to Supabase
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const filename = searchParams.get('filename');
+    const companySlug = searchParams.get('companySlug');
+
+    if (!filename || !companySlug) {
+      return NextResponse.json({ 
+        error: 'Missing filename or companySlug',
+        status: 'error'
+      }, { status: 400 });
+    }
+
+    // Create admin client
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Generate unique path
+    const timestamp = Date.now();
+    const relativePath = `${companySlug}/${timestamp}_${filename}`;
+
+    // Create signed upload URL (valid for 60 seconds)
+    const { data, error } = await supabase.storage
+      .from('financial-docs')
+      .createSignedUploadUrl(relativePath);
+
+    if (error) {
+      console.error('Signed URL error:', error);
+      return NextResponse.json({ 
+        error: `Failed to create upload URL: ${error.message}`,
+        status: 'error'
+      }, { status: 500 });
+    }
+
+    // Return the signed URL and the final path
+    const fullPath = `financial-docs/${relativePath}`;
+    
+    return NextResponse.json({
+      status: 'success',
+      signedUrl: data.signedUrl,
+      token: data.token,
+      path: fullPath,
+      filename: filename
+    });
+
+  } catch (error: any) {
+    console.error('Upload URL generation error:', error);
+    return NextResponse.json({ 
+      error: error.message || 'Failed to generate upload URL',
+      status: 'error'
+    }, { status: 500 });
+  }
+}
+
+/**
+ * POST: Fallback for smaller files (under 4MB) - direct upload through API
+ * This is kept as a fallback but the frontend should prefer signed URLs
+ */
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -63,4 +124,3 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 }
-
