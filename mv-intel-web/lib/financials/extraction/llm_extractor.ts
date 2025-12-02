@@ -358,12 +358,23 @@ export async function extractFinancialsFromExcelLLM(
 ): Promise<Record<string, { value: number; cell: string; confidence: number }>> {
   const openai = getOpenAI();
 
+  // Convert column index to Excel-style column name (0=A, 25=Z, 26=AA, 27=AB, etc.)
+  function colIndexToExcelCol(index: number): string {
+    let result = '';
+    let n = index;
+    while (n >= 0) {
+      result = String.fromCharCode((n % 26) + 65) + result;
+      n = Math.floor(n / 26) - 1;
+    }
+    return result;
+  }
+
   // Convert sheet data to a dense string representation (ignoring empty cells to save tokens)
   // Format: "Row 1: [A1: Value, B1: Value...]"
   let sheetContext = `Sheet: ${sheetName}\n`;
   sheetData.slice(0, 50).forEach((row, rowIndex) => { // Limit to first 50 rows
     const rowStr = row
-      .map((val, colIndex) => val ? `${String.fromCharCode(65 + colIndex)}${rowIndex + 1}:${val}` : '')
+      .map((val, colIndex) => val ? `${colIndexToExcelCol(colIndex)}${rowIndex + 1}:${val}` : '')
       .filter(s => s)
       .join(', ');
     if (rowStr) sheetContext += `Row ${rowIndex + 1}: ${rowStr}\n`;

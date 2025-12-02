@@ -128,14 +128,27 @@ export async function POST(req: NextRequest) {
             }
 
             // 2b. Resolve Company ID from Database
+            // Use exact match (eq) instead of ilike to avoid ambiguous matches
             const { data: companyData, error: companyError } = await supabase
                 .from('companies')
                 .select('id')
-                .ilike('name', companyName)
+                .eq('name', companyName)
                 .single();
 
-            if (companyError && companyError.code !== 'PGRST116') { // PGRST116 is "No rows found"
-                 console.error('Database error looking up company:', companyError);
+            // Handle specific error codes:
+            // PGRST116 = No rows found
+            // PGRST122 = Multiple rows found (ambiguous match)
+            if (companyError) {
+                if (companyError.code === 'PGRST116') {
+                    console.error(`[Ingest] Error: Company '${companyName}' not found in DB.`);
+                    throw new Error(`Company '${companyName}' not found in database. Please ensure the company exists before ingesting.`);
+                } else if (companyError.code === 'PGRST122') {
+                    console.error(`[Ingest] Error: Multiple companies match '${companyName}'. Name is ambiguous.`);
+                    throw new Error(`Multiple companies match '${companyName}'. Please use a more specific company name in the guide.`);
+                } else {
+                    console.error('Database error looking up company:', companyError);
+                    throw new Error(`Database error looking up company: ${companyError.message}`);
+                }
             }
 
             if (!companyData?.id) {

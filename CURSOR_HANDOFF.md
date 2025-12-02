@@ -474,6 +474,23 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **Latency**: Initial graph load can be heavy (~2s). *Work In Progress: Subgraph retrieval optimization.*
 *   **Affinity API v1 Limitations**: No server-side delta sync (no `modified_since` filter). We fetch all entries and rely on client-side incremental processing.
 
+### ⚠️ CRITICAL: Vercel Staging Authentication
+**Issue**: The staging deployment (`motiveintelligence-git-staging-*.vercel.app`) has **Vercel Authentication** enabled, which blocks all API requests with 401/405 errors.
+
+**Symptoms**:
+- API calls return `405 Method Not Allowed` or `401 Unauthorized`
+- Response body contains "Authentication Required" HTML
+- curl test shows redirect to `vercel.com/sso-api`
+
+**Resolution**:
+1. Go to Vercel Dashboard → Project Settings → General
+2. Scroll to "Vercel Authentication" section
+3. **Disable** Vercel Authentication for the staging deployment
+4. OR configure a Protection Bypass token for API routes
+5. Redeploy after changing settings
+
+**Note**: This is a Vercel project setting, NOT a code issue. The code is correct.
+
 ---
 
 ## 7. Roadmap & Priorities
