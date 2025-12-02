@@ -54,48 +54,57 @@ export async function parsePDF(file: FileMetadata): Promise<PDFContent> {
   let pdf;
   try {
     pdf = require('pdf-parse');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to load pdf-parse module:', err);
-    throw new Error('PDF parsing is not available in this environment.');
+    throw new Error(`PDF parsing module not available: ${err?.message || err}`);
   }
+
+  // Validate we have a valid buffer
+  if (!dataBuffer || dataBuffer.length === 0) {
+    throw new Error('PDF file is empty or could not be read');
+  }
+  
+  console.log(`[PDF] Parsing file: ${file.filename}, size: ${dataBuffer.length} bytes`);
 
   try {
     const pages: PDFPage[] = [];
     
     // We use a custom render callback to capture text per page.
-    // The library processes pages sequentially.
     const options = {
+      // Limit max pages to prevent timeouts on large PDFs
+      max: 50,
       pagerender: async (pageData: any) => {
-        // getTextContent returns a structure with strings and transforms
-        const textContent = await pageData.getTextContent();
-        
-        let lastY, text = '';
-        // Simple heuristic to reconstruct layout (newlines) based on Y position changes
-        for (const item of textContent.items) {
-          if (!lastY || Math.abs(item.transform[5] - lastY) < 10) {
-             text += item.str;
-          }  
-          else {
-             text += '\n' + item.str;
-          }                                   
-          lastY = item.transform[5];
+        try {
+          const textContent = await pageData.getTextContent();
+          
+          let lastY: number | undefined, text = '';
+          for (const item of textContent.items) {
+            if (!lastY || Math.abs(item.transform[5] - lastY) < 10) {
+               text += item.str;
+            } else {
+               text += '\n' + item.str;
+            }                                   
+            lastY = item.transform[5];
+          }
+          
+          pages.push({
+              pageNumber: pageData.pageIndex + 1,
+              text: text
+          });
+          
+          return text;
+        } catch (pageErr: any) {
+          console.warn(`[PDF] Error rendering page ${pageData.pageIndex + 1}:`, pageErr?.message);
+          return ''; // Continue with other pages
         }
-        
-        // pageIndex is 0-based
-        pages.push({
-            pageNumber: pageData.pageIndex + 1,
-            text: text
-        });
-        
-        // pdf-parse expects a string return to accumulate into data.text
-        return text;
       }
-    }
+    };
 
     const data = await pdf(dataBuffer, options);
 
-    // Sort pages by number just in case async rendering jumbles them (unlikely but safe)
     pages.sort((a, b) => a.pageNumber - b.pageNumber);
+    
+    console.log(`[PDF] Successfully parsed ${data.numpages} pages, extracted ${pages.length} with text`);
 
     return {
       pageCount: data.numpages,
@@ -103,9 +112,11 @@ export async function parsePDF(file: FileMetadata): Promise<PDFContent> {
       fullText: data.text,
       pages: pages
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error parsing PDF:', error);
-    throw new Error('Failed to parse PDF file.');
+    // Include more details in the error message for debugging
+    const errorMsg = error?.message || String(error);
+    throw new Error(`Failed to parse PDF file: ${errorMsg}`);
   }
 }
 
