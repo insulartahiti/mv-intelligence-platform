@@ -1,20 +1,18 @@
 /**
  * Vision-based PDF Parser
  * 
- * Uses GPT-4 Vision to extract text and tables from PDFs.
- * This bypasses pdf-parse which has issues in Vercel serverless.
+ * Converts PDF pages to images using pdf-to-img (pure JS, no native deps)
+ * then sends images to GPT-4 Vision for high-quality extraction.
  * 
- * Flow:
- * 1. Use pdf-lib to get PDF metadata and page count
- * 2. For each page, send the raw PDF bytes to GPT-4V
- * 3. GPT-4V extracts text and identifies tables
- * 
- * Note: GPT-4V can process PDF pages directly when base64 encoded,
- * but for better results we use a hybrid approach.
+ * This approach provides the best accuracy for:
+ * - Complex table layouts
+ * - Charts and graphs
+ * - Scanned documents
+ * - Multi-column layouts
  */
 
 import OpenAI from 'openai';
-import { PDFDocument } from 'pdf-lib';
+import { pdf } from 'pdf-to-img';
 import { FileMetadata } from './load_file';
 
 // Lazy initialization
@@ -52,214 +50,282 @@ export interface PDFContent {
 }
 
 /**
- * Parse PDF using GPT-4 Vision
- * 
- * This is more expensive than text extraction but works reliably
- * in serverless environments and handles complex layouts better.
+ * Parse PDF by converting pages to images and sending to GPT-4 Vision
  */
 export async function parsePDFWithVision(file: FileMetadata): Promise<PDFContent> {
   const openai = getOpenAI();
   
-  console.log(`[PDF Vision] Starting extraction for ${file.filename}`);
+  console.log(`[PDF Vision] Starting image-based extraction for ${file.filename}`);
   
-  // Get page count using pdf-lib (lightweight, works in serverless)
-  let pageCount = 1;
+  // Convert PDF pages to images using pdf-to-img
+  const pageImages: { pageNumber: number; base64: string }[] = [];
+  
   try {
-    const pdfDoc = await PDFDocument.load(file.buffer, { ignoreEncryption: true });
-    pageCount = pdfDoc.getPageCount();
-    console.log(`[PDF Vision] PDF has ${pageCount} pages`);
-  } catch (err) {
-    console.warn('[PDF Vision] Could not read PDF metadata, assuming 1 page:', err);
-  }
-  
-  // Convert entire PDF to base64 for vision API
-  const base64Pdf = file.buffer.toString('base64');
-  
-  // For efficiency, we'll process in batches or limit pages
-  // GPT-4V can handle PDFs but we'll be strategic about which pages to process
-  const maxPagesToProcess = Math.min(pageCount, 15); // Limit to first 15 pages for cost
-  
-  const pages: PDFPage[] = [];
-  let fullText = '';
-  
-  // Process pages in parallel batches of 3
-  const batchSize = 3;
-  for (let i = 0; i < maxPagesToProcess; i += batchSize) {
-    const batch = [];
-    for (let j = i; j < Math.min(i + batchSize, maxPagesToProcess); j++) {
-      batch.push(extractPageContent(openai, base64Pdf, j + 1, pageCount));
-    }
+    // pdf-to-img accepts Buffer directly
+    const document = await pdf(file.buffer, { 
+      scale: 2.0  // Higher scale = better quality for vision
+    });
     
-    const results = await Promise.all(batch);
-    for (const result of results) {
-      if (result) {
-        pages.push(result);
-        fullText += result.text + '\n\n';
+    let pageNumber = 1;
+    for await (const imageBuffer of document) {
+      // Convert to base64 for GPT-4V
+      const base64 = imageBuffer.toString('base64');
+      pageImages.push({ pageNumber, base64 });
+      console.log(`[PDF Vision] Converted page ${pageNumber} to image (${Math.round(base64.length / 1024)}KB)`);
+      pageNumber++;
+      
+      // Limit to first 20 pages for cost control
+      if (pageNumber > 20) {
+        console.log(`[PDF Vision] Limiting to first 20 pages`);
+        break;
       }
     }
+  } catch (err: any) {
+    console.error('[PDF Vision] Failed to convert PDF to images:', err);
+    throw new Error(`PDF to image conversion failed: ${err.message}`);
   }
   
-  // Sort pages by number
+  if (pageImages.length === 0) {
+    throw new Error('No pages could be extracted from PDF');
+  }
+  
+  console.log(`[PDF Vision] Converted ${pageImages.length} pages to images, sending to GPT-4V...`);
+  
+  // Process pages in batches of 4 (GPT-4V can handle multiple images)
+  const pages: PDFPage[] = [];
+  const batchSize = 4;
+  
+  for (let i = 0; i < pageImages.length; i += batchSize) {
+    const batch = pageImages.slice(i, i + batchSize);
+    const batchResults = await extractFromImageBatch(openai, batch, file.filename);
+    pages.push(...batchResults);
+  }
+  
+  // Sort by page number
   pages.sort((a, b) => a.pageNumber - b.pageNumber);
   
-  console.log(`[PDF Vision] Extracted ${pages.length} pages, total text length: ${fullText.length}`);
+  const fullText = pages.map(p => p.text).join('\n\n');
+  
+  console.log(`[PDF Vision] Extraction complete: ${pages.length} pages, ${fullText.length} chars`);
   
   return {
-    pageCount,
-    info: { filename: file.filename, extractionMethod: 'gpt-4-vision' },
+    pageCount: pageImages.length,
+    info: { 
+      filename: file.filename, 
+      extractionMethod: 'gpt-4-vision-images',
+      pagesProcessed: pages.length
+    },
     pages,
-    fullText: fullText.trim()
+    fullText
   };
 }
 
 /**
- * Extract content from a single PDF page using GPT-4 Vision
+ * Send a batch of page images to GPT-4 Vision for extraction
  */
-async function extractPageContent(
+async function extractFromImageBatch(
   openai: OpenAI,
-  base64Pdf: string,
-  pageNumber: number,
-  totalPages: number
-): Promise<PDFPage | null> {
-  const systemPrompt = `You are a financial document extraction specialist.
-Extract ALL text content from this PDF page, preserving the structure.
+  batch: { pageNumber: number; base64: string }[],
+  filename: string
+): Promise<PDFPage[]> {
+  
+  const pageNumbers = batch.map(b => b.pageNumber).join(', ');
+  
+  const systemPrompt = `You are a financial document extraction specialist analyzing images of PDF pages.
 
-For tables, also identify:
-- Table headers
-- Row data (preserve numbers exactly as shown)
+Extract ALL content from each page image, returning structured JSON:
 
-Return JSON format:
 {
-  "text": "Full text content of the page, preserving layout with newlines",
-  "tables": [
+  "pages": [
     {
-      "title": "Table title if visible",
-      "headers": ["Col1", "Col2"],
-      "rows": [["val1", "val2"], ["val3", "val4"]],
-      "confidence": 0.95
+      "pageNumber": 1,
+      "text": "All text content from this page, preserving structure",
+      "tables": [
+        {
+          "title": "Table title if visible",
+          "headers": ["Col1", "Col2", "Col3"],
+          "rows": [["val1", 12345, "val3"], ["val4", 67890, "val6"]],
+          "confidence": 0.95
+        }
+      ]
     }
   ]
 }
 
-Important:
-- Preserve all numbers exactly (don't round)
-- Keep currency symbols and units
-- Include all text, not just tables
-- For financial metrics, capture the exact values shown`;
+CRITICAL INSTRUCTIONS:
+- Extract ALL visible text, not just tables
+- Preserve numbers EXACTLY as shown (no rounding)
+- Keep currency symbols (€, $) and units (%, months, etc.)
+- For tables: capture headers and all rows with exact values
+- European number format (1.234,56) should be preserved as-is
+- Include KPIs like MRR, ARR, Revenue, Customers, Growth rates
+- Confidence should reflect how clearly you can read the data (0-1)`;
 
-  const userPrompt = `Extract all content from page ${pageNumber} of ${totalPages} of this financial document.
-Focus on capturing:
-- All KPI values and metrics
-- Table data with headers
-- Any narrative text
-
-Return the structured JSON as specified.`;
+  const userContent: any[] = [
+    { 
+      type: 'text', 
+      text: `Extract all financial data from these ${batch.length} page(s) (pages ${pageNumbers}) of "${filename}". Return the JSON structure with all text and tables found.`
+    }
+  ];
+  
+  // Add each page image
+  for (const page of batch) {
+    userContent.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/png;base64,${page.base64}`,
+        detail: 'high'  // Use high detail for financial documents
+      }
+    });
+  }
 
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: userPrompt },
-            {
-              type: 'image_url',
-              image_url: {
-                // GPT-4V can process PDFs when sent as data URL
-                // We're sending the whole PDF and asking for a specific page
-                // This works because GPT-4V understands multi-page documents
-                url: `data:application/pdf;base64,${base64Pdf}`,
-                detail: 'high'
-              }
-            }
-          ]
-        }
+        { role: 'user', content: userContent }
       ],
-      max_tokens: 4000,
+      max_tokens: 8000,
       temperature: 0.1
     });
 
     const content = response.choices[0]?.message?.content;
+    
     if (!content) {
-      console.warn(`[PDF Vision] No content returned for page ${pageNumber}`);
-      return null;
+      console.warn(`[PDF Vision] No content returned for pages ${pageNumbers}`);
+      return batch.map(b => ({
+        pageNumber: b.pageNumber,
+        text: '',
+        tables: []
+      }));
     }
 
     // Parse JSON response
-    let parsed: { text: string; tables?: ExtractedTable[] };
+    let parsed: { pages: any[] };
     try {
-      // Handle potential markdown code blocks
+      // Handle markdown code blocks
       let jsonStr = content;
       if (content.includes('```')) {
         const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-        jsonStr = match ? match[1] : content;
+        jsonStr = match ? match[1].trim() : content;
       }
       parsed = JSON.parse(jsonStr);
     } catch (parseErr) {
-      // If JSON parsing fails, treat the whole response as text
-      console.warn(`[PDF Vision] JSON parse failed for page ${pageNumber}, using raw text`);
-      parsed = { text: content, tables: [] };
+      console.warn(`[PDF Vision] JSON parse failed for pages ${pageNumbers}, using raw text`);
+      // Return the raw content as text for the first page in batch
+      return [{
+        pageNumber: batch[0].pageNumber,
+        text: content,
+        tables: []
+      }];
     }
 
-    return {
-      pageNumber,
-      text: parsed.text || '',
-      tables: parsed.tables || []
-    };
+    // Map parsed pages to our format, matching with batch page numbers
+    const results: PDFPage[] = [];
+    
+    if (parsed.pages && Array.isArray(parsed.pages)) {
+      for (const parsedPage of parsed.pages) {
+        results.push({
+          pageNumber: parsedPage.pageNumber || batch[0].pageNumber,
+          text: parsedPage.text || '',
+          tables: parsedPage.tables || []
+        });
+      }
+    }
+    
+    // Ensure we have a result for each page in the batch
+    for (const batchPage of batch) {
+      if (!results.find(r => r.pageNumber === batchPage.pageNumber)) {
+        results.push({
+          pageNumber: batchPage.pageNumber,
+          text: '',
+          tables: []
+        });
+      }
+    }
+    
+    return results;
 
   } catch (error: any) {
-    console.error(`[PDF Vision] Error extracting page ${pageNumber}:`, error?.message || error);
-    return null;
+    console.error(`[PDF Vision] Error extracting pages ${pageNumbers}:`, error?.message || error);
+    // Return empty results for failed batch
+    return batch.map(b => ({
+      pageNumber: b.pageNumber,
+      text: '',
+      tables: []
+    }));
   }
 }
 
 /**
- * Extract specific financial metrics from PDF using Vision
- * 
- * More targeted extraction when you know what you're looking for.
+ * Extract specific metrics from PDF using Vision
+ * More targeted extraction when you know what to look for
  */
 export async function extractMetricsFromPDFVision(
   file: FileMetadata,
   metricsToFind: string[]
 ): Promise<Record<string, { value: number; unit: string; page: number; confidence: number }>> {
   const openai = getOpenAI();
-  const base64Pdf = file.buffer.toString('base64');
   
-  const systemPrompt = `You are a financial analyst extracting specific KPIs from a document.
+  // Convert first few pages to images
+  const pageImages: { pageNumber: number; base64: string }[] = [];
+  
+  try {
+    const document = await pdf(file.buffer, { scale: 2.0 });
+    let pageNumber = 1;
+    
+    for await (const imageBuffer of document) {
+      pageImages.push({ 
+        pageNumber, 
+        base64: imageBuffer.toString('base64') 
+      });
+      pageNumber++;
+      if (pageNumber > 10) break; // Limit for targeted extraction
+    }
+  } catch (err) {
+    console.error('[PDF Vision] Failed to convert PDF:', err);
+    return {};
+  }
+  
+  const systemPrompt = `You are a financial analyst extracting specific KPIs.
 Find these metrics: ${metricsToFind.join(', ')}
 
-For each metric found, return:
-- value: The numeric value (no formatting, just the number)
-- unit: The unit (EUR, USD, %, months, count, etc.)
-- page: Which page it was found on
-- confidence: Your confidence (0-1)
+Return ONLY a JSON object:
+{
+  "metric_id": { "value": 123.45, "unit": "EUR", "page": 1, "confidence": 0.95 }
+}
 
-Return JSON: { "metric_name": { "value": 123, "unit": "EUR", "page": 1, "confidence": 0.95 } }
-Only include metrics you actually found with high confidence.`;
+Rules:
+- Only include metrics you actually found
+- Convert European format (1.234,56) to standard (1234.56)
+- Use the exact metric IDs provided
+- Confidence: 0.9+ for clearly visible, 0.7-0.9 for inferred`;
+
+  const userContent: any[] = [
+    { 
+      type: 'text', 
+      text: `Find these metrics in "${file.filename}": ${metricsToFind.join(', ')}`
+    }
+  ];
+  
+  // Add page images (limit to first 5 for targeted search)
+  for (const page of pageImages.slice(0, 5)) {
+    userContent.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/png;base64,${page.base64}`,
+        detail: 'high'
+      }
+    });
+  }
 
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { 
-              type: 'text', 
-              text: `Find these financial metrics in the document: ${metricsToFind.join(', ')}` 
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:application/pdf;base64,${base64Pdf}`,
-                detail: 'high'
-              }
-            }
-          ]
-        }
+        { role: 'user', content: userContent }
       ],
       max_tokens: 2000,
       temperature: 0.1,
@@ -294,4 +360,3 @@ export function findPagesWithKeywords(pdfContent: PDFContent, keywords: string[]
   
   return matchedPages;
 }
-
