@@ -574,11 +574,11 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed API returning 200 for failures (now proper 500/207 status codes)
     *   Fixed company slug matching (word boundaries, longest match preference)
     *   Fixed empty file submission handling
-    *   Fixed `onConflict` parameter (column names vs. constraint name)
+    *   Fixed `onConflict` parameter (now uses explicit constraint name `fact_metrics_company_period_metric_key`)
     *   Fixed guide parsing for varying YAML structures (`company:` vs `company_metadata:`)
     *   Fixed null Company ID prevention and optional currency fallback
     *   Fixed case-sensitive file extension matching (now handles `.PDF`, `.XLSX`)
-    *   Fixed snippet path collisions when processing multiple PDFs in same batch
+    *   Fixed snippet path collisions when processing multiple PDFs in same batch (now uses full `filePath`)
     *   Fixed 405 Method Not Allowed on `/api/ingest` and `/api/upload` (moved Supabase client init inside handlers)
     *   Fixed zero-extraction files being deleted (now retained with `needs_review` status for debugging)
     *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues

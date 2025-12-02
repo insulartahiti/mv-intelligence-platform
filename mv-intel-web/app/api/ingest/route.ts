@@ -286,8 +286,8 @@ export async function POST(req: NextRequest) {
                     const pageNum = item.source_location.page;
                     
                     // Generate snippet if not cached for this file+page combo
-                    // Use filename in key to avoid collisions across files in same batch
-                    const snippetKey = `${fileMeta.filename}_page_${pageNum}`;
+                    // Use full filePath in key to avoid collisions across files in same batch
+                    const snippetKey = `${filePath}_page_${pageNum}`;
                     if (!processedPages.has(snippetKey)) {
                         console.log(`[Ingest] Generating audit snippet for ${fileMeta.filename} page ${pageNum}...`);
                         try {
