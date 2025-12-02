@@ -178,7 +178,7 @@ export default function ImportPage() {
             if (data.results && Array.isArray(data.results) && data.results.length > 0) {
                 const errors = data.results
                     .filter((r: any) => r.status === 'error' && r.error)
-                    .map((r: any) => `${r.file}: ${r.error}`)
+                    .map((r: any) => `${r.file || 'Unknown File'}: ${r.error}`)
                     .join('\n');
                 if (errors) {
                     errorMessage = errors;
@@ -187,10 +187,17 @@ export default function ImportPage() {
             
             // Fallback to top-level error/details if no result-specific errors found
             if (!errorMessage) {
-                errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Processing failed');
+                const mainError = data.error || 'Processing failed';
+                const details = data.details ? `: ${data.details}` : '';
+                errorMessage = `${mainError}${details}`;
+                
+                // If data seems empty/malformed, dump it for debugging
+                if (!data.error && !data.details && (!data.results || data.results.length === 0)) {
+                    errorMessage += `\nResponse: ${JSON.stringify(data, null, 2)}`;
+                }
             }
             
-            setStatusMessage('Ingestion failed for all files');
+            setStatusMessage(errorMessage);
             alert(`Ingestion Failed:\n${errorMessage}`); // Explicitly alert user with detailed errors
         }
     } catch (err: any) {

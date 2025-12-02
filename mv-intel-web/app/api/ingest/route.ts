@@ -411,10 +411,12 @@ export async function POST(req: NextRequest) {
 
         } catch (fileError: any) {
             console.error(`Error processing file ${filePath}:`, fileError);
+            // Ensure we capture the error message as a string, handling non-Error objects
+            const errorMessage = fileError?.message || (typeof fileError === 'string' ? fileError : JSON.stringify(fileError));
             results.push({
                 file: filePath,
                 status: 'error',
-                error: fileError.message
+                error: errorMessage
             });
             // Do NOT delete file here, keep for debugging
         }
