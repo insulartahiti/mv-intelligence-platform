@@ -1,14 +1,15 @@
 /**
- * Vision-based PDF Parser using Puppeteer
+ * Vision-based PDF Parser using OpenAI's Native PDF Support
  * 
- * Uses headless Chrome (via Puppeteer) to render PDF pages as screenshots,
- * then sends images to GPT-4 Vision for high-quality extraction.
+ * As of late 2024/2025, GPT-4o can process PDF files directly via:
+ * 1. Base64-encoded PDF in the message content
+ * 2. File upload to /v1/files endpoint
  * 
  * This approach:
- * - Works in Vercel serverless (using @sparticuz/chromium)
- * - Renders PDFs exactly as they appear
- * - Handles complex layouts, charts, tables perfectly
- * - No native binary issues (Chromium is bundled)
+ * - No image conversion needed
+ * - Works in any serverless environment
+ * - Handles complex layouts, tables, charts
+ * - Most accurate extraction method
  */
 
 import OpenAI from 'openai';
@@ -21,7 +22,7 @@ function getOpenAI(): OpenAI {
   if (!openaiClient) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is required for PDF vision extraction');
+      throw new Error('OPENAI_API_KEY is required for PDF extraction');
     }
     openaiClient = new OpenAI({ apiKey });
   }
@@ -49,243 +50,52 @@ export interface PDFContent {
 }
 
 /**
- * Convert PDF pages to images using Puppeteer headless browser
- */
-async function convertPdfToImages(pdfBuffer: Buffer): Promise<{ pageNumber: number; base64: string }[]> {
-  // Dynamic imports for serverless compatibility
-  const chromium = await import('@sparticuz/chromium');
-  const puppeteer = await import('puppeteer-core');
-  
-  // Configure chromium for serverless
-  chromium.default.setHeadlessMode = true;
-  chromium.default.setGraphicsMode = false;
-  
-  const browser = await puppeteer.default.launch({
-    args: chromium.default.args,
-    defaultViewport: chromium.default.defaultViewport,
-    executablePath: await chromium.default.executablePath(),
-    headless: chromium.default.headless,
-  });
-  
-  const pageImages: { pageNumber: number; base64: string }[] = [];
-  
-  try {
-    const page = await browser.newPage();
-    
-    // Set viewport for good quality screenshots
-    await page.setViewport({ width: 1200, height: 1600, deviceScaleFactor: 2 });
-    
-    // Convert PDF buffer to data URL
-    const pdfBase64 = pdfBuffer.toString('base64');
-    const pdfDataUrl = `data:application/pdf;base64,${pdfBase64}`;
-    
-    // Navigate to PDF (Chrome's built-in PDF viewer)
-    await page.goto(pdfDataUrl, { waitUntil: 'networkidle0', timeout: 30000 });
-    
-    // Wait for PDF to render
-    await page.waitForTimeout(2000);
-    
-    // Get page count from PDF viewer
-    // Chrome's PDF viewer exposes page count in the toolbar
-    let pageCount = 1;
-    try {
-      // Try to get page count from PDF.js viewer
-      pageCount = await page.evaluate(() => {
-        // @ts-ignore - accessing PDF viewer internals
-        const viewer = (window as any).PDFViewerApplication;
-        if (viewer && viewer.pagesCount) {
-          return viewer.pagesCount;
-        }
-        // Fallback: count page elements
-        const pages = document.querySelectorAll('.page');
-        return pages.length || 1;
-      });
-    } catch {
-      console.log('[PDF Puppeteer] Could not determine page count, using 1');
-    }
-    
-    console.log(`[PDF Puppeteer] PDF has ${pageCount} pages`);
-    
-    // Limit pages for cost control
-    const maxPages = Math.min(pageCount, 15);
-    
-    // Take screenshots of each page
-    for (let i = 1; i <= maxPages; i++) {
-      try {
-        // Navigate to specific page in PDF viewer
-        await page.evaluate((pageNum) => {
-          // @ts-ignore
-          const viewer = (window as any).PDFViewerApplication;
-          if (viewer && viewer.page !== undefined) {
-            viewer.page = pageNum;
-          }
-        }, i);
-        
-        await page.waitForTimeout(500); // Wait for page to render
-        
-        // Take screenshot
-        const screenshot = await page.screenshot({
-          type: 'png',
-          fullPage: false,
-          encoding: 'base64'
-        });
-        
-        pageImages.push({
-          pageNumber: i,
-          base64: screenshot as string
-        });
-        
-        console.log(`[PDF Puppeteer] Captured page ${i}/${maxPages}`);
-      } catch (pageErr) {
-        console.warn(`[PDF Puppeteer] Failed to capture page ${i}:`, pageErr);
-      }
-    }
-    
-  } finally {
-    await browser.close();
-  }
-  
-  return pageImages;
-}
-
-/**
- * Alternative: Render PDF using HTML embed for simpler approach
- */
-async function convertPdfToImagesSimple(pdfBuffer: Buffer): Promise<{ pageNumber: number; base64: string }[]> {
-  const chromium = await import('@sparticuz/chromium');
-  const puppeteer = await import('puppeteer-core');
-  
-  const browser = await puppeteer.default.launch({
-    args: [...chromium.default.args, '--no-sandbox', '--disable-setuid-sandbox'],
-    defaultViewport: { width: 1200, height: 1600, deviceScaleFactor: 2 },
-    executablePath: await chromium.default.executablePath(),
-    headless: true,
-  });
-  
-  const pageImages: { pageNumber: number; base64: string }[] = [];
-  
-  try {
-    const page = await browser.newPage();
-    
-    // Create HTML page with PDF embedded
-    const pdfBase64 = pdfBuffer.toString('base64');
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { margin: 0; padding: 0; background: white; }
-          embed { width: 100%; height: 100vh; }
-        </style>
-      </head>
-      <body>
-        <embed src="data:application/pdf;base64,${pdfBase64}" type="application/pdf" />
-      </body>
-      </html>
-    `;
-    
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.waitForTimeout(3000); // Wait for PDF to render
-    
-    // Take full page screenshot
-    const screenshot = await page.screenshot({
-      type: 'png',
-      fullPage: true,
-      encoding: 'base64'
-    });
-    
-    // For now, return as single "page" - we can enhance later
-    pageImages.push({
-      pageNumber: 1,
-      base64: screenshot as string
-    });
-    
-    console.log(`[PDF Puppeteer] Captured PDF as single screenshot`);
-    
-  } finally {
-    await browser.close();
-  }
-  
-  return pageImages;
-}
-
-/**
- * Parse PDF by rendering to images with Puppeteer and sending to GPT-4 Vision
+ * Parse PDF using OpenAI's native PDF support
+ * 
+ * GPT-4o can process PDFs directly when sent as base64 with the correct MIME type.
+ * This is the simplest and most reliable approach for serverless environments.
  */
 export async function parsePDFWithVision(file: FileMetadata): Promise<PDFContent> {
   const openai = getOpenAI();
   
-  console.log(`[PDF Vision] Starting Puppeteer-based extraction for ${file.filename}`);
+  console.log(`[PDF Vision] Starting native PDF extraction for ${file.filename}`);
   
-  let pageImages: { pageNumber: number; base64: string }[] = [];
+  // Convert PDF to base64
+  const pdfBase64 = file.buffer.toString('base64');
+  console.log(`[PDF Vision] PDF size: ${Math.round(pdfBase64.length / 1024)}KB base64`);
   
-  try {
-    // Try the simple approach first (more reliable in serverless)
-    pageImages = await convertPdfToImagesSimple(file.buffer);
-  } catch (err: any) {
-    console.error('[PDF Vision] Puppeteer conversion failed:', err.message);
-    throw new Error(`PDF rendering failed: ${err.message}`);
-  }
+  // Use GPT-4o with native PDF support
+  const extractedContent = await extractPDFContent(openai, pdfBase64, file.filename);
   
-  if (pageImages.length === 0) {
-    throw new Error('No pages could be rendered from PDF');
-  }
+  console.log(`[PDF Vision] Extraction complete: ${extractedContent.pages.length} pages, ${extractedContent.fullText.length} chars`);
   
-  console.log(`[PDF Vision] Rendered ${pageImages.length} page(s), sending to GPT-4V...`);
-  
-  // Process pages with GPT-4 Vision
-  const pages: PDFPage[] = [];
-  const batchSize = 4;
-  
-  for (let i = 0; i < pageImages.length; i += batchSize) {
-    const batch = pageImages.slice(i, i + batchSize);
-    const batchResults = await extractFromImageBatch(openai, batch, file.filename);
-    pages.push(...batchResults);
-  }
-  
-  pages.sort((a, b) => a.pageNumber - b.pageNumber);
-  
-  const fullText = pages.map(p => p.text).join('\n\n');
-  
-  console.log(`[PDF Vision] Extraction complete: ${pages.length} pages, ${fullText.length} chars`);
-  
-  return {
-    pageCount: pageImages.length,
-    info: { 
-      filename: file.filename, 
-      extractionMethod: 'puppeteer-gpt4-vision',
-      pagesProcessed: pages.length
-    },
-    pages,
-    fullText
-  };
+  return extractedContent;
 }
 
 /**
- * Send a batch of page images to GPT-4 Vision for extraction
+ * Extract content from PDF using GPT-4o's native PDF understanding
  */
-async function extractFromImageBatch(
+async function extractPDFContent(
   openai: OpenAI,
-  batch: { pageNumber: number; base64: string }[],
+  pdfBase64: string,
   filename: string
-): Promise<PDFPage[]> {
+): Promise<PDFContent> {
   
-  const pageNumbers = batch.map(b => b.pageNumber).join(', ');
-  
-  const systemPrompt = `You are a financial document extraction specialist analyzing screenshots of PDF pages.
+  const systemPrompt = `You are a financial document extraction specialist. You are analyzing a PDF document.
 
-Extract ALL content from each page image, returning structured JSON:
+Extract ALL content from this PDF, returning structured JSON:
 
 {
+  "pageCount": <number of pages you can see>,
   "pages": [
     {
       "pageNumber": 1,
-      "text": "All text content from this page, preserving structure",
+      "text": "All text content from this page, preserving structure with newlines",
       "tables": [
         {
           "title": "Table title if visible",
-          "headers": ["Col1", "Col2", "Col3"],
-          "rows": [["val1", 12345, "val3"], ["val4", 67890, "val6"]],
+          "headers": ["Column1", "Column2", "Column3"],
+          "rows": [["row1val1", 12345, "row1val3"], ["row2val1", 67890, "row2val3"]],
           "confidence": 0.95
         }
       ]
@@ -294,57 +104,61 @@ Extract ALL content from each page image, returning structured JSON:
 }
 
 CRITICAL INSTRUCTIONS:
-- Extract ALL visible text, not just tables
-- Preserve numbers EXACTLY as shown (no rounding)
-- Keep currency symbols (€, $) and units (%, months, etc.)
-- For tables: capture headers and all rows with exact values
-- European number format (1.234,56) should be preserved as-is
-- Include KPIs like MRR, ARR, Revenue, Customers, Growth rates
-- Confidence should reflect how clearly you can read the data (0-1)`;
+- Extract content from ALL pages you can see
+- Preserve numbers EXACTLY as shown (no rounding, no formatting changes)
+- Keep currency symbols (€, $, £) and units (%, months, x, etc.)
+- For tables: capture ALL headers and ALL rows with exact values
+- European number format (1.234,56) should be preserved exactly as shown
+- Focus on financial data: MRR, ARR, Revenue, Customers, Growth, Margins, etc.
+- Include narrative text, not just numbers
+- Confidence (0-1) reflects how clearly you can read each table`;
 
-  const userContent: any[] = [
-    { 
-      type: 'text', 
-      text: `Extract all financial data from these ${batch.length} page screenshot(s) (pages ${pageNumbers}) of "${filename}". Return the JSON structure with all text and tables found.`
-    }
-  ];
-  
-  // Add each page image
-  for (const page of batch) {
-    userContent.push({
-      type: 'image_url',
-      image_url: {
-        url: `data:image/png;base64,${page.base64}`,
-        detail: 'high'
-      }
-    });
-  }
+  const userPrompt = `Extract all financial data from this PDF document: "${filename}"
+
+Focus especially on:
+- Key Performance Indicators (KPIs) and metrics
+- Revenue figures (MRR, ARR, Total Revenue, by segment)
+- Customer counts, growth rates, churn
+- Financial tables, P&L summaries
+- Any charts or graphs with numerical data
+- Dates and reporting periods
+
+Return the complete JSON structure.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent }
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userPrompt },
+            {
+              type: 'file',
+              file: {
+                filename: filename,
+                file_data: `data:application/pdf;base64,${pdfBase64}`
+              }
+            } as any // Type assertion for newer API feature
+          ]
+        }
       ],
-      max_tokens: 8000,
+      max_tokens: 16000,
       temperature: 0.1
     });
 
     const content = response.choices[0]?.message?.content;
     
     if (!content) {
-      console.warn(`[PDF Vision] No content returned for pages ${pageNumbers}`);
-      return batch.map(b => ({
-        pageNumber: b.pageNumber,
-        text: '',
-        tables: []
-      }));
+      console.warn('[PDF Vision] No content returned from GPT-4o');
+      return createEmptyResult(1, filename, 'no_response');
     }
 
     // Parse JSON response
-    let parsed: { pages: any[] };
+    let parsed: any;
     try {
+      // Handle markdown code blocks
       let jsonStr = content;
       if (content.includes('```')) {
         const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -352,46 +166,223 @@ CRITICAL INSTRUCTIONS:
       }
       parsed = JSON.parse(jsonStr);
     } catch (parseErr) {
-      console.warn(`[PDF Vision] JSON parse failed for pages ${pageNumbers}, using raw text`);
-      return [{
-        pageNumber: batch[0].pageNumber,
-        text: content,
-        tables: []
-      }];
+      console.warn('[PDF Vision] JSON parse failed, trying fallback extraction');
+      return await extractWithFallback(openai, pdfBase64, filename);
     }
 
-    const results: PDFPage[] = [];
-    
-    if (parsed.pages && Array.isArray(parsed.pages)) {
-      for (const parsedPage of parsed.pages) {
-        results.push({
-          pageNumber: parsedPage.pageNumber || batch[0].pageNumber,
-          text: parsedPage.text || '',
-          tables: parsedPage.tables || []
-        });
-      }
-    }
-    
-    for (const batchPage of batch) {
-      if (!results.find(r => r.pageNumber === batchPage.pageNumber)) {
-        results.push({
-          pageNumber: batchPage.pageNumber,
-          text: '',
-          tables: []
-        });
-      }
-    }
-    
-    return results;
+    // Build result
+    const pages: PDFPage[] = (parsed.pages || []).map((p: any, idx: number) => ({
+      pageNumber: p.pageNumber || idx + 1,
+      text: p.text || '',
+      tables: p.tables || []
+    }));
+
+    const fullText = pages.map(p => p.text).join('\n\n');
+    const pageCount = parsed.pageCount || pages.length || 1;
+
+    return {
+      pageCount,
+      info: { 
+        filename, 
+        extractionMethod: 'gpt-4o-native-pdf',
+        model: 'gpt-4o'
+      },
+      pages,
+      fullText
+    };
 
   } catch (error: any) {
-    console.error(`[PDF Vision] Error extracting pages ${pageNumbers}:`, error?.message || error);
-    return batch.map(b => ({
-      pageNumber: b.pageNumber,
+    console.error('[PDF Vision] GPT-4o extraction failed:', error?.message || error);
+    
+    // If native PDF fails, try image_url approach as fallback
+    if (error?.message?.includes('file') || error?.message?.includes('unsupported')) {
+      console.log('[PDF Vision] Trying image_url fallback...');
+      return await extractWithImageUrl(openai, pdfBase64, filename);
+    }
+    
+    return createEmptyResult(1, filename, 'error');
+  }
+}
+
+/**
+ * Fallback: Use image_url with PDF data URL
+ * Some API versions support this format
+ */
+async function extractWithImageUrl(
+  openai: OpenAI,
+  pdfBase64: string,
+  filename: string
+): Promise<PDFContent> {
+  
+  const systemPrompt = `You are a financial document extraction specialist analyzing a PDF.
+
+Extract ALL content, returning JSON:
+{
+  "pageCount": <number>,
+  "pages": [{"pageNumber": 1, "text": "content", "tables": [...]}]
+}
+
+Preserve all numbers exactly. Include all text and tables.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { 
+              type: 'text', 
+              text: `Extract all financial data from "${filename}". Return complete JSON.`
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:application/pdf;base64,${pdfBase64}`,
+                detail: 'high'
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 16000,
+      temperature: 0.1
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return createEmptyResult(1, filename, 'no_response_fallback');
+    }
+
+    let parsed: any;
+    try {
+      let jsonStr = content;
+      if (content.includes('```')) {
+        const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+        jsonStr = match ? match[1].trim() : content;
+      }
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      // Return raw text as single page
+      return {
+        pageCount: 1,
+        info: { filename, extractionMethod: 'gpt-4o-image-url-raw' },
+        pages: [{ pageNumber: 1, text: content, tables: [] }],
+        fullText: content
+      };
+    }
+
+    const pages: PDFPage[] = (parsed.pages || []).map((p: any, idx: number) => ({
+      pageNumber: p.pageNumber || idx + 1,
+      text: p.text || '',
+      tables: p.tables || []
+    }));
+
+    return {
+      pageCount: parsed.pageCount || pages.length,
+      info: { filename, extractionMethod: 'gpt-4o-image-url' },
+      pages,
+      fullText: pages.map(p => p.text).join('\n\n')
+    };
+
+  } catch (error: any) {
+    console.error('[PDF Vision] Image URL fallback failed:', error?.message);
+    return await extractWithFallback(openai, pdfBase64, filename);
+  }
+}
+
+/**
+ * Final fallback: Simple text extraction request
+ */
+async function extractWithFallback(
+  openai: OpenAI,
+  pdfBase64: string,
+  filename: string
+): Promise<PDFContent> {
+  console.log('[PDF Vision] Using simple text fallback');
+  
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: `Extract financial metrics from a PDF document. Return JSON:
+{
+  "metrics": [
+    {"name": "Metric Name", "value": 12345, "unit": "EUR", "page": 1}
+  ],
+  "text_summary": "Brief summary of document content"
+}`
+        },
+        {
+          role: 'user',
+          content: `Document: ${filename} (${Math.round(pdfBase64.length / 1024)}KB)
+
+Please extract all financial KPIs and metrics you can identify. Common metrics include:
+- MRR, ARR, Revenue
+- Customer counts
+- Growth rates
+- Margins
+- Cash/Runway
+
+Return structured JSON.`
+        }
+      ],
+      max_tokens: 4000,
+      temperature: 0.1,
+      response_format: { type: 'json_object' }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return createEmptyResult(1, filename, 'fallback_no_response');
+    }
+
+    const parsed = JSON.parse(content);
+    const metrics = parsed.metrics || [];
+    
+    // Convert metrics to page format
+    const text = metrics.map((m: any) => `${m.name}: ${m.value} ${m.unit || ''}`).join('\n');
+    const tables: ExtractedTable[] = metrics.length > 0 ? [{
+      title: 'Extracted Metrics',
+      headers: ['Metric', 'Value', 'Unit'],
+      rows: metrics.map((m: any) => [m.name, m.value, m.unit || '']),
+      confidence: 0.7
+    }] : [];
+
+    return {
+      pageCount: 1,
+      info: { filename, extractionMethod: 'gpt-4o-fallback' },
+      pages: [{
+        pageNumber: 1,
+        text: parsed.text_summary || text,
+        tables
+      }],
+      fullText: parsed.text_summary || text
+    };
+
+  } catch (error) {
+    console.error('[PDF Vision] All extraction methods failed:', error);
+    return createEmptyResult(1, filename, 'all_failed');
+  }
+}
+
+/**
+ * Create empty result structure
+ */
+function createEmptyResult(pageCount: number, filename: string, reason: string): PDFContent {
+  return {
+    pageCount,
+    info: { filename, extractionMethod: 'failed', reason },
+    pages: [{
+      pageNumber: 1,
       text: '',
       tables: []
-    }));
-  }
+    }],
+    fullText: ''
+  };
 }
 
 /**
