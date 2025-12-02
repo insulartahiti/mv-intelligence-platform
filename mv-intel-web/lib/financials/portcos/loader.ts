@@ -3,40 +3,108 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { PortcoGuide, PortcoMetadata, MappingRules } from './types';
 
+// Embedded Nelly guide for serverless environments where YAML files aren't bundled
+const NELLY_GUIDE_EMBEDDED = {
+  company: {
+    name: "Nelly Solutions GmbH",
+    slug: "nelly",
+    business_models: ["saas", "factoring_private", "factoring_public", "pos"],
+    currency: "EUR",
+    fiscal_year_end_month: 12
+  },
+  metrics_mapping: {
+    total_actual_mrr: { labels: ["Total actual MRR"], unit: "EUR_k" },
+    actual_saas_mrr: { labels: ["Actual SaaS MRR"], unit: "EUR_k" },
+    actual_finos_mrr: { labels: ["Actual FinOS MRR"], unit: "EUR_k" },
+    total_booked_revenue: { labels: ["Booked revenue Total"], unit: "EUR_m" },
+    saas_customers: { labels: ["SaaS Customers"], unit: "count" },
+    private_factoring_customers: { labels: ["Priv. Factoring Customers*"], unit: "count" },
+    pos_customers: { labels: ["POS Customers"], unit: "count" },
+    monthly_burn_net: { labels: ["Monthly burn (net)"], unit: "EUR_m" },
+    cash_balance_os: { labels: ["Cash balance"], unit: "EUR_m" },
+    runway_months: { labels: ["Runway*"], unit: "months" },
+    total_employees_fte: { labels: ["Total employees (FTEs)"], unit: "count" },
+    intl_actual_mrr: { labels: ["Total MRR/MR", "Actual MRR"], unit: "EUR_k" }
+  },
+  line_item_mapping: {
+    revenue_total: { patterns: ["Total Revenue", "Total actual revenue"] },
+    revenue_saas: { patterns: ["SaaS", "SaaS Revenue"] },
+    revenue_factoring_private: { patterns: ["Private Factoring"] },
+    revenue_factoring_public: { patterns: ["Public Factoring"] },
+    revenue_pos: { patterns: ["POS"] },
+    cogs_total: { patterns: ["Cost of Sales", "COGS"] },
+    ebitda: { patterns: ["EBITDA", "Operating result"] }
+  },
+  document_structure: {
+    monthly_investor_report_template_2025: {
+      kpi_tables: {
+        actual_and_booked_revenue: {
+          anchor_text: ["Actual revenue KPIs", "Booked revenue KPIs"],
+          metric_rows: {
+            total_actual_mrr: "Total actual MRR",
+            actual_saas_mrr: "Actual SaaS MRR",
+            actual_finos_mrr: "Actual FinOS MRR",
+            total_booked_revenue: "Booked revenue Total",
+            total_actual_revenue: "Total actual revenue"
+          }
+        },
+        other_kpis: {
+          anchor_text: ["Other KPIs"],
+          metric_rows: {
+            saas_customers: "SaaS Customers",
+            private_factoring_customers: "Priv. Factoring Customers*",
+            public_factoring_customers: "Pub. Factoring Customers",
+            pos_customers: "POS Customers",
+            total_employees_fte: "Total employees (FTEs)"
+          }
+        },
+        financials: {
+          anchor_text: ["Nelly Solutions GmbH", "Nelly Finance GmbH"],
+          metric_rows: {
+            monthly_burn_net: "Monthly burn (net)",
+            cash_balance_os: "Cash balance",
+            runway_months: "Runway*"
+          }
+        }
+      }
+    }
+  }
+};
+
 // Try multiple possible locations for the portcos directory
-// This handles differences between local dev, Vercel, and other environments
 function getPortcosDir(): string {
   const candidates = [
-    path.join(process.cwd(), 'lib/financials/portcos'),           // Local dev (Next.js)
-    path.join(process.cwd(), 'mv-intel-web/lib/financials/portcos'), // If running from repo root
-    path.join(__dirname, '.'),                                      // Relative to this file
+    path.join(process.cwd(), 'lib/financials/portcos'),
+    path.join(process.cwd(), 'mv-intel-web/lib/financials/portcos'),
   ];
   
   for (const dir of candidates) {
-    if (fs.existsSync(dir)) {
-      return dir;
+    try {
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+        // Verify we can actually read from it
+        const testPath = path.join(dir, 'nelly', 'guide.yaml');
+        if (fs.existsSync(testPath)) {
+          return dir;
+        }
+      }
+    } catch {
+      // Continue to next candidate
     }
   }
   
-  // Default to first candidate (will fail with descriptive error if not found)
-  return candidates[0];
+  return candidates[0]; // Will use embedded fallback
 }
 
 const PORTCOS_DIR = getPortcosDir();
 
 /**
  * Normalizes different YAML guide formats into the standard PortcoGuide interface.
- * Supports both:
- * - Standard format: { company_metadata, mapping_rules, source_docs }
- * - Extended format (Nelly-style): { company, metrics_mapping, document_structure, ... }
  */
 function normalizeGuide(rawGuide: any): PortcoGuide {
-  // Handle company_metadata vs company
   let company_metadata: PortcoMetadata;
   if (rawGuide.company_metadata) {
     company_metadata = rawGuide.company_metadata;
   } else if (rawGuide.company) {
-    // Nelly-style format: company: { name, currency, business_models, ... }
     company_metadata = {
       name: rawGuide.company.name,
       domain: rawGuide.company.domain || rawGuide.company.website,
@@ -51,22 +119,16 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
     throw new Error('Guide must have either company_metadata or company field');
   }
 
-  // Handle mapping_rules vs metrics_mapping/document_structure
   let mapping_rules: MappingRules = { line_items: {} };
   
   if (rawGuide.mapping_rules?.line_items) {
-    // Standard format
     mapping_rules = rawGuide.mapping_rules;
   } else if (rawGuide.document_structure || rawGuide.metrics_mapping) {
-    // Nelly-style format: Extract line_items from document_structure tables
-    // Build mapping from document_structure.*.kpi_tables.*.metric_rows
     const lineItems: Record<string, any> = {};
     
-    // Extract from document_structure
     if (rawGuide.document_structure) {
       for (const [templateKey, template] of Object.entries(rawGuide.document_structure as Record<string, any>)) {
         if (template && typeof template === 'object') {
-          // Handle kpi_tables structure
           if (template.kpi_tables) {
             for (const [tableKey, tableConfig] of Object.entries(template.kpi_tables as Record<string, any>)) {
               if (tableConfig?.metric_rows) {
@@ -81,7 +143,6 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
               }
             }
           }
-          // Handle direct metrics like key_operating_metrics
           if (template.metrics) {
             for (const [metricKey, label] of Object.entries(template.metrics as Record<string, any>)) {
               lineItems[metricKey] = {
@@ -95,13 +156,12 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
       }
     }
     
-    // Also extract from line_item_mapping if present
     if (rawGuide.line_item_mapping) {
       for (const [lineItemId, config] of Object.entries(rawGuide.line_item_mapping as Record<string, any>)) {
         if (config?.patterns) {
           lineItems[lineItemId] = {
             source: 'pdf',
-            label_match: config.patterns[0], // Use first pattern as primary
+            label_match: config.patterns[0],
             patterns: config.patterns
           };
         }
@@ -111,9 +171,7 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
     mapping_rules = { line_items: lineItems };
   }
 
-  // Handle source_docs - normalize different formats
   let source_docs = rawGuide.source_docs || [];
-  // The Nelly format has more detailed source_docs that are compatible
 
   return {
     company_metadata,
@@ -132,26 +190,45 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
 export function loadPortcoGuide(slug: string): PortcoGuide {
   const guidePath = path.join(PORTCOS_DIR, slug, 'guide.yaml');
   
-  if (!fs.existsSync(guidePath)) {
-    throw new Error(`Guide not found for portco: ${slug} at ${guidePath}`);
-  }
-
+  // Try to load from filesystem first
   try {
-    const fileContent = fs.readFileSync(guidePath, 'utf-8');
-    const rawGuide = yaml.load(fileContent) as any;
-    return normalizeGuide(rawGuide);
-  } catch (error) {
-    console.error(`Failed to load guide for ${slug}:`, error);
-    throw new Error(`Invalid YAML guide for ${slug}`);
+    if (fs.existsSync(guidePath)) {
+      const fileContent = fs.readFileSync(guidePath, 'utf-8');
+      const rawGuide = yaml.load(fileContent) as any;
+      console.log(`[Loader] Loaded guide from filesystem: ${guidePath}`);
+      return normalizeGuide(rawGuide);
+    }
+  } catch (err) {
+    console.warn(`[Loader] Failed to load guide from filesystem: ${err}`);
   }
+  
+  // Fallback to embedded guides for serverless environments
+  if (slug === 'nelly') {
+    console.log(`[Loader] Using embedded Nelly guide (filesystem not available)`);
+    return normalizeGuide(NELLY_GUIDE_EMBEDDED);
+  }
+  
+  throw new Error(`Guide not found for portco: ${slug}. Filesystem path tried: ${guidePath}`);
 }
 
 export function listConfiguredPortcos(): string[] {
-  if (!fs.existsSync(PORTCOS_DIR)) return [];
+  // Always include nelly since it's embedded
+  const embedded = ['nelly'];
   
-  return fs.readdirSync(PORTCOS_DIR).filter(file => {
-    return fs.statSync(path.join(PORTCOS_DIR, file)).isDirectory();
-  });
+  try {
+    if (fs.existsSync(PORTCOS_DIR)) {
+      const fromFs = fs.readdirSync(PORTCOS_DIR).filter(file => {
+        try {
+          return fs.statSync(path.join(PORTCOS_DIR, file)).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+      return [...new Set([...embedded, ...fromFs])];
+    }
+  } catch {
+    // Filesystem not available
+  }
+  
+  return embedded;
 }
-
-
