@@ -5,6 +5,7 @@ import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
 import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
+import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
 import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
 
@@ -97,6 +98,62 @@ export async function POST(req: NextRequest) {
             // 4b. Generate Audit Snippets & Prepare Fact Rows
             const processedPages = new Set<number>();
             const factRows = [];
+            const uniqueLineItems = new Map<string, { name: string, category: string }>();
+
+            // Collect unique line items for dimension upsert
+            for (const item of lineItems) {
+                if (!uniqueLineItems.has(item.line_item_id)) {
+                    // Try to find definition in Common Metrics first
+                    const commonMetric = getMetricById(item.line_item_id);
+                    let name = item.line_item_id;
+                    let category = 'Uncategorized';
+
+                    if (commonMetric) {
+                        name = commonMetric.name;
+                        category = commonMetric.category;
+                    } else {
+                        // Try to find in Guide Mapping
+                        // We check both line_item_mapping and metrics_mapping
+                        const guideLineItem = guide.mapping_rules?.line_items?.[item.line_item_id];
+                        // Metrics mapping is Nelly-specific but good to check
+                        const guideMetric = (guide as any).metrics_mapping?.[item.line_item_id];
+
+                        if (guideMetric && guideMetric.labels && guideMetric.labels.length > 0) {
+                            name = guideMetric.labels[0];
+                            category = 'Reported Metric';
+                        } else if (guideLineItem && guideLineItem.label_match) {
+                            name = guideLineItem.label_match;
+                            category = 'Line Item';
+                        } else {
+                            // Fallback: Format ID (e.g. total_revenue -> Total Revenue)
+                            name = item.line_item_id
+                                .split('_')
+                                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                                .join(' ');
+                        }
+                    }
+                    
+                    uniqueLineItems.set(item.line_item_id, { name, category });
+                }
+            }
+
+            // Upsert Dimensions
+            if (uniqueLineItems.size > 0) {
+                const dimRows = Array.from(uniqueLineItems.entries()).map(([id, meta]) => ({
+                    id,
+                    name: meta.name,
+                    category: meta.category
+                }));
+
+                const { error: dimError } = await supabase
+                    .from('dim_line_item')
+                    .upsert(dimRows, { onConflict: 'id' });
+
+                if (dimError) {
+                    console.error('Error upserting dim_line_item:', dimError);
+                    // We log but try to proceed, though facts insert will likely fail
+                }
+            }
 
             for (const item of lineItems) {
                 // Prepare fact row
