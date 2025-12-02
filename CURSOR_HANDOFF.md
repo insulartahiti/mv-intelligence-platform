@@ -305,7 +305,8 @@ This module extends the Knowledge Graph by attaching structured financial perfor
 ### Ingestion Pipeline
 1.  **Upload**: User drags files to `/import`. Frontend detects company name via filename heuristics.
 2.  **Entity Resolution**: Backend resolves the target company against the `companies` table.
-    *   **Strategy**: Exact Match → Fuzzy Match (stripping "GmbH", "Inc", etc.) → Alias Match (future).
+    *   **Strategy**: Exact Match → Fuzzy Match (Prefix/Substring) → Manual Resolution.
+    *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates. User confirms → Retry with `forceCompanyId`.
     *   **Constraint**: Target company MUST exist in Affinity (and thus in `companies` table).
 3.  **Processing**:
     *   **Financials**: Parsed from Excel/PDF tables -> `fact_financials`.
