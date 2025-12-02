@@ -607,6 +607,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Fixed hyphen escaping order in company detection**: Hyphens were being escaped before the flexible pattern replacement, so slugs like `acme-corp` couldn't match `acme_corp` or `acme corp`. Now replaces hyphens first, then escapes other meta-characters.
     *   **Fixed partial status message missing needs_review files**: Frontend import UI now shows both `error` and `needs_review` files with appropriate status labels when displaying partial results.
     *   **Fixed false negative detection in parseLocalizedNumber**: `rawNum.includes('-')` matched any hyphen (e.g., in company names like "acme-corp-123"), causing false positive negative number detection. Now only checks for leading minus signs or parentheses notation.
+    *   **Added env var validation in ingest API**: Missing `OPENAI_API_KEY` or Supabase env vars now throw descriptive errors instead of cryptic 500s.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)
