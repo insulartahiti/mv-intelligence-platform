@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseClient();
     
     const json = await req.json();
-    const { companySlug, filePaths, notes } = json;
+    const { companySlug, filePaths, notes, forceCompanyId } = json;
 
     if (!companySlug || !filePaths || !Array.isArray(filePaths)) {
       return NextResponse.json({ error: 'Missing company or filePaths' }, { status: 400 });
@@ -135,58 +135,90 @@ export async function POST(req: NextRequest) {
             }
 
             // 2b. Resolve Company ID from Database
-            // Strategy: Try exact match first, then fuzzy match (ILIKE) as fallback
-            // This handles cases where guide says "Nelly Solutions GmbH" but DB has "Nelly Solutions"
             let companyId: string | null = null;
-            
-            // Step 1: Try exact match
-            const { data: exactMatch, error: exactError } = await supabase
-                .from('companies')
-                .select('id, name')
-                .eq('name', companyName)
-                .maybeSingle();  // Returns null instead of error if not found
-            
-            if (exactMatch) {
-                companyId = exactMatch.id;
-                console.log(`[Ingest] Found exact company match: ${exactMatch.name}`);
-            } else {
-                // Step 2: Try fuzzy match (contains the guide name OR guide name contains DB name)
-                // Extract core name without legal suffixes for matching
-                const coreName = companyName
-                    .replace(/\s+(GmbH|Inc\.?|LLC|Ltd\.?|Corp\.?|AG|SE|SA|SAS|BV|NV)$/i, '')
-                    .trim();
-                
-                console.log(`[Ingest] No exact match for '${companyName}', trying fuzzy match with '${coreName}'...`);
-                
-                const { data: fuzzyMatches, error: fuzzyError } = await supabase
+
+            // If forced ID is provided (manual override), verify it exists and use it
+            if (forceCompanyId) {
+                const { data: forcedMatch, error: forcedError } = await supabase
                     .from('companies')
                     .select('id, name')
-                    .or(`name.ilike.%${coreName}%,name.ilike.${coreName}%`);
+                    .eq('id', forceCompanyId)
+                    .single();
                 
-                if (fuzzyError) {
-                    console.error('Database error during fuzzy company lookup:', fuzzyError);
-                    throw new Error(`Database error looking up company: ${fuzzyError.message}`);
+                if (forcedError || !forcedMatch) {
+                    throw new Error(`Forced company ID ${forceCompanyId} not found in database.`);
                 }
+                companyId = forcedMatch.id;
+                console.log(`[Ingest] Using forced company ID: ${companyId} (${forcedMatch.name})`);
+            } else {
+                // Strategy: Try exact match first, then fuzzy match (ILIKE) as fallback
                 
-                if (fuzzyMatches && fuzzyMatches.length === 1) {
-                    // Single fuzzy match - use it
-                    companyId = fuzzyMatches[0].id;
-                    console.log(`[Ingest] Found fuzzy company match: '${fuzzyMatches[0].name}' for guide name '${companyName}'`);
-                } else if (fuzzyMatches && fuzzyMatches.length > 1) {
-                    // Multiple matches - ambiguous
-                    const matchNames = fuzzyMatches.map(m => m.name).join(', ');
-                    console.error(`[Ingest] Ambiguous: Multiple companies match '${coreName}': ${matchNames}`);
-                    throw new Error(
-                        `Multiple companies match '${companyName}': ${matchNames}. ` +
-                        `Please update the guide to use the exact company name from the database.`
-                    );
+                // Step 1: Try exact match
+                const { data: exactMatch, error: exactError } = await supabase
+                    .from('companies')
+                    .select('id, name')
+                    .eq('name', companyName)
+                    .maybeSingle();
+                
+                if (exactMatch) {
+                    companyId = exactMatch.id;
+                    console.log(`[Ingest] Found exact company match: ${exactMatch.name}`);
                 } else {
-                    // No matches at all
-                    console.error(`[Ingest] Error: Company '${companyName}' not found in DB (tried exact and fuzzy).`);
-                    throw new Error(
-                        `Company '${companyName}' not found in database. ` +
-                        `This company must exist in the main companies table (synced from Affinity) before ingesting financials.`
-                    );
+                    // Step 2: Try fuzzy match
+                    // ... (existing fuzzy logic) ...
+                    const coreName = companyName
+                        .replace(/\s+(GmbH|Inc\.?|LLC|Ltd\.?|Corp\.?|AG|SE|SA|SAS|BV|NV)$/i, '')
+                        .trim();
+                    
+                    const firstWord = coreName.split(' ')[0];
+                    
+                    console.log(`[Ingest] No exact match for '${companyName}', trying fuzzy match with '${coreName}'...`);
+                    
+                    let candidates: any[] = [];
+                    
+                    if (firstWord.length > 2) {
+                        const { data, error } = await supabase
+                            .from('companies')
+                            .select('id, name')
+                            .ilike('name', `${firstWord}%`)
+                            .limit(10);
+                            
+                        if (!error && data) {
+                            candidates = data;
+                        }
+                    }
+                    
+                    const matches = candidates.filter(c => {
+                        const dbName = c.name.toLowerCase();
+                        const guideNameLower = companyName.toLowerCase();
+                        const coreNameLower = coreName.toLowerCase();
+                        if (guideNameLower.includes(dbName)) return true;
+                        if (dbName.includes(coreNameLower)) return true;
+                        return false;
+                    });
+                    
+                    if (matches.length === 1) {
+                        companyId = matches[0].id;
+                        console.log(`[Ingest] Found fuzzy company match: '${matches[0].name}'`);
+                    } else if (matches.length > 1) {
+                        // Ambiguous - return special status for UI to resolve
+                        results.push({
+                            file: filePath,
+                            status: 'company_not_found',
+                            error: `Multiple companies match '${companyName}'`,
+                            candidates: matches
+                        });
+                        continue; // Skip to next file (or abort?) - logic below continues loop
+                    } else {
+                        // No match - return special status with broad candidates
+                        results.push({
+                            file: filePath,
+                            status: 'company_not_found',
+                            error: `Company '${companyName}' not found in database`,
+                            candidates: candidates // Return broad matches for user selection
+                        });
+                        continue;
+                    }
                 }
             }
             

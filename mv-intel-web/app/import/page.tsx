@@ -11,6 +11,10 @@ export default function ImportPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
+  const [showResolutionModal, setShowResolutionModal] = useState(false);
+  const [resolutionCandidates, setResolutionCandidates] = useState<{id: string, name: string}[]>([]);
+  const [targetCompanyName, setTargetCompanyName] = useState('');
+  const [resolvedCompanyId, setResolvedCompanyId] = useState('');
 
   // Auto-detect company when files are added
   useEffect(() => {
@@ -64,7 +68,7 @@ export default function ImportPage() {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (overrideCompanyId?: string) => {
     // Require at least one file - text input alone is not sufficient for ingestion
     if (files.length === 0) {
         alert('Please upload at least one file to ingest.');
@@ -81,6 +85,9 @@ export default function ImportPage() {
 
     try {
         // 1. Upload files using signed URLs (bypasses Vercel 4.5MB limit)
+        // Only upload if we haven't already (optimization: check if we already have paths?)
+        // For simplicity in this retry flow, we'll re-upload. 
+        // Ideally we should cache the uploadedPaths, but this is safe for now.
         const uploadedPaths: string[] = [];
         
         for (let i = 0; i < files.length; i++) {
@@ -119,14 +126,19 @@ export default function ImportPage() {
         setStatusMessage('Processing files...');
 
         // 2. Trigger Ingestion API with paths
+        const body: any = {
+            companySlug: selectedCompany,
+            filePaths: uploadedPaths,
+            notes: textInput
+        };
+        if (overrideCompanyId) {
+            body.forceCompanyId = overrideCompanyId;
+        }
+
         const res = await fetch('/api/ingest', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                companySlug: selectedCompany,
-                filePaths: uploadedPaths,
-                notes: textInput
-            })
+            body: JSON.stringify(body)
         });
         
         let data;
@@ -145,6 +157,7 @@ export default function ImportPage() {
         if (data.status === 'success') {
             setUploadStatus('success');
             setStatusMessage(`Ingestion Complete: ${data.summary?.success || 0} files processed`);
+            setShowResolutionModal(false);
             setTimeout(() => {
                 setUploadStatus('idle');
                 setFiles([]);
@@ -153,7 +166,17 @@ export default function ImportPage() {
                 setStatusMessage('');
             }, 3000);
         } else if (data.status === 'partial' || data.status === 'needs_review') {
-            // Partial success - some files failed or need review
+            // Partial success - check if any were company_not_found
+             const companyNotFound = data.results?.find((r: any) => r.status === 'company_not_found');
+             if (companyNotFound) {
+                 // Trigger resolution flow
+                 setTargetCompanyName(selectedCompany); // Or parse from error message?
+                 setResolutionCandidates(companyNotFound.candidates || []);
+                 setShowResolutionModal(true);
+                 setIsUploading(false);
+                 return; 
+             }
+
             setUploadStatus('error');
             // Include both error and needs_review files in the message
             const problemFiles = data.results?.filter((r: any) => r.status === 'error' || r.status === 'needs_review') || [];
@@ -171,6 +194,17 @@ export default function ImportPage() {
             console.warn('Partial success details:', data);
         } else {
             // Complete failure (overallStatus === 'error')
+            
+             // Check specifically for company_not_found at top level or in results
+             const companyNotFound = data.results?.find((r: any) => r.status === 'company_not_found');
+             if (companyNotFound) {
+                 setTargetCompanyName(selectedCompany);
+                 setResolutionCandidates(companyNotFound.candidates || []);
+                 setShowResolutionModal(true);
+                 setIsUploading(false);
+                 return;
+             }
+
             setUploadStatus('error');
             
             // Try to extract specific errors from results if available
@@ -206,14 +240,71 @@ export default function ImportPage() {
         setStatusMessage(`Upload failed: ${err.message || 'Unknown error'}`);
         alert(`Error: ${err.message || 'Unknown error occurred'}`);
     } finally {
-        setIsUploading(false);
+        if (!showResolutionModal) {
+             setIsUploading(false);
+        }
     }
+  };
+
+  const handleResolveCompany = () => {
+      if (!resolvedCompanyId) return;
+      setShowResolutionModal(false);
+      handleSubmit(resolvedCompanyId);
   };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <div className="max-w-4xl mx-auto space-y-8">
         
+        {/* Resolution Modal */}
+        {showResolutionModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                <div className="bg-gray-800 border border-white/10 rounded-xl p-6 max-w-md w-full shadow-2xl">
+                    <h3 className="text-xl font-bold mb-4 text-white">Confirm Company</h3>
+                    <p className="text-gray-300 mb-4">
+                        We couldn't automatically match the company name from your guide to our database. 
+                        Please select the correct company below:
+                    </p>
+                    
+                    <div className="space-y-2 mb-6">
+                        {resolutionCandidates.length > 0 ? (
+                            resolutionCandidates.map(c => (
+                                <label key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-white/10 hover:bg-white/5 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="company_resolution"
+                                        value={c.id}
+                                        checked={resolvedCompanyId === c.id}
+                                        onChange={() => setResolvedCompanyId(c.id)}
+                                        className="text-blue-500 focus:ring-blue-500"
+                                    />
+                                    <span className="text-white font-medium">{c.name}</span>
+                                </label>
+                            ))
+                        ) : (
+                            <p className="text-yellow-400 text-sm">No similar companies found in database.</p>
+                        )}
+                    </div>
+
+                    <div className="flex justify-end gap-3">
+                        <button 
+                            onClick={() => setShowResolutionModal(false)}
+                            className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handleResolveCompany}
+                            disabled={!resolvedCompanyId}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Confirm & Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
@@ -332,7 +423,7 @@ export default function ImportPage() {
         {/* Submit Action */}
         <div className="flex justify-end pt-6 border-t border-white/10">
           <button
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={isUploading || files.length === 0}
             className={`
               flex items-center gap-2 px-8 py-3 rounded-xl font-medium transition-all duration-200
