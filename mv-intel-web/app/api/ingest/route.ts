@@ -178,8 +178,8 @@ export async function POST(req: NextRequest) {
                 throw new Error(`Unsupported file type: ${fileMeta.filename}. Supported: .pdf, .xlsx, .xls`);
             }
 
-            // 4. Extract period date using LLM (or fallback to heuristic)
-            let periodDate = await extractPeriodDateFromFilename(fileMeta.filename);
+            // 4. Extract period date using heuristic (or fallback to LLM)
+            let periodDate = extractPeriodDateFromFilename(fileMeta.filename);
             let periodType = 'month';
             
             // If filename parsing failed, try LLM extraction from content

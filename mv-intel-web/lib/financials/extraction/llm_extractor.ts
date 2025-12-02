@@ -62,7 +62,7 @@ export async function extractPeriodFromDocument(
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',  // Current stable model with best performance
       messages: [
         { role: 'system', content: 'You are a financial document analyst. Extract dates accurately.' },
         { role: 'user', content: prompt }
@@ -110,7 +110,7 @@ export async function extractInsightsFromText(
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: [
         { 
           role: 'system', 
@@ -155,7 +155,7 @@ export async function extractInsightsFromText(
       source_file_id: sourceFileId,
       extracted_at: new Date().toISOString(),
       extracted_by: 'llm' as const,
-      llm_model: 'gpt-4-turbo-preview'
+      llm_model: 'gpt-4o'
     }));
 
   } catch (error) {
@@ -198,7 +198,7 @@ Return format: { "tables": [...], "raw_text": "any other relevant text" }`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-vision-preview',
+      model: 'gpt-4o',  // gpt-4o has vision capability built-in
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -273,7 +273,7 @@ Example: { "ARR": { "value": 5000000, "unit": "USD", "confidence": 0.95 } }`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: 'You are a financial data extraction specialist. Extract values accurately.' },
         { role: 'user', content: prompt }
@@ -323,7 +323,7 @@ Return JSON: { "valid": true/false, "issues": ["issue1", "issue2"] }`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: 'You are a financial data quality checker.' },
         { role: 'user', content: prompt }
@@ -380,7 +380,7 @@ Return JSON: { "metric_id": { "value": number, "cell": "B5", "confidence": 0-1 }
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: 'You are an expert financial analyst reading a spreadsheet.' },
         { role: 'user', content: prompt }
