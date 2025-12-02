@@ -38,7 +38,13 @@ function parseLocalizedNumber(rawNum: string, defaultCurrency: string = 'USD'): 
   if (!cleaned) return null;
   
   // Handle negative numbers
-  const isNegative = cleaned.startsWith('-') || rawNum.includes('(') || rawNum.includes('-');
+  // Check for:
+  // 1. Leading minus sign in cleaned string (after removing currency symbols)
+  // 2. Parentheses notation: (1,234.56) is negative in accounting
+  // 3. Leading minus in original string (before any text): "-1,234" but NOT "acme-123"
+  const hasParenthesesNegation = rawNum.includes('(') && rawNum.includes(')');
+  const hasLeadingMinus = cleaned.startsWith('-') || /^\s*-/.test(rawNum);
+  const isNegative = hasLeadingMinus || hasParenthesesNegation;
   cleaned = cleaned.replace(/^-/, '');
   
   const hasComma = cleaned.includes(',');
