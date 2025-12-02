@@ -24,8 +24,10 @@ export async function GET(req: NextRequest) {
     const supabase = getSupabaseClient();
     
     let dbQuery = supabase
-        .from('companies')
-        .select('id, name')
+        .schema('graph')
+        .from('entities')
+        .select('id, name, domain, type')
+        .eq('type', 'organization') // Filter for organizations only
         .limit(20);
         
     if (query.length > 0) {

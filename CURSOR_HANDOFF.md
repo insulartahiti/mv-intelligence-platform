@@ -289,13 +289,14 @@ This module extends the Knowledge Graph by attaching structured financial perfor
 
 ### Architectural Philosophy
 1.  **Extension, Not Silo**: Financial data is not a separate "app". It is an attribute of the Company Entity in the Knowledge Graph.
-2.  **Unified Identity**: Ingestion relies on the `companies` table (synced from Affinity) as the source of truth. We do not create new companies during financial ingestion; we attach data to existing ones.
+2.  **Unified Identity**: Ingestion relies on the **`graph.entities`** table as the source of truth. This table is enriched and deduplicated (unlike the raw `companies` table).
+    *   **Migration**: `fact_financials` and related tables now reference `graph.entities(id)`.
 3.  **RAG-Ready**: Narrative content (board deck summaries, risks, strategy) is stored in `company_insights` and will be vector-embedded for semantic search.
-4.  **Agent-Accessible**: Structured metrics (ARR, Growth, Burn) will be exposed to the Chat Agent via a dedicated tool (`get_financial_metrics`), allowing queries like *"Compare the burn multiple of SaaS portcos"* or *"Show me Nelly's NRR trend"*.
+4.  **Agent-Accessible**: Structured metrics (ARR, Growth, Burn) will be exposed to the Chat Agent via a dedicated tool (`get_financial_metrics`), allowing queries like *"Compare the burn multiple of SaaS portcos"*.
 
 ### Data Flow
 ```
-[Source Files] -> [Ingestion Pipeline] -> [Normalized DB Schema] <---(Linked via company_id)---> [Knowledge Graph]
+[Source Files] -> [Ingestion Pipeline] -> [Normalized DB Schema] <---(Linked via graph.entities.id)---> [Knowledge Graph]
                                                   |
                                                   v
                                           [Vector Embeddings]
@@ -304,10 +305,10 @@ This module extends the Knowledge Graph by attaching structured financial perfor
 
 ### Ingestion Pipeline
 1.  **Upload**: User drags files to `/import`. Frontend detects company name via filename heuristics.
-2.  **Entity Resolution**: Backend resolves the target company against the `companies` table.
+2.  **Entity Resolution**: Backend resolves the target company against the **`graph.entities`** table.
     *   **Strategy**: Exact Match → Fuzzy Match (Prefix/Substring) → Manual Resolution.
-    *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates. User confirms → Retry with `forceCompanyId`.
-    *   **Constraint**: Target company MUST exist in Affinity (and thus in `companies` table).
+    *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates (searching `graph.entities`).
+    *   **Constraint**: Target company MUST exist in the Knowledge Graph.
 3.  **Processing**:
     *   **Financials**: Parsed from Excel/PDF tables -> `fact_financials`.
     *   **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
