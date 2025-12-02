@@ -21,7 +21,25 @@ export default function ImportPage() {
   const [searchResults, setSearchResults] = useState<{id: string, name: string}[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // ... (existing useEffect and handlers) ...
+  // Auto-detect company when files are added
+  useEffect(() => {
+    if (files.length > 0 && !selectedCompany) {
+      const detect = async () => {
+        try {
+          const res = await fetch(`/api/detect-company?filename=${encodeURIComponent(files[0].name)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.detected_slug) {
+              setSelectedCompany(data.detected_slug);
+            }
+          }
+        } catch (err) {
+          console.warn('Company detection failed:', err);
+        }
+      };
+      detect();
+    }
+  }, [files, selectedCompany]);
 
   const handleCompanySearch = async (query: string) => {
     setSearchQuery(query);
@@ -50,11 +68,221 @@ export default function ImportPage() {
           setSearchQuery('');
           setSearchResults([]);
           setResolvedCompanyId('');
-          // If candidates exist, we don't pre-select to force user choice
       }
   }, [showResolutionModal]);
 
-  // ... (handleSubmit and handleResolveCompany remain same) ...
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)]);
+    }
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const fileList = e.target.files;
+    if (fileList && fileList.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(fileList)]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (overrideCompanyId?: string) => {
+    // Require at least one file - text input alone is not sufficient for ingestion
+    if (files.length === 0) {
+        alert('Please upload at least one file to ingest.');
+        return;
+    }
+    if (!selectedCompany) {
+        alert('Please select a company first.');
+        return;
+    }
+
+    setIsUploading(true);
+    setUploadStatus('idle');
+    setStatusMessage('Uploading files...');
+
+    try {
+        // 1. Upload files using signed URLs (bypasses Vercel 4.5MB limit)
+        const uploadedPaths: string[] = [];
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            setStatusMessage(`Uploading file ${i + 1} of ${files.length}...`);
+            
+            // Step 1: Get signed upload URL from our API
+            const urlRes = await fetch(
+                `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(selectedCompany)}`
+            );
+            const urlData = await urlRes.json();
+            
+            if (urlData.status !== 'success') {
+                console.error('Failed to get upload URL:', urlData.error);
+                throw new Error(`Failed to get upload URL for ${file.name}: ${urlData.error}`);
+            }
+            
+            // Step 2: Upload directly to Supabase Storage using signed URL
+            const uploadRes = await fetch(urlData.signedUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': file.type || 'application/octet-stream',
+                },
+                body: file
+            });
+            
+            if (!uploadRes.ok) {
+                const errorText = await uploadRes.text();
+                console.error('Direct upload failed:', errorText);
+                throw new Error(`Upload failed for ${file.name}: ${uploadRes.status}`);
+            }
+            
+            uploadedPaths.push(urlData.path);
+        }
+
+        setStatusMessage('Processing files...');
+
+        // 2. Trigger Ingestion API with paths
+        const body: any = {
+            companySlug: selectedCompany,
+            filePaths: uploadedPaths,
+            notes: textInput
+        };
+        if (overrideCompanyId) {
+            body.forceCompanyId = overrideCompanyId;
+        }
+
+        const res = await fetch('/api/ingest', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        
+        let data;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            data = await res.json();
+        } else {
+            // Handle non-JSON responses (e.g. Vercel 500/404/Auth pages)
+            const text = await res.text();
+            console.error('Non-JSON response from API:', text.slice(0, 500));
+            throw new Error(`Server returned ${res.status}: ${res.statusText}. See console for details.`);
+        }
+        
+        // Check response body status, not just HTTP status
+        // API returns: 'success' (all files), 'partial' (some failed), 'error' (all failed)
+        if (data.status === 'success') {
+            setUploadStatus('success');
+            setStatusMessage(`Ingestion Complete: ${data.summary?.success || 0} files processed`);
+            setShowResolutionModal(false);
+            setTimeout(() => {
+                setUploadStatus('idle');
+                setFiles([]);
+                setTextInput('');
+                setSelectedCompany('');
+                setStatusMessage('');
+            }, 3000);
+        } else if (data.status === 'partial' || data.status === 'needs_review') {
+            // Partial success - check if any were company_not_found
+             const companyNotFound = data.results?.find((r: any) => r.status === 'company_not_found');
+             if (companyNotFound) {
+                 // Trigger resolution flow
+                 setTargetCompanyName(selectedCompany); // Or parse from error message?
+                 setResolutionCandidates(companyNotFound.candidates || []);
+                 setShowResolutionModal(true);
+                 setIsUploading(false);
+                 return; 
+             }
+
+            setUploadStatus('error');
+            // Include both error and needs_review files in the message
+            const problemFiles = data.results?.filter((r: any) => r.status === 'error' || r.status === 'needs_review') || [];
+            const failedNames = problemFiles.map((f: any) => {
+                const filename = f.file?.split('/').pop() || f.file;
+                const statusLabel = f.status === 'needs_review' ? ' (needs review)' : ' (failed)';
+                return filename + statusLabel;
+            }).join(', ');
+            const errorCount = data.summary?.error || 0;
+            const reviewCount = data.summary?.needs_review || 0;
+            const totalProblems = errorCount + reviewCount;
+            setStatusMessage(`${totalProblems} of ${data.summary?.total || 0} files had issues. Check: ${failedNames}`);
+            
+            // Alert details for partial failures
+            console.warn('Partial success details:', data);
+        } else {
+            // Complete failure (overallStatus === 'error')
+            
+             // Check specifically for company_not_found at top level or in results
+             const companyNotFound = data.results?.find((r: any) => r.status === 'company_not_found');
+             if (companyNotFound) {
+                 setTargetCompanyName(selectedCompany);
+                 setResolutionCandidates(companyNotFound.candidates || []);
+                 setShowResolutionModal(true);
+                 setIsUploading(false);
+                 return;
+             }
+
+            setUploadStatus('error');
+            
+            // Try to extract specific errors from results if available
+            let errorMessage = '';
+            if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+                const errors = data.results
+                    .filter((r: any) => r.status === 'error' && r.error)
+                    .map((r: any) => `${r.file || 'Unknown File'}: ${r.error}`)
+                    .join('\n');
+                if (errors) {
+                    errorMessage = errors;
+                }
+            }
+            
+            // Fallback to top-level error/details if no result-specific errors found
+            if (!errorMessage) {
+                const mainError = data.error || 'Processing failed';
+                const details = data.details ? `: ${data.details}` : '';
+                errorMessage = `${mainError}${details}`;
+                
+                // If data seems empty/malformed, dump it for debugging
+                if (!data.error && !data.details && (!data.results || data.results.length === 0)) {
+                    errorMessage += `\nResponse: ${JSON.stringify(data, null, 2)}`;
+                }
+            }
+            
+            setStatusMessage(errorMessage);
+            alert(`Ingestion Failed:\n${errorMessage}`); // Explicitly alert user with detailed errors
+        }
+    } catch (err: any) {
+        console.error('Submission error:', err);
+        setUploadStatus('error');
+        setStatusMessage(`Upload failed: ${err.message || 'Unknown error'}`);
+        alert(`Error: ${err.message || 'Unknown error occurred'}`);
+    } finally {
+        if (!showResolutionModal) {
+             setIsUploading(false);
+        }
+    }
+  };
+
+  const handleResolveCompany = () => {
+      if (!resolvedCompanyId) return;
+      setShowResolutionModal(false);
+      handleSubmit(resolvedCompanyId);
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
