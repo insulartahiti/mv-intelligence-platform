@@ -39,6 +39,30 @@ export async function loadFile(filePath: string): Promise<FileMetadata> {
   };
 }
 
+export async function deleteFile(filePath: string): Promise<void> {
+    if (filePath.startsWith('financial-docs/')) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        const bucket = 'financial-docs';
+        const relativePath = filePath.replace(`${bucket}/`, '');
+
+        const { error } = await supabase.storage
+            .from(bucket)
+            .remove([relativePath]);
+
+        if (error) {
+            console.error(`Failed to delete file from storage: ${filePath}`, error);
+            // Don't throw, just log. Cleanup failure shouldn't fail the whole job? 
+            // Or maybe it should? I'll prefer logging for now.
+        }
+    } else {
+        // Local file - usually we don't auto-delete local files in dev mode, 
+        // but if this was a temp file we might. For now, do nothing for local.
+    }
+}
+
 async function loadFromSupabase(storagePath: string): Promise<FileMetadata> {
     // Initialize Supabase Admin client
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

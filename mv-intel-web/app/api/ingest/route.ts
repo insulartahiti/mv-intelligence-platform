@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide, listConfiguredPortcos } from '@/lib/financials/portcos/loader';
-import { loadFile } from '@/lib/financials/ingestion/load_file';
+import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
 import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
 import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
@@ -21,43 +21,59 @@ export async function POST(req: NextRequest) {
     for (const filePath of filePaths) {
         console.log(`[Ingest] Processing ${filePath} for ${companySlug}...`);
         
-        // 1. Load File (from Supabase Storage)
-        const fileMeta = await loadFile(filePath);
-        
-        // 2. Load Guide
-        const guide = loadPortcoGuide(companySlug);
-        
-        // 3. Parse & Map
-        let extractedData;
-        let fileType: 'pdf' | 'xlsx' = 'pdf';
-        
-        if (fileMeta.filename.endsWith('.pdf')) {
-            extractedData = await parsePDF(fileMeta);
-            fileType = 'pdf';
-        } else if (fileMeta.filename.endsWith('.xlsx')) {
-            extractedData = await parseExcel(fileMeta);
-            fileType = 'xlsx';
+        try {
+            // 1. Load File (from Supabase Storage)
+            const fileMeta = await loadFile(filePath);
+            
+            // 2. Load Guide
+            const guide = loadPortcoGuide(companySlug);
+            
+            // 3. Parse & Map
+            let extractedData;
+            let fileType: 'pdf' | 'xlsx' = 'pdf';
+            
+            if (fileMeta.filename.endsWith('.pdf')) {
+                extractedData = await parsePDF(fileMeta);
+                fileType = 'pdf';
+            } else if (fileMeta.filename.endsWith('.xlsx')) {
+                extractedData = await parseExcel(fileMeta);
+                fileType = 'xlsx';
+            }
+
+            // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
+            const periodDate = '2025-09-01'; 
+            const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
+            
+            // 5. Compute Metrics
+            // Convert lineItems array to Record<string, number>
+            const facts: Record<string, number> = {};
+            lineItems.forEach(item => {
+                facts[item.line_item_id] = item.amount;
+            });
+
+            const metrics = computeMetricsForPeriod(companySlug, periodDate, facts);
+
+            results.push({
+                file: fileMeta.filename,
+                line_items_found: lineItems.length,
+                metrics_computed: metrics.length,
+                metrics_sample: metrics.slice(0, 3),
+                status: 'success'
+            });
+
+        } catch (fileError: any) {
+            console.error(`Error processing file ${filePath}:`, fileError);
+            results.push({
+                file: filePath,
+                status: 'error',
+                error: fileError.message
+            });
+        } finally {
+            // 6. Cleanup: Delete file from storage
+            // User requirement: "once files are extracted we should not store them"
+            console.log(`[Ingest] Deleting ${filePath} from storage...`);
+            await deleteFile(filePath);
         }
-
-        // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
-        const periodDate = '2025-09-01'; 
-        const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
-        
-        // 5. Compute Metrics
-        // Convert lineItems array to Record<string, number>
-        const facts: Record<string, number> = {};
-        lineItems.forEach(item => {
-            facts[item.line_item_id] = item.amount;
-        });
-
-        const metrics = computeMetricsForPeriod(companySlug, periodDate, facts);
-
-        results.push({
-            file: fileMeta.filename,
-            line_items_found: lineItems.length,
-            metrics_computed: metrics.length,
-            metrics_sample: metrics.slice(0, 3)
-        });
     }
 
     return NextResponse.json({
