@@ -62,4 +62,20 @@ create index if not exists idx_fact_financials_company_date on fact_financials(c
 create index if not exists idx_fact_metrics_company_period on fact_metrics(company_id, period);
 create index if not exists idx_dim_source_files_company on dim_source_files(company_id);
 
+-- Storage Bucket for Financial Docs
+insert into storage.buckets (id, name, public) 
+values ('financial-docs', 'financial-docs', false)
+on conflict (id) do nothing;
 
+-- RLS Policy for Storage
+-- Allow authenticated users to upload
+create policy "Authenticated users can upload financial docs"
+on storage.objects for insert
+to authenticated
+with check ( bucket_id = 'financial-docs' );
+
+-- Allow authenticated users to select
+create policy "Authenticated users can read financial docs"
+on storage.objects for select
+to authenticated
+using ( bucket_id = 'financial-docs' );

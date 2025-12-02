@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Upload, FileText, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function ImportPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -10,12 +11,14 @@ export default function ImportPage() {
   const [textInput, setTextInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState('');
+
+  const supabase = createClientComponentClient();
 
   // Auto-detect company when files are added
   useEffect(() => {
     if (files.length > 0 && !selectedCompany) {
       const detect = async () => {
-        // Just check the first file for now
         const res = await fetch(`/api/ingest?filename=${encodeURIComponent(files[0].name)}`);
         const data = await res.json();
         if (data.detected_slug) {
@@ -66,29 +69,62 @@ export default function ImportPage() {
 
     setIsUploading(true);
     setUploadStatus('idle');
+    setStatusMessage('Uploading files...');
 
     try {
-        const formData = new FormData();
-        files.forEach(file => formData.append('files', file));
-        formData.append('company', selectedCompany);
-        formData.append('notes', textInput);
+        const uploadedPaths: string[] = [];
 
-        const res = await fetch('/api/ingest', { method: 'POST', body: formData });
+        // 1. Upload files to Supabase Storage
+        for (const file of files) {
+            const path = `financial-docs/${selectedCompany}/${Date.now()}_${file.name}`;
+            // Remove 'financial-docs/' prefix for the upload call itself, as the bucket is defined in the client method
+            // Actually supabase.storage.from('bucket').upload('path/to/file')
+            const relativePath = `${selectedCompany}/${Date.now()}_${file.name}`;
+            
+            const { data, error } = await supabase.storage
+                .from('financial-docs')
+                .upload(relativePath, file);
+
+            if (error) {
+                console.error('Upload failed:', error);
+                throw new Error(`Upload failed for ${file.name}`);
+            }
+            
+            // Store the full "logical" path we use in the backend
+            uploadedPaths.push(`financial-docs/${relativePath}`);
+        }
+
+        setStatusMessage('Processing files...');
+
+        // 2. Trigger Ingestion API with paths
+        const res = await fetch('/api/ingest', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                companySlug: selectedCompany,
+                filePaths: uploadedPaths,
+                notes: textInput
+            })
+        });
         
         if (res.ok) {
             setUploadStatus('success');
+            setStatusMessage('Ingestion Complete');
             setTimeout(() => {
                 setUploadStatus('idle');
                 setFiles([]);
                 setTextInput('');
                 setSelectedCompany('');
+                setStatusMessage('');
             }, 3000);
         } else {
             setUploadStatus('error');
+            setStatusMessage('Processing failed');
         }
     } catch (err) {
         console.error(err);
         setUploadStatus('error');
+        setStatusMessage('Upload failed');
     } finally {
         setIsUploading(false);
     }
@@ -231,7 +267,7 @@ export default function ImportPage() {
             {isUploading ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
-                Processing...
+                {statusMessage || 'Processing...'}
               </>
             ) : uploadStatus === 'success' ? (
               <>

@@ -1,35 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide, listConfiguredPortcos } from '@/lib/financials/portcos/loader';
+import { loadFile } from '@/lib/financials/ingestion/load_file';
+import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
+import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
+import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
+import { computeMetricsForPeriod } from '@/lib/financials/metrics/compute_metrics';
 
+// Process a file from Storage
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const companySlug = formData.get('company') as string;
-    const files = formData.getAll('files') as File[];
+    const json = await req.json();
+    const { companySlug, filePaths, notes } = json;
 
-    if (!companySlug || files.length === 0) {
-      return NextResponse.json({ error: 'Missing company or files' }, { status: 400 });
+    if (!companySlug || !filePaths || !Array.isArray(filePaths)) {
+      return NextResponse.json({ error: 'Missing company or filePaths' }, { status: 400 });
     }
 
-    // In a real implementation, we would:
-    // 1. Save file to blob storage
-    // 2. Load the guide for the company
-    // 3. Trigger the ingestion pipeline (load -> parse -> map -> compute)
-    
-    // Mock Response for "Staging Test"
-    const results = {
+    const results = [];
+
+    for (const filePath of filePaths) {
+        console.log(`[Ingest] Processing ${filePath} for ${companySlug}...`);
+        
+        // 1. Load File (from Supabase Storage)
+        const fileMeta = await loadFile(filePath);
+        
+        // 2. Load Guide
+        const guide = loadPortcoGuide(companySlug);
+        
+        // 3. Parse & Map
+        let extractedData;
+        let fileType: 'pdf' | 'xlsx' = 'pdf';
+        
+        if (fileMeta.filename.endsWith('.pdf')) {
+            extractedData = await parsePDF(fileMeta);
+            fileType = 'pdf';
+        } else if (fileMeta.filename.endsWith('.xlsx')) {
+            extractedData = await parseExcel(fileMeta);
+            fileType = 'xlsx';
+        }
+
+        // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
+        const periodDate = '2025-09-01'; 
+        const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
+        
+        // 5. Compute Metrics
+        // Convert lineItems array to Record<string, number>
+        const facts: Record<string, number> = {};
+        lineItems.forEach(item => {
+            facts[item.line_item_id] = item.amount;
+        });
+
+        const metrics = computeMetricsForPeriod(companySlug, periodDate, facts);
+
+        results.push({
+            file: fileMeta.filename,
+            line_items_found: lineItems.length,
+            metrics_computed: metrics.length,
+            metrics_sample: metrics.slice(0, 3)
+        });
+    }
+
+    return NextResponse.json({
       status: 'success',
       company: companySlug,
-      processed_files: files.map(f => ({
-        name: f.name,
-        size: f.size,
-        status: 'ingested'
-      })),
-      metrics_count: 12, // Fake count
-      audit_snippets: 3
-    };
+      results
+    });
 
-    return NextResponse.json(results);
   } catch (error) {
     console.error('Ingestion error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
@@ -48,19 +84,14 @@ export async function GET(req: NextRequest) {
   const portcos = listConfiguredPortcos();
   let detected = null;
 
-  // Simple heuristic: does the filename contain the portco slug/name?
-  // In production, load the guides and check 'source_docs' patterns.
   for (const slug of portcos) {
     if (filename.toLowerCase().includes(slug.toLowerCase())) {
         detected = slug;
         break;
     }
-    // Check "acme" in "Acme_Board_Deck..."
     if (slug === 'acme-corp' && filename.toLowerCase().includes('acme')) detected = 'acme-corp';
     if (slug === 'nelly' && filename.toLowerCase().includes('nelly')) detected = 'nelly';
   }
 
   return NextResponse.json({ detected_slug: detected });
 }
-
-
