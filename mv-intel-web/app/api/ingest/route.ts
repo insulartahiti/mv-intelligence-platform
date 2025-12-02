@@ -8,47 +8,19 @@
  * @version 2.1.0 - Added needs_review status for zero-extraction files
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
+import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
+import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
+import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
+import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
+import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
+import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
+import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic rendering - prevents edge caching issues
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-// Lazy imports to prevent module load failures
-async function getModules() {
-  const [
-    { loadPortcoGuide },
-    { loadFile, deleteFile },
-    { parsePDF },
-    { parseExcel },
-    { mapDataToSchema },
-    { computeMetricsForPeriod, saveMetricsToDb },
-    { loadCommonMetrics, getMetricById },
-    { extractPageSnippet }
-  ] = await Promise.all([
-    import('@/lib/financials/portcos/loader'),
-    import('@/lib/financials/ingestion/load_file'),
-    import('@/lib/financials/ingestion/parse_pdf'),
-    import('@/lib/financials/ingestion/parse_excel'),
-    import('@/lib/financials/ingestion/map_to_schema'),
-    import('@/lib/financials/metrics/compute_metrics'),
-    import('@/lib/financials/metrics/loader'),
-    import('@/lib/financials/audit/pdf_snippet')
-  ]);
-  return {
-    loadPortcoGuide,
-    loadFile,
-    deleteFile,
-    parsePDF,
-    parseExcel,
-    mapDataToSchema,
-    computeMetricsForPeriod,
-    saveMetricsToDb,
-    loadCommonMetrics,
-    getMetricById,
-    extractPageSnippet
-  };
-}
 
 // Helper to create Supabase client lazily (inside handler, not at module load time)
 // This prevents Vercel build failures when env vars aren't available during build
@@ -122,32 +94,6 @@ export async function POST(req: NextRequest) {
     // Initialize Supabase client inside handler (lazy initialization)
     const supabase = getSupabaseClient();
     
-    // Lazy load all modules to prevent import failures breaking the route
-    let modules;
-    try {
-      modules = await getModules();
-    } catch (moduleError) {
-      console.error('Failed to load modules:', moduleError);
-      return NextResponse.json({ 
-        error: 'Module load failed', 
-        details: String(moduleError),
-        status: 'error'
-      }, { status: 500 });
-    }
-    
-    const {
-      loadPortcoGuide,
-      loadFile,
-      deleteFile,
-      parsePDF,
-      parseExcel,
-      mapDataToSchema,
-      computeMetricsForPeriod,
-      saveMetricsToDb,
-      loadCommonMetrics,
-      getMetricById,
-      extractPageSnippet
-    } = modules;
     const json = await req.json();
     const { companySlug, filePaths, notes } = json;
 
