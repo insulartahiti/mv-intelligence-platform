@@ -339,10 +339,62 @@ Return JSON: { "valid": true/false, "issues": ["issue1", "issue2"] }`;
     }
 
     return JSON.parse(content);
-
   } catch (error) {
     console.error('[LLM Extractor] Validation failed:', error);
     return { valid: true, issues: [] };  // Fail open
+  }
+}
+
+/**
+ * Extract financial data from Excel/JSON content using LLM (Fallback)
+ * 
+ * Used when deterministic mapping (cell B5) fails.
+ * We pass a simplified representation of the spreadsheet and the mapping goals.
+ */
+export async function extractFinancialsFromExcelLLM(
+  sheetData: any[][],
+  mappingGoals: Record<string, string>, // { "revenue": "Find 'Subscription Revenue' or similar" }
+  sheetName: string
+): Promise<Record<string, { value: number; cell: string; confidence: number }>> {
+  const openai = getOpenAI();
+
+  // Convert sheet data to a dense string representation (ignoring empty cells to save tokens)
+  // Format: "Row 1: [A1: Value, B1: Value...]"
+  let sheetContext = `Sheet: ${sheetName}\n`;
+  sheetData.slice(0, 50).forEach((row, rowIndex) => { // Limit to first 50 rows
+    const rowStr = row
+      .map((val, colIndex) => val ? `${String.fromCharCode(65 + colIndex)}${rowIndex + 1}:${val}` : '')
+      .filter(s => s)
+      .join(', ');
+    if (rowStr) sheetContext += `Row ${rowIndex + 1}: ${rowStr}\n`;
+  });
+
+  const prompt = `Extract the following financial metrics from this spreadsheet data:
+${Object.entries(mappingGoals).map(([key, desc]) => `- ${key}: ${desc}`).join('\n')}
+
+Spreadsheet Data:
+${sheetContext.slice(0, 10000)}
+
+For each metric, identify the most likely cell and value.
+Return JSON: { "metric_id": { "value": number, "cell": "B5", "confidence": 0-1 } }`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        { role: 'system', content: 'You are an expert financial analyst reading a spreadsheet.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.1,
+      response_format: { type: 'json_object' }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return {};
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('[LLM Extractor] Excel extraction failed:', error);
+    return {};
   }
 }
 

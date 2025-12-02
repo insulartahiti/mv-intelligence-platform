@@ -582,6 +582,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed 405 Method Not Allowed on `/api/ingest` and `/api/upload` (moved Supabase client init inside handlers)
     *   Fixed zero-extraction files being deleted (now retained with `needs_review` status for debugging)
     *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues
+    *   Implemented **LLM Cross-Check** for Excel ingestion: Now runs GPT-4 extraction alongside deterministic mapping to verify values and catch missing items.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)

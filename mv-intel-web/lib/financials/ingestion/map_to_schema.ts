@@ -1,7 +1,8 @@
 import { PortcoGuide, LineItemMapping } from '../portcos/types';
 import { ExtractedSheet, getCellValue } from './parse_excel';
 import { PDFContent, findPagesWithKeywords } from './parse_pdf';
-// import { extractTableFromImage } from './ocr_service'; // Future integration
+// Import dynamically to avoid potential circular dep issues during init if any
+// import { extractFinancialsFromExcelLLM } from '../extraction/llm_extractor'; 
 
 export interface NormalizedLineItem {
   line_item_id: string;
@@ -53,6 +54,79 @@ export async function mapDataToSchema(
           }
         }
       }
+    }
+
+    // B. LLM Cross-Check / Augmentation
+    // Always run LLM if we have rules, to cross-check or find missing items
+    try {
+        // Import lazily
+        const { extractFinancialsFromExcelLLM } = await import('../extraction/llm_extractor');
+        
+        // Group mappings by sheet to handle multi-sheet guides efficiently
+        const sheetMappings: Record<string, Record<string, string>> = {};
+        let defaultSheetName = sheets[0]?.sheetName;
+        
+        for (const [lineItemId, mapping] of Object.entries(rules)) {
+            if (mapping.source === 'financials') {
+                const sheetName = mapping.sheet || defaultSheetName;
+                if (sheetName) {
+                    if (!sheetMappings[sheetName]) sheetMappings[sheetName] = {};
+                    sheetMappings[sheetName][lineItemId] = `Find value for '${mapping.label_match || lineItemId}'`;
+                }
+            }
+        }
+
+        // Process each relevant sheet with LLM
+        for (const [sheetName, mappingGoals] of Object.entries(sheetMappings)) {
+            const sheet = sheets.find(s => s.sheetName === sheetName);
+            if (!sheet) continue;
+
+            console.log(`[Ingestion] Running LLM extraction on sheet '${sheetName}' for cross-check...`);
+            const llmResults = await extractFinancialsFromExcelLLM(sheet.data, mappingGoals, sheetName);
+
+            for (const [metricId, data] of Object.entries(llmResults)) {
+                if (!data || typeof data.value !== 'number') continue;
+
+                const existingItemIndex = results.findIndex(r => r.line_item_id === metricId);
+                
+                if (existingItemIndex !== -1) {
+                    // Item found deterministically - Cross Check
+                    const existing = results[existingItemIndex];
+                    // Simple tolerance check (e.g. 1%)
+                    const diff = Math.abs(existing.amount - data.value);
+                    const isMismatch = diff > (Math.abs(existing.amount) * 0.01) && diff > 1;
+
+                    if (isMismatch) {
+                        console.warn(`[Ingestion] Mismatch for ${metricId}: Deterministic=${existing.amount}, LLM=${data.value}`);
+                        // Update context to reflect mismatch
+                        existing.source_location.context = 
+                            (existing.source_location.context || '') + 
+                            ` [LLM Mismatch: Found ${data.value} in ${data.cell}]`;
+                    } else {
+                        // Match confirmed
+                        existing.source_location.context = 
+                            (existing.source_location.context || '') + 
+                            ` [LLM Verified]`;
+                    }
+                } else {
+                    // Item NOT found deterministically - Add as new (Augmentation)
+                    console.log(`[Ingestion] LLM found missing item: ${metricId} = ${data.value}`);
+                    results.push({
+                        line_item_id: metricId,
+                        amount: data.value,
+                        date: periodDate,
+                        source_location: { 
+                            file_type: 'xlsx', 
+                            sheet: sheetName, 
+                            cell: data.cell,
+                            context: `LLM Extracted (Confidence: ${data.confidence})`
+                        }
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[Ingestion] LLM extraction error:', err);
     }
   }
 
