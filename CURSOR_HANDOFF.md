@@ -36,6 +36,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `fact_metrics` | Computed KPIs (ARR growth, margins, etc.) |
 | `dim_line_item` | Standard chart of accounts |
 | `dim_source_files` | Ingested file metadata |
+| `company_insights` | Qualitative insights from documents |
 
 ### Storage Buckets
 
@@ -362,6 +363,25 @@ Defined in `lib/financials/metrics/common_metrics.json`. Includes:
 - Rule of 40
 
 Each metric specifies: `id`, `name`, `formula`, `inputs`, `unit`, `benchmark_bands` (poor/good/great).
+
+### Qualitative Insights (NEW)
+Defined in `lib/financials/qualitative/insights_schema.ts`. Captures narrative data:
+- **Categories**: key_highlight, risk_factor, strategic_initiative, market_observation, management_commentary, customer_update, product_update, team_update, fundraising, regulatory
+- **Fields**: title, content, sentiment, confidence, source_location
+- **Storage**: `company_insights` table with full audit trail
+
+### LLM Extraction Service (NEW)
+Located in `lib/financials/extraction/llm_extractor.ts`. Uses OpenAI GPT-4:
+- **Period Extraction**: Determines reporting period from filename/content
+- **Insight Extraction**: Extracts qualitative insights from document text
+- **Table Extraction**: Uses GPT-4 Vision for scanned/image PDFs
+- **Data Validation**: Cross-checks extracted values for consistency
+
+**Why OpenAI over Google Vision?**
+- Consistent with existing platform LLM usage
+- Single API/billing relationship
+- GPT-4V combines OCR + semantic understanding
+- Better financial domain comprehension
 
 ### Upload Flow
 1. User drops files on `/import` page

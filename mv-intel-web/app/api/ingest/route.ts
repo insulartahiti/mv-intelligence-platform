@@ -17,6 +17,63 @@ function getSupabaseClient() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+/**
+ * Extract period date from filename using pattern matching
+ * Supports: Q1-Q4 2024, Jan-Dec 2024, 2024-01, FY2024, etc.
+ */
+function extractPeriodDateFromFilename(filename: string): string | null {
+  const patterns = [
+    // Q3 2024, Q3_2024, Q3-2024
+    { regex: /Q([1-4])[\s_-]*(\d{4})/i, handler: (m: RegExpMatchArray) => {
+      const quarter = parseInt(m[1]);
+      const year = parseInt(m[2]);
+      const month = (quarter - 1) * 3 + 1;  // Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct
+      return `${year}-${String(month).padStart(2, '0')}-01`;
+    }},
+    // September 2024, Sep 2024, Sept 2024
+    { regex: /(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s_-]*(\d{4})/i, handler: (m: RegExpMatchArray) => {
+      const monthNames: Record<string, number> = {
+        jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+        apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+        aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+        oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
+      };
+      const monthKey = m[1].toLowerCase().slice(0, 3);
+      const month = monthNames[monthKey] || monthNames[m[1].toLowerCase()];
+      const year = parseInt(m[2]);
+      return month ? `${year}-${String(month).padStart(2, '0')}-01` : null;
+    }},
+    // 2024-09, 2024_09, 202409
+    { regex: /(\d{4})[\s_-]?(\d{2})(?!\d)/i, handler: (m: RegExpMatchArray) => {
+      const year = parseInt(m[1]);
+      const month = parseInt(m[2]);
+      if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+        return `${year}-${String(month).padStart(2, '0')}-01`;
+      }
+      return null;
+    }},
+    // FY2024, FY24
+    { regex: /FY[\s_-]?(\d{2,4})/i, handler: (m: RegExpMatchArray) => {
+      let year = parseInt(m[1]);
+      if (year < 100) year += 2000;  // FY24 -> 2024
+      return `${year}-01-01`;  // Fiscal year starts Jan 1 (simplified)
+    }}
+  ];
+
+  for (const { regex, handler } of patterns) {
+    const match = filename.match(regex);
+    if (match) {
+      const result = handler(match);
+      if (result) {
+        console.log(`[Ingest] Extracted period ${result} from filename: ${filename}`);
+        return result;
+      }
+    }
+  }
+
+  return null;
+}
+
 // Process files from Storage - POST handler for financial data ingestion
 // Accepts: { companySlug: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
@@ -108,8 +165,36 @@ export async function POST(req: NextRequest) {
                 throw new Error(`Unsupported file type: ${fileMeta.filename}. Supported: .pdf, .xlsx, .xls`);
             }
 
-            // 4. Map to Schema (Mock date for now, ideally extract from filename/content)
-            const periodDate = '2025-09-01'; 
+            // 4. Extract period date using LLM (or fallback to heuristic)
+            let periodDate = await extractPeriodDateFromFilename(fileMeta.filename);
+            let periodType = 'month';
+            
+            // If filename parsing failed, try LLM extraction from content
+            if (!periodDate) {
+                const contentPreview = fileType === 'pdf' 
+                    ? (extractedData as any).fullText?.slice(0, 1000) || ''
+                    : JSON.stringify((extractedData as any)[0]?.data?.slice(0, 5) || []);
+                
+                try {
+                    const { extractPeriodFromDocument } = await import('@/lib/financials/extraction/llm_extractor');
+                    const extracted = await extractPeriodFromDocument(fileMeta.filename, contentPreview);
+                    if (extracted.period_date) {
+                        periodDate = extracted.period_date;
+                        periodType = extracted.period_type !== 'unknown' ? extracted.period_type : 'month';
+                        console.log(`[Ingest] LLM extracted period: ${periodDate} (${periodType})`);
+                    }
+                } catch (llmErr) {
+                    console.warn('[Ingest] LLM period extraction failed, using fallback:', llmErr);
+                }
+            }
+            
+            // Final fallback: use current month
+            if (!periodDate) {
+                const now = new Date();
+                periodDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+                console.warn(`[Ingest] Could not determine period, using current month: ${periodDate}`);
+            }
+            
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
             
             // 4b. Generate Audit Snippets & Prepare Fact Rows
