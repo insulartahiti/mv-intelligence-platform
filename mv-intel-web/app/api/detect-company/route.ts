@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listConfiguredPortcos } from '@/lib/financials/portcos/loader';
 
+// Force dynamic rendering - prevents edge caching issues
+export const dynamic = 'force-dynamic';
+
 /**
  * GET: Detect company slug from filename
  * Query params: ?filename=Nelly_Board_Q3.pdf

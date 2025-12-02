@@ -1,3 +1,12 @@
+/**
+ * Financial Data Ingestion API
+ * POST /api/ingest - Process uploaded financial files
+ * 
+ * Accepts: { companySlug: string, filePaths: string[], notes?: string }
+ * Returns: { status, company, summary, results }
+ * 
+ * @version 2.1.0 - Added needs_review status for zero-extraction files
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
 import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
@@ -8,6 +17,10 @@ import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metri
 import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
 import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
+
+// Force dynamic rendering - prevents edge caching issues
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // Helper to create Supabase client lazily (inside handler, not at module load time)
 // This prevents Vercel build failures when env vars aren't available during build
@@ -347,18 +360,30 @@ export async function POST(req: NextRequest) {
                 await saveMetricsToDb(metrics, companyId, supabase);
             }
 
+            // Determine if this was a meaningful extraction
+            // Zero line items may indicate a guide mapping issue - treat as "needs_review"
+            const extractionStatus = lineItems.length > 0 ? 'success' : 'needs_review';
+            
             results.push({
                 file: fileMeta.filename,
                 line_items_found: lineItems.length,
                 metrics_computed: metrics.length,
                 metrics_sample: metrics.slice(0, 3),
-                status: 'success'
+                status: extractionStatus,
+                ...(extractionStatus === 'needs_review' && {
+                    warning: 'File parsed successfully but extracted 0 line items. Check guide mapping rules.'
+                })
             });
 
-            // 6. Cleanup: Delete file from storage ONLY on success
+            // 6. Cleanup: Delete file from storage ONLY on full success
             // User requirement: "failed files should be retained for investigation"
-            console.log(`[Ingest] Deleting ${filePath} from storage...`);
-            await deleteFile(filePath);
+            // Also retain files with zero extractions for debugging guide/mapping issues
+            if (lineItems.length > 0) {
+                console.log(`[Ingest] Deleting ${filePath} from storage (successful extraction)...`);
+                await deleteFile(filePath);
+            } else {
+                console.log(`[Ingest] Retaining ${filePath} for investigation (0 line items extracted)`);
+            }
 
         } catch (fileError: any) {
             console.error(`Error processing file ${filePath}:`, fileError);
@@ -373,11 +398,28 @@ export async function POST(req: NextRequest) {
 
     // Determine overall status based on individual file results
     const successCount = results.filter(r => r.status === 'success').length;
+    const needsReviewCount = results.filter(r => r.status === 'needs_review').length;
     const errorCount = results.filter(r => r.status === 'error').length;
-    const overallStatus = errorCount === 0 ? 'success' : (successCount === 0 ? 'error' : 'partial');
+    
+    // Overall status logic:
+    // - 'success': All files extracted data successfully
+    // - 'partial': Some files succeeded, some failed or need review
+    // - 'needs_review': All files parsed but none extracted data
+    // - 'error': All files failed to parse
+    let overallStatus: string;
+    if (errorCount === results.length) {
+        overallStatus = 'error';
+    } else if (successCount === results.length) {
+        overallStatus = 'success';
+    } else if (needsReviewCount === results.length) {
+        overallStatus = 'needs_review';
+    } else {
+        overallStatus = 'partial';
+    }
     
     // Return appropriate HTTP status code
-    const httpStatus = overallStatus === 'error' ? 500 : (overallStatus === 'partial' ? 207 : 200);
+    // 207 Multi-Status for any mixed results (partial or needs_review)
+    const httpStatus = overallStatus === 'error' ? 500 : (overallStatus === 'success' ? 200 : 207);
     
     return NextResponse.json({
       status: overallStatus,
@@ -385,6 +427,7 @@ export async function POST(req: NextRequest) {
       summary: {
         total: results.length,
         success: successCount,
+        needs_review: needsReviewCount,
         error: errorCount
       },
       results

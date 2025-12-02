@@ -395,10 +395,12 @@ Located in `lib/financials/extraction/llm_extractor.ts`. Uses OpenAI GPT-4:
 9. Source files deleted from `financial-docs` (success only)
 
 ### Error Handling
-- **Partial Success (207)**: Some files ingested, others failed
-- **Full Failure (500)**: All files failed
+- **Success (200)**: All files ingested with data extracted
+- **Partial Success (207)**: Mixed results - some success, some failed or needs review
+- **Needs Review (207)**: Files parsed but zero line items extracted (guide mapping issue)
+- **Full Failure (500)**: All files failed to parse
 - **Data Integrity**: Duplicate line items are summed (with audit log)
-- **File Retention**: Failed files kept in storage for debugging
+- **File Retention**: Failed files AND zero-extraction files kept in storage for debugging
 
 ---
 
@@ -578,6 +580,8 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed case-sensitive file extension matching (now handles `.PDF`, `.XLSX`)
     *   Fixed snippet path collisions when processing multiple PDFs in same batch
     *   Fixed 405 Method Not Allowed on `/api/ingest` and `/api/upload` (moved Supabase client init inside handlers)
+    *   Fixed zero-extraction files being deleted (now retained with `needs_review` status for debugging)
+    *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)

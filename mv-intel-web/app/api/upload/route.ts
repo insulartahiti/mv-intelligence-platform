@@ -1,5 +1,16 @@
+/**
+ * File Upload API
+ * GET /api/upload - Generate signed upload URL (preferred)
+ * POST /api/upload - Direct upload fallback (for small files)
+ * 
+ * @version 1.1.0 - Added force-dynamic to prevent edge caching
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+
+// Force dynamic rendering - prevents edge caching issues
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // Helper to create Supabase client lazily (inside handler, not at module load time)
 // This prevents Vercel build failures when env vars aren't available during build
