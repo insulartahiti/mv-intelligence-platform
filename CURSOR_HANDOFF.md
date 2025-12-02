@@ -323,6 +323,8 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
         *   **Data Integrity**: Fixed silent data loss when multiple line items share the same `line_item_id`. Now aggregates (sums) duplicate values and logs aggregations for audit visibility.
         *   **Error Handling**: API now returns proper HTTP status codes (500 for all failures, 207 for partial success) instead of always 200. Frontend now parses response body `status` field to correctly distinguish 'success', 'partial', and 'error' states.
         *   **Auth State Detection**: Import page now checks authentication status and shows warning banner when user is not logged in (required for storage RLS).
+        *   **Company Detection**: Fixed slug matching to use word boundaries and prefer longest matches, preventing `nelly` from matching `nellyland`.
+        *   **Empty Submission**: Backend now rejects empty file arrays with clear error; frontend disables submit button when no files selected.
         *   **Metrics Upsert**: Fixed `onConflict` parameter to use column names (`company_id,period,metric_id`) instead of constraint name.
         *   **File Retention**: Failed files are now retained in storage for debugging; only successful ingestions trigger cleanup.
         *   **Build Pipeline**: Fixed module resolution errors by installing dependencies (`pdf-parse`, `xlsx`, `pdf-lib`) in `mv-intel-web` and tracking `pdf_snippet.ts`.

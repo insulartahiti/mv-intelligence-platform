@@ -82,7 +82,11 @@ export default function ImportPage() {
   };
 
   const handleSubmit = async () => {
-    if (files.length === 0 && !textInput.trim()) return;
+    // Require at least one file - text input alone is not sufficient for ingestion
+    if (files.length === 0) {
+        alert('Please upload at least one file to ingest.');
+        return;
+    }
     if (!selectedCompany) {
         alert('Please select a company first.');
         return;
@@ -295,7 +299,7 @@ export default function ImportPage() {
         <div className="flex justify-end pt-6 border-t border-white/10">
           <button
             onClick={handleSubmit}
-            disabled={isUploading || (files.length === 0 && !textInput.trim())}
+            disabled={isUploading || files.length === 0}
             className={`
               flex items-center gap-2 px-8 py-3 rounded-xl font-medium transition-all duration-200
               ${uploadStatus === 'success' 
