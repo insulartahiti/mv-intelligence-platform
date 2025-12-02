@@ -240,7 +240,7 @@ export async function mapDataToSchema(
               file_type: unifiedData.fileType,
               page: srcLoc?.page || 1,
               bbox: srcLoc?.bbox,
-              context: `GPT-4o actuals (${financialSummary?.currency || 'EUR'})`
+              context: `GPT-5.1 actuals (${financialSummary?.currency || 'EUR'})`
             }
           });
         }
@@ -267,7 +267,7 @@ export async function mapDataToSchema(
               file_type: unifiedData.fileType,
               page: srcLoc?.page || 1,
               bbox: srcLoc?.bbox,
-              context: `GPT-4o budget (${financialSummary?.currency || 'EUR'})`
+              context: `GPT-5.1 budget (${financialSummary?.currency || 'EUR'})`
             }
           });
         }
@@ -397,7 +397,7 @@ export async function mapDataToSchema(
     }
   }
 
-  // 2. Handle PDF Mapping (Enhanced with GPT-4o + GPT-5.1 extraction)
+  // 2. Handle PDF Mapping (Enhanced with GPT-5.1 extraction)
   if (fileType === 'pdf' && 'pages' in (data as any)) {
     const pdfContent = data as PDFContent;
     const currency = guide.company_metadata?.currency || 'USD';
@@ -423,7 +423,7 @@ export async function mapDataToSchema(
       }
     }
     
-    // B. Extract from structured tables found by GPT-4o Vision
+    // B. Extract from structured tables found by GPT-5.1 Vision
     for (const page of pdfContent.pages) {
       if (!page.tables || page.tables.length === 0) continue;
       
@@ -470,7 +470,7 @@ export async function mapDataToSchema(
                   source_location: {
                     file_type: 'pdf',
                     page: page.pageNumber,
-                    context: `GPT-4o table: ${table.title || 'Unnamed'}`
+                    context: `GPT-5.1 table: ${table.title || 'Unnamed'}`
                   }
                 });
               }

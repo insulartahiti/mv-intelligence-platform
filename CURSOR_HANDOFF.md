@@ -333,11 +333,12 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
     *   **Strategy**: Exact Match → Fuzzy Match (Prefix/Substring) → Manual Resolution.
     *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates (searching `graph.entities`).
     *   **Constraint**: Target company MUST exist in the Knowledge Graph.
-3.  **Unified Extraction** (v3.0 - Dec 2025):
+3.  **Unified Extraction** (v3.1 - Dec 2025):
     *   **Single Pipeline for PDF + Excel**: `unified_extractor.ts` handles both file types with the same architecture.
-    *   **Parallel LLM Processing**:
-        - **GPT-4o Vision**: Visual extraction (charts, complex layouts, scanned docs)
-        - **GPT-5.1 Structured**: Deep financial reasoning, metric validation, period detection
+    *   **GPT-5.1 (Primary Model)**: Released Nov 2025 with adaptive reasoning
+        - Vision + structured analysis in one model
+        - Enhanced instruction-following for financial contexts
+        - Faster response times with "warmer" default personality
     *   **Deterministic Excel**: `xlsx` library for precise cell references (highest confidence)
     *   **Reconciliation**: GPT-5.1 merges all results, prefers structured for numbers, vision for visuals
     *   **Perplexity Sonar Pro**: Industry benchmark validation (optional)
@@ -358,16 +359,18 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
 │                  (PDF + Excel → Same Pipeline)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │  GPT-4o      │    │  GPT-5.1     │    │ Deterministic│      │
-│  │  Vision      │    │  Structured  │    │ xlsx Parser  │      │
-│  │              │    │              │    │ (Excel only) │      │
-│  │ • Charts     │    │ • Metrics    │    │              │      │
-│  │ • Layouts    │    │ • Validation │    │ • Cell refs  │      │
-│  │ • Scanned    │    │ • Period     │    │ • 100% conf  │      │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
-│         │                   │                   │               │
-│         └───────────────────┼───────────────────┘               │
+│  ┌─────────────────────────────────┐    ┌──────────────┐      │
+│  │           GPT-5.1               │    │ Deterministic│      │
+│  │   (Primary - Released Nov 2025) │    │ xlsx Parser  │      │
+│  │                                 │    │ (Excel only) │      │
+│  │ • Vision + Structured Analysis  │    │              │      │
+│  │ • Charts, Layouts, Tables       │    │ • Cell refs  │      │
+│  │ • Adaptive Reasoning            │    │ • 100% conf  │      │
+│  │ • Period & Metric Detection     │    │              │      │
+│  └──────────────┬──────────────────┘    └──────┬───────┘      │
+│                 │                              │               │
+│                 └──────────────────────────────┘               │
+│                             │                                   │
 │                             ▼                                   │
 │                   ┌──────────────────┐                          │
 │                   │  RECONCILIATION  │                          │
@@ -393,16 +396,15 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
 
 | Component | Model/Library | Purpose |
 | :--- | :--- | :--- |
-| Visual extraction | `gpt-4o` | Charts, complex tables, scanned docs |
-| Financial analysis | `gpt-5.1` | Metric validation, period detection, business model ID |
-| Reconciliation | `gpt-5.1` | Merge parallel results, flag discrepancies |
+| Primary extraction | `gpt-5.1` | Vision + structured analysis (released Nov 2025) |
+| Reconciliation | `gpt-5.1` | Merge results, flag discrepancies |
 | Excel parsing | `xlsx` | Deterministic cell values (100% confidence) |
 | Benchmarks | `perplexity/sonar-pro` | Industry comparisons, outlier flagging |
 | Audit snippets | `pdf-lib` | Single page extraction with visual highlighting |
 
 ### Visual Audit Highlighting (v3.1)
 
-When GPT-4o extracts metrics, it also returns `source_locations` with bounding box coordinates:
+When GPT-5.1 extracts metrics, it also returns `source_locations` with bounding box coordinates:
 
 ```json
 {

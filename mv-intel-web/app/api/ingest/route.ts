@@ -5,7 +5,7 @@
  * Accepts: { companySlug: string, filePaths: string[], notes?: string }
  * Returns: { status, company, summary, results }
  * 
- * @version 3.0.0 - Unified extraction pipeline (GPT-4o + GPT-5.1 + Perplexity)
+ * @version 3.1.0 - Unified extraction pipeline (GPT-5.1 + Perplexity + Visual Audit)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
                 console.log(`[Dry Run] Skipping dim_source_files insert`);
             }
 
-            // 3. Unified Extraction (GPT-4o Vision + GPT-5.1 + Perplexity)
+            // 3. Unified Extraction (GPT-5.1 Vision + Perplexity)
             console.log(`[Ingest] Starting unified extraction for ${fileMeta.filename}`);
             const extractedData: UnifiedExtractionResult = await extractFinancialDocument(fileMeta);
             const fileType = extractedData.fileType;

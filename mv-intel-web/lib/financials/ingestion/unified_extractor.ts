@@ -2,14 +2,16 @@
  * Unified Financial Document Extractor
  * 
  * Consolidated extraction pipeline for both PDF and Excel files using:
- * 1. PDF Text Extraction: pdf-lib for text, GPT-5.1 for structured analysis
- * 2. GPT-5.1 Structured: Deep financial reasoning and validation  
+ * 1. GPT-5.1: Primary model for vision + structured analysis (released Nov 2025)
+ * 2. OpenAI Files API + Responses API: Native PDF/Excel processing
  * 3. Deterministic parsing: xlsx library for Excel (fast, precise cell refs)
  * 4. Reconciliation: Merge all results with confidence scoring
  * 5. Perplexity Sonar: Industry benchmark validation (optional)
  * 
- * Note: OpenAI Vision API only accepts images, not PDFs directly.
- * For PDFs, we extract text first then analyze with GPT-5.1.
+ * GPT-5.1 Features:
+ * - Adaptive Reasoning: Adjusts response time based on query complexity
+ * - Enhanced vision capabilities for document understanding
+ * - Improved instruction-following for financial contexts
  * 
  * This unified approach ensures:
  * - Consistent extraction quality across file types
@@ -123,7 +125,7 @@ export interface UnifiedExtractionResult {
  * Unified extraction for both PDF and Excel files
  * 
  * For PDFs: Uses OpenAI Files API + Responses API for vision-based extraction
- * For Excel: Uses xlsx library + GPT-4o for structured analysis
+ * For Excel: Uses xlsx library + GPT-5.1 for structured analysis
  */
 export async function extractFinancialDocument(file: FileMetadata): Promise<UnifiedExtractionResult> {
   const openai = getOpenAI();
@@ -311,9 +313,9 @@ CRITICAL - Source Locations (for audit trail):
 - This enables visual highlighting of where each number was found
 - If you cannot determine exact location, provide "page" number only`;
 
-    // Use the responses.create endpoint
+    // Use the responses.create endpoint with GPT-5.1 for best extraction quality
     const response = await openai.responses.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.1',
       input: [
         {
           role: 'user',
@@ -391,7 +393,7 @@ Return:
   try {
     // Try using chat completions with file content type
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.1',
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -512,7 +514,7 @@ CRITICAL:
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5.1',
       messages: [
         { role: 'system', content: systemPrompt },
         {
