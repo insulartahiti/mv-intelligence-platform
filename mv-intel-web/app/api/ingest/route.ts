@@ -34,16 +34,26 @@ export async function POST(req: NextRequest) {
             
             // 2. Load Guide
             const guide = loadPortcoGuide(companySlug);
+            
+            // Validate guide structure
+            const companyName = guide.company_metadata?.name || (guide as any).company?.name;
+            if (!companyName) {
+                 throw new Error(`Invalid guide structure for ${companySlug}: Missing company name`);
+            }
 
             // 2b. Resolve Company ID from Database
-            const { data: companyData } = await supabase
+            const { data: companyData, error: companyError } = await supabase
                 .from('companies')
                 .select('id')
-                .ilike('name', guide.company_metadata.name)
+                .ilike('name', companyName)
                 .single();
 
+            if (companyError && companyError.code !== 'PGRST116') { // PGRST116 is "No rows found"
+                 console.error('Database error looking up company:', companyError);
+            }
+
             if (!companyData?.id) {
-                console.warn(`[Ingest] Warning: Company '${guide.company_metadata.name}' not found in DB. Metrics will use placeholder ID.`);
+                console.warn(`[Ingest] Warning: Company '${companyName}' not found in DB. Metrics will use placeholder ID.`);
             }
             const companyId = companyData?.id || '00000000-0000-0000-0000-000000000000';
             

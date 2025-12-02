@@ -3,6 +3,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/pdf-parse": "^1.1.5",
     "js-yaml": "^4.1.1",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "react-markdown": "^10.1.0",
     "tesseract.js": "^6.0.1",
