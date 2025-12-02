@@ -603,6 +603,9 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Fixed DOMMatrix not defined error**: Added polyfill in `parse_pdf.ts` for serverless environments. The `pdf-parse` library uses `pdfjs-dist` which requires browser APIs (`DOMMatrix`) not available in Node.js/Vercel serverless.
     *   **Fixed Nelly guide format incompatibility**: Portco loader now normalizes different YAML structures. Nelly uses `company:` and `metrics_mapping` instead of `company_metadata:` and `mapping_rules`. The loader now extracts line items from `document_structure.*.kpi_tables.*.metric_rows`.
     *   **Fixed EUR number parsing corruption**: Added `parseLocalizedNumber()` that detects EUR format (1.234,56) vs US format (1,234.56) based on separator positions and guide currency. Previously, EUR numbers were silently corrupted (1.234,56 → 1.234 instead of 1234.56).
+    *   **Fixed onConflict parameter for fact_metrics upsert**: Changed from column names to constraint name `fact_metrics_company_period_metric_key` as required by Supabase v2 for composite unique constraints.
+    *   **Fixed hyphen escaping order in company detection**: Hyphens were being escaped before the flexible pattern replacement, so slugs like `acme-corp` couldn't match `acme_corp` or `acme corp`. Now replaces hyphens first, then escapes other meta-characters.
+    *   **Fixed partial status message missing needs_review files**: Frontend import UI now shows both `error` and `needs_review` files with appropriate status labels when displaying partial results.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)
