@@ -105,8 +105,8 @@ export async function saveMetricsToDb(
 
   const { error } = await supabaseClient
     .from('fact_metrics')
-    // Use the explicit constraint name to avoid parsing ambiguity
-    .upsert(rows, { onConflict: 'fact_metrics_company_period_metric_key' });
+    // Supabase upsert requires column names, not constraint names
+    .upsert(rows, { onConflict: 'company_id,period,metric_id' });
 
   if (error) {
     console.error('Error saving metrics to DB:', error);

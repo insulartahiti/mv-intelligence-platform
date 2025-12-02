@@ -213,10 +213,26 @@ export async function POST(req: NextRequest) {
 
             // 5. Compute Metrics
             // Convert lineItems array to Record<string, number>
+            // IMPORTANT: Aggregate duplicate line_item_ids by summing their amounts
             const facts: Record<string, number> = {};
+            const duplicateCounts: Record<string, number> = {};
+            
             lineItems.forEach(item => {
-                facts[item.line_item_id] = item.amount;
+                if (facts[item.line_item_id] !== undefined) {
+                    // Aggregate: sum values for duplicate line_item_ids
+                    facts[item.line_item_id] += item.amount;
+                    duplicateCounts[item.line_item_id] = (duplicateCounts[item.line_item_id] || 1) + 1;
+                } else {
+                    facts[item.line_item_id] = item.amount;
+                }
             });
+            
+            // Log any aggregations for audit visibility
+            const aggregatedKeys = Object.keys(duplicateCounts);
+            if (aggregatedKeys.length > 0) {
+                console.log(`[Ingest] Aggregated ${aggregatedKeys.length} duplicate line_item_ids:`, 
+                    aggregatedKeys.map(k => `${k} (${duplicateCounts[k]} values summed)`).join(', '));
+            }
 
             const metrics = computeMetricsForPeriod(companyId, periodDate, facts);
             
@@ -249,11 +265,24 @@ export async function POST(req: NextRequest) {
         }
     }
 
+    // Determine overall status based on individual file results
+    const successCount = results.filter(r => r.status === 'success').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
+    const overallStatus = errorCount === 0 ? 'success' : (successCount === 0 ? 'error' : 'partial');
+    
+    // Return appropriate HTTP status code
+    const httpStatus = overallStatus === 'error' ? 500 : (overallStatus === 'partial' ? 207 : 200);
+    
     return NextResponse.json({
-      status: 'success',
+      status: overallStatus,
       company: companySlug,
+      summary: {
+        total: results.length,
+        success: successCount,
+        error: errorCount
+      },
       results
-    });
+    }, { status: httpStatus });
 
   } catch (error) {
     console.error('Ingestion error:', error);

@@ -319,12 +319,16 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Import UI**: New `/import` page with drag-and-drop support and company auto-detection.
     *   **Auditability**: System generates cropped PDF/image snippets for every data point and stores them in `financial-snippets` bucket.
     *   **Large File Support**: Implemented Client-to-Storage upload pattern to bypass Vercel 4.5MB payload limits.
-    *   **Bug Fixes**:
+    *   **Bug Fixes (Dec 02 - Latest)**:
+        *   **Data Integrity**: Fixed silent data loss when multiple line items share the same `line_item_id`. Now aggregates (sums) duplicate values and logs aggregations for audit visibility.
+        *   **Error Handling**: API now returns proper HTTP status codes (500 for all failures, 207 for partial success) instead of always 200. Frontend can now correctly detect failures.
+        *   **Metrics Upsert**: Fixed `onConflict` parameter to use column names (`company_id,period,metric_id`) instead of constraint name.
+        *   **File Retention**: Failed files are now retained in storage for debugging; only successful ingestions trigger cleanup.
         *   **Build Pipeline**: Fixed module resolution errors by installing dependencies (`pdf-parse`, `xlsx`, `pdf-lib`) in `mv-intel-web` and tracking `pdf_snippet.ts`.
         *   **Guide Parsing**: Added resilience for varying YAML structures (`company:` vs `company_metadata:`) to support Nelly-style guides.
         *   **Database**: Created `financial-snippets` bucket with correct RLS policies and added unique constraints to `fact_metrics` for upserts.
         *   **Logic**: Fixed snippet retry loop and ensured Company ID resolution handles missing rows gracefully.
-        *   **Stability**: Fixed critical bugs in metrics upsert (conflict syntax), company lookup (null ID prevention), and guide parsing (optional currency fallback).
+        *   **Stability**: Fixed critical bugs in company lookup (null ID prevention) and guide parsing (optional currency fallback).
 *   **Affinity Orphan Detection**: Added `cleanOrphanedAffinityEntities()` to `intelligent_cleanup.ts`. Identifies entities with stale Affinity IDs (not updated in 30+ days) and flags them for re-sync verification. Prevents accumulation of orphaned data from entities deleted in Affinity CRM.
 *   **Affinity Sync Resilience**: Updated `lib/affinity/sync.ts` to gracefully handle 404 errors (entity deleted from Affinity) and null content fields. Logs warnings instead of failing the pipeline.
 *   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.

@@ -1,4 +1,5 @@
-import pdf from 'pdf-parse';
+// import pdf from 'pdf-parse';
+const pdf = require('pdf-parse');
 import { FileMetadata } from './load_file';
 
 export interface PDFPage {
