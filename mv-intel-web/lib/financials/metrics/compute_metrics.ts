@@ -105,7 +105,7 @@ export async function saveMetricsToDb(
 
   const { error } = await supabaseClient
     .from('fact_metrics')
-    .upsert(rows, { onConflict: 'company_id, period, metric_id' });
+    .upsert(rows, { onConflict: 'company_id,period,metric_id' });
 
   if (error) {
     console.error('Error saving metrics to DB:', error);

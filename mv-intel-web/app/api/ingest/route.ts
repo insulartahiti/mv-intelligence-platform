@@ -53,9 +53,10 @@ export async function POST(req: NextRequest) {
             }
 
             if (!companyData?.id) {
-                console.warn(`[Ingest] Warning: Company '${companyName}' not found in DB. Metrics will use placeholder ID.`);
+                console.error(`[Ingest] Error: Company '${companyName}' not found in DB.`);
+                throw new Error(`Company '${companyName}' not found in database. Please ensure the company exists before ingesting.`);
             }
-            const companyId = companyData?.id || '00000000-0000-0000-0000-000000000000';
+            const companyId = companyData.id;
             
             // 3. Parse & Map
             // Register source file in DB
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
                     date: item.date || periodDate,
                     line_item_id: item.line_item_id,
                     amount: item.amount,
-                    currency: guide.company_metadata.currency || 'USD',
+                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'USD',
                     source_file_id: sourceFileId,
                     source_location: item.source_location as any // Cast for now, will update with snippet
                 };
