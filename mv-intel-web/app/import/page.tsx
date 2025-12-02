@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, Check, AlertCircle, Loader2, LogIn } from 'lucide-react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { Upload, FileText, Check, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function ImportPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -12,28 +11,6 @@ export default function ImportPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-
-  const supabase = createClientComponentClient();
-
-  // Check authentication status on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session);
-      if (!session) {
-        console.warn('[Import] User not authenticated - storage uploads will fail RLS');
-      }
-    };
-    checkAuth();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
 
   // Auto-detect company when files are added
   useEffect(() => {
@@ -97,25 +74,27 @@ export default function ImportPage() {
     setStatusMessage('Uploading files...');
 
     try {
-        // 1. Upload files to Supabase Storage
-        const timestamp = Date.now();
+        // 1. Upload files via API route (bypasses RLS using service role)
         const uploadedPaths: string[] = [];
         
         for (const file of files) {
-            // Use a single consistent timestamp for the batch
-            const relativePath = `${selectedCompany}/${timestamp}_${file.name}`;
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('companySlug', selectedCompany);
             
-            const { data, error } = await supabase.storage
-                .from('financial-docs')
-                .upload(relativePath, file);
-
-            if (error) {
-                console.error('Upload failed:', error);
-                throw new Error(`Upload failed for ${file.name}`);
+            const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const uploadData = await uploadRes.json();
+            
+            if (uploadData.status !== 'success') {
+                console.error('Upload failed:', uploadData.error);
+                throw new Error(`Upload failed for ${file.name}: ${uploadData.error}`);
             }
             
-            // Store the full "logical" path we use in the backend
-            uploadedPaths.push(`financial-docs/${relativePath}`);
+            uploadedPaths.push(uploadData.path);
         }
 
         setStatusMessage('Processing files...');
@@ -178,17 +157,6 @@ export default function ImportPage() {
             Upload board decks, financial models, or paste investor updates.
           </p>
         </div>
-
-        {/* Auth Warning Banner */}
-        {isAuthenticated === false && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300">
-            <LogIn size={20} />
-            <div>
-              <p className="font-medium">Authentication Required</p>
-              <p className="text-sm text-yellow-300/70">Please log in to upload files. Storage uploads require an authenticated session.</p>
-            </div>
-          </div>
-        )}
 
         {/* Company Selector */}
         <div className="glass-panel p-6 rounded-xl border border-white/10 bg-white/5">
