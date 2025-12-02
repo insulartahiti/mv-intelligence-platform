@@ -18,6 +18,88 @@ export interface NormalizedLineItem {
 }
 
 /**
+ * Parse a number string with support for both US/UK and EUR formats.
+ * 
+ * US/UK format: 1,234.56 (comma = thousands, period = decimal)
+ * EUR format:   1.234,56 (period = thousands, comma = decimal)
+ * 
+ * Detection heuristic:
+ * - If string has both ',' and '.':
+ *   - If ',' comes after '.', it's EUR (1.234,56)
+ *   - If '.' comes after ',', it's US/UK (1,234.56)
+ * - If only one separator, assume it's the decimal if it has 1-2 digits after
+ * - If only commas with 3+ digits between, assume thousands separator
+ */
+function parseLocalizedNumber(rawNum: string, defaultCurrency: string = 'USD'): number | null {
+  if (!rawNum || rawNum.trim() === '') return null;
+  
+  // Remove any currency symbols, spaces, and other non-numeric chars except . and ,
+  let cleaned = rawNum.replace(/[^\d.,\-]/g, '').trim();
+  if (!cleaned) return null;
+  
+  // Handle negative numbers
+  const isNegative = cleaned.startsWith('-') || rawNum.includes('(') || rawNum.includes('-');
+  cleaned = cleaned.replace(/^-/, '');
+  
+  const hasComma = cleaned.includes(',');
+  const hasPeriod = cleaned.includes('.');
+  
+  let result: number;
+  
+  if (hasComma && hasPeriod) {
+    // Both separators present - determine format by position
+    const lastCommaPos = cleaned.lastIndexOf(',');
+    const lastPeriodPos = cleaned.lastIndexOf('.');
+    
+    if (lastCommaPos > lastPeriodPos) {
+      // EUR format: 1.234,56 - comma is decimal separator
+      // Remove periods (thousands), replace comma with period
+      result = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+    } else {
+      // US/UK format: 1,234.56 - period is decimal separator
+      // Remove commas (thousands)
+      result = parseFloat(cleaned.replace(/,/g, ''));
+    }
+  } else if (hasComma && !hasPeriod) {
+    // Only comma - could be EUR decimal or US thousands
+    const parts = cleaned.split(',');
+    const lastPart = parts[parts.length - 1];
+    
+    if (parts.length === 2 && lastPart.length <= 2) {
+      // Likely EUR decimal: 1234,56 or 123,5
+      result = parseFloat(cleaned.replace(',', '.'));
+    } else if (defaultCurrency === 'EUR' && parts.length === 2) {
+      // EUR context and ambiguous - treat as decimal
+      result = parseFloat(cleaned.replace(',', '.'));
+    } else {
+      // Likely US thousands: 1,234 or 1,234,567
+      result = parseFloat(cleaned.replace(/,/g, ''));
+    }
+  } else if (hasPeriod && !hasComma) {
+    // Only period - could be US decimal or EUR thousands
+    const parts = cleaned.split('.');
+    const lastPart = parts[parts.length - 1];
+    
+    if (parts.length === 2 && lastPart.length <= 2) {
+      // Likely US decimal: 1234.56
+      result = parseFloat(cleaned);
+    } else if (defaultCurrency === 'EUR' && parts.length > 2) {
+      // EUR thousands: 1.234.567
+      result = parseFloat(cleaned.replace(/\./g, ''));
+    } else {
+      // Assume decimal
+      result = parseFloat(cleaned);
+    }
+  } else {
+    // No separators - just parse directly
+    result = parseFloat(cleaned);
+  }
+  
+  if (isNaN(result)) return null;
+  return isNegative ? -result : result;
+}
+
+/**
  * Core logic to map extracted data to normalized schema.
  * Now enhanced to support complex "document_structure" and "parsing_hints" from guides (like Nelly).
  */
@@ -191,18 +273,12 @@ export async function mapDataToSchema(
                     const match = pageText.match(regex);
                     
                     if (match && match[1]) {
-                        // Normalize number (remove commas if they are thousands separators, handle EUR style)
-                        // Assuming 1.234,56 format or 1,234.56
-                        let rawNum = match[1];
-                        // Heuristic: if contains ',' and '.', and ',' comes before '.', it's 1,234.56
-                        // If '.' comes before ',', it's 1.234,56 (EUR)
-                        // For now, let's assume standard US/UK if not specified or just strip non-numeric/dot
+                        // Parse number with EUR/US format detection
+                        // Use guide currency as hint for ambiguous cases
+                        const currency = guide.company_metadata?.currency || 'USD';
+                        const cleanNum = parseLocalizedNumber(match[1], currency);
                         
-                        // Simple parse: remove all non-digits/dots, unless it looks like EUR
-                        // actually, just safe parse float for now
-                        const cleanNum = parseFloat(rawNum.replace(/,/g, ''));
-                        
-                        if (!isNaN(cleanNum)) {
+                        if (cleanNum !== null) {
                             results.push({
                                 line_item_id: metricKey,
                                 amount: cleanNum,
