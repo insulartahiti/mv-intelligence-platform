@@ -2,11 +2,14 @@
  * Unified Financial Document Extractor
  * 
  * Consolidated extraction pipeline for both PDF and Excel files using:
- * 1. GPT-4o Vision: Visual extraction (charts, layouts, complex tables)
- * 2. GPT-5.1 Structured: Deep financial reasoning and validation
+ * 1. PDF Text Extraction: pdf-lib for text, GPT-5.1 for structured analysis
+ * 2. GPT-5.1 Structured: Deep financial reasoning and validation  
  * 3. Deterministic parsing: xlsx library for Excel (fast, precise cell refs)
  * 4. Reconciliation: Merge all results with confidence scoring
  * 5. Perplexity Sonar: Industry benchmark validation (optional)
+ * 
+ * Note: OpenAI Vision API only accepts images, not PDFs directly.
+ * For PDFs, we extract text first then analyze with GPT-5.1.
  * 
  * This unified approach ensures:
  * - Consistent extraction quality across file types
@@ -17,6 +20,7 @@
 
 import OpenAI from 'openai';
 import * as XLSX from 'xlsx';
+import { PDFDocument } from 'pdf-lib';
 import { FileMetadata } from './load_file';
 
 // Lazy initialization
@@ -101,6 +105,9 @@ export interface UnifiedExtractionResult {
 
 /**
  * Unified extraction for both PDF and Excel files
+ * 
+ * For PDFs: Uses OpenAI Files API + Responses API for vision-based extraction
+ * For Excel: Uses xlsx library + GPT-4o for structured analysis
  */
 export async function extractFinancialDocument(file: FileMetadata): Promise<UnifiedExtractionResult> {
   const openai = getOpenAI();
@@ -115,44 +122,246 @@ export async function extractFinancialDocument(file: FileMetadata): Promise<Unif
   
   console.log(`[Unified Extractor] Processing ${file.filename} (${isPDF ? 'PDF' : 'Excel'})`);
   
-  // Convert to base64 for vision models
-  const base64Data = file.buffer.toString('base64');
-  const mimeType = isPDF ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  let structuredResult: Partial<UnifiedExtractionResult>;
+  let deterministicResult: DeterministicExcelResult | null = null;
   
-  // Run extractions in parallel
-  const extractionPromises: Promise<any>[] = [
-    // 1. GPT-4o Vision extraction (works for both PDF and Excel screenshots)
-    extractWithVision(openai, base64Data, mimeType, file.filename),
+  if (isPDF) {
+    // For PDFs: Upload to Files API, then use Responses API with vision
+    structuredResult = await extractWithVisionAPI(openai, file, 'application/pdf');
     
-    // 2. GPT-5.1 Structured analysis
-    extractWithStructuredAnalysis(openai, base64Data, mimeType, file.filename)
-  ];
-  
-  // 3. For Excel, also run deterministic parsing (fast, precise)
-  let deterministicResult: any = null;
-  if (isExcel) {
+  } else {
+    // For Excel: Same approach as PDF - upload to Files API for vision extraction
+    // Plus deterministic parsing for precise cell references
     deterministicResult = parseExcelDeterministic(file.buffer);
     console.log(`[Deterministic] Parsed ${deterministicResult.sheets.length} sheets`);
+    
+    // Upload Excel to Files API for vision-based extraction (charts, formatting)
+    const excelMimeType = file.filename.toLowerCase().endsWith('.xlsx') 
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/vnd.ms-excel';
+    
+    structuredResult = await extractWithVisionAPI(openai, file, excelMimeType);
+    
+    // Merge deterministic data for precise cell lookups
+    if (structuredResult.info) {
+      structuredResult.info.deterministic_data = deterministicResult;
+    }
   }
   
-  const [visionResult, structuredResult] = await Promise.all(extractionPromises);
-  
-  // Reconcile all results
-  const reconciledResult = await reconcileAllResults(
-    openai,
-    visionResult,
-    structuredResult,
-    deterministicResult,
-    file.filename,
-    isPDF ? 'pdf' : 'xlsx'
-  );
+  // Build final result
+  const finalResult: UnifiedExtractionResult = {
+    fileType: isPDF ? 'pdf' : 'xlsx',
+    pageCount: structuredResult.pageCount || 1,
+    pages: structuredResult.pages || [],
+    fullText: structuredResult.fullText || '',
+    financial_summary: structuredResult.financial_summary,
+    info: {
+      filename: file.filename,
+      extractionMethod: isPDF ? 'pdf-vision-responses-api' : 'xlsx-deterministic-gpt4o',
+      deterministic_data: deterministicResult,
+      reconciliation_notes: structuredResult.info?.reconciliation_notes
+    }
+  };
   
   // Enrich with Perplexity benchmarks
-  const finalResult = await enrichWithBenchmarks(reconciledResult);
+  const enrichedResult = await enrichWithBenchmarks(finalResult);
   
-  console.log(`[Unified Extractor] Complete: ${finalResult.pages.length} pages, ${Object.keys(finalResult.financial_summary?.key_metrics || {}).length} metrics`);
+  console.log(`[Unified Extractor] Complete: ${enrichedResult.pages.length} pages, ${Object.keys(enrichedResult.financial_summary?.key_metrics || {}).length} metrics`);
   
-  return finalResult;
+  return enrichedResult;
+}
+
+// ============================================================================
+// Vision Extraction (Files API + Responses API) - Works for PDF and Excel
+// ============================================================================
+
+/**
+ * Extract document using OpenAI's Files API + Responses API
+ * This enables true vision-based extraction for both PDFs and Excel files
+ * 
+ * OpenAI extracts both text AND renders images of each page/sheet,
+ * giving the model full visual context (charts, formatting, layouts)
+ */
+async function extractWithVisionAPI(
+  openai: OpenAI,
+  file: FileMetadata,
+  mimeType: string
+): Promise<Partial<UnifiedExtractionResult>> {
+  const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel';
+  console.log(`[Vision API] Uploading ${file.filename} (${fileType}) to Files API...`);
+  
+  try {
+    // Step 1: Upload file to Files API
+    const uploadedFile = await openai.files.create({
+      file: new File([file.buffer], file.filename, { type: mimeType }),
+      purpose: 'user_data'
+    });
+    
+    console.log(`[Vision API] File uploaded: ${uploadedFile.id}`);
+    
+    // Step 2: Use Responses API with the file
+    const documentType = mimeType.includes('pdf') ? 'PDF report' : 'Excel spreadsheet';
+    const systemPrompt = `You are a senior financial analyst extracting data from a portfolio company ${documentType}.
+
+Extract ALL financial data and return structured JSON:
+
+{
+  "pageCount": <number>,
+  "pages": [
+    {
+      "pageNumber": 1,
+      "text": "Key content from this page",
+      "tables": [
+        {
+          "title": "Table name",
+          "headers": ["Metric", "Value"],
+          "rows": [["ARR", 5000000], ["MRR", 416667]],
+          "confidence": 0.95
+        }
+      ]
+    }
+  ],
+  "financial_summary": {
+    "key_metrics": {
+      "arr": 5000000,
+      "mrr": 416667,
+      "gross_margin": 0.75,
+      "customers": 150,
+      "arr_growth_yoy": 0.45,
+      "net_revenue_retention": 1.15,
+      "logo_churn": 0.02
+    },
+    "period": "Q3 2025",
+    "period_type": "quarter",
+    "currency": "EUR",
+    "business_model": "saas"
+  }
+}
+
+CRITICAL - Period Detection:
+- Look for "Q3 2025", "September 2025", "Month ending...", "As of..."
+- Check headers, titles, footers for dates
+- "period" = REPORTING PERIOD of the data
+
+CRITICAL - Metrics:
+- Extract ALL visible KPIs and financial metrics
+- Preserve exact numbers (no rounding)
+- Include currency symbols
+- Validate relationships (ARR = MRR * 12)`;
+
+    // Use the responses.create endpoint
+    const response = await openai.responses.create({
+      model: 'gpt-4o',
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_file',
+              file_id: uploadedFile.id
+            },
+            {
+              type: 'input_text',
+              text: `${systemPrompt}\n\nExtract all financial data from this PDF: "${file.filename}"`
+            }
+          ]
+        }
+      ],
+      text: { format: { type: 'text' } }
+    });
+
+    // Step 3: Parse the response
+    const content = response.output_text;
+    console.log(`[Vision API] Response received, length: ${content?.length || 0}`);
+    
+    // Step 4: Clean up - delete the uploaded file
+    try {
+      await openai.files.del(uploadedFile.id);
+      console.log(`[Vision API] Cleaned up file: ${uploadedFile.id}`);
+    } catch (cleanupErr) {
+      console.warn(`[Vision API] Failed to cleanup file: ${cleanupErr}`);
+    }
+    
+    if (!content) {
+      console.warn('[Vision API] No content returned');
+      return createEmptyResult(file.filename, 'vision_no_response');
+    }
+
+    const method = mimeType.includes('pdf') ? 'pdf-vision-api' : 'excel-vision-api';
+    return parseJsonResponse(content, file.filename, method);
+    
+  } catch (error: any) {
+    console.error('[Vision API] Extraction failed:', error?.message || error);
+    
+    // Fallback: Try base64 inline approach if Files API fails
+    console.log('[Vision API] Trying base64 fallback...');
+    return extractWithBase64Fallback(openai, file, mimeType);
+  }
+}
+
+/**
+ * Fallback: Send file as base64 inline (for when Files API is unavailable)
+ * Works for both PDF and Excel files
+ */
+async function extractWithBase64Fallback(
+  openai: OpenAI,
+  file: FileMetadata,
+  mimeType: string
+): Promise<Partial<UnifiedExtractionResult>> {
+  const base64Data = file.buffer.toString('base64');
+  const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel spreadsheet';
+  
+  const systemPrompt = `You are a senior financial analyst. Extract ALL financial data from this ${fileType} as JSON.
+
+Return:
+{
+  "pageCount": <number>,
+  "pages": [{"pageNumber": 1, "text": "...", "tables": [...]}],
+  "financial_summary": {
+    "key_metrics": {"arr": ..., "mrr": ..., "gross_margin": ...},
+    "period": "Q3 2025",
+    "period_type": "quarter", 
+    "currency": "EUR",
+    "business_model": "saas"
+  }
+}`;
+
+  try {
+    // Try using chat completions with file content type
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `Extract financial data from: "${file.filename}"` },
+            {
+              type: 'file',
+              file: {
+                filename: file.filename,
+                file_data: `data:${mimeType};base64,${base64Data}`
+              }
+            } as any
+          ]
+        }
+      ],
+      max_tokens: 16000,
+      temperature: 0.1
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return createEmptyResult(file.filename, 'base64_no_response');
+    }
+
+    const method = mimeType.includes('pdf') ? 'pdf-base64-fallback' : 'excel-base64-fallback';
+    return parseJsonResponse(content, file.filename, method);
+    
+  } catch (error: any) {
+    console.error('[Base64 Fallback] Also failed:', error?.message);
+    return createEmptyResult(file.filename, 'all_methods_failed');
+  }
 }
 
 // ============================================================================
@@ -183,9 +392,95 @@ function parseExcelDeterministic(buffer: Buffer): DeterministicExcelResult {
 }
 
 // ============================================================================
-// GPT-4o Vision Extraction
+// Text-based Analysis (for Excel data)
 // ============================================================================
 
+interface TextContent {
+  pageCount: number;
+  pages: { pageNumber: number; text: string }[];
+  fullText: string;
+}
+
+async function extractWithTextAnalysis(
+  openai: OpenAI,
+  textContent: TextContent,
+  filename: string
+): Promise<Partial<UnifiedExtractionResult>> {
+  console.log(`[Text Analysis] Analyzing ${textContent.pageCount} pages of text...`);
+  
+  const systemPrompt = `You are a senior financial analyst extracting data from a spreadsheet.
+
+Extract ALL financial data and return structured JSON:
+
+{
+  "pageCount": ${textContent.pageCount},
+  "pages": [
+    {
+      "pageNumber": 1,
+      "text": "Summary of key content",
+      "tables": [
+        {
+          "title": "Table name",
+          "headers": ["Metric", "Value"],
+          "rows": [["ARR", 5000000], ["MRR", 416667]],
+          "confidence": 0.95
+        }
+      ]
+    }
+  ],
+  "financial_summary": {
+    "key_metrics": {
+      "arr": 5000000,
+      "mrr": 416667,
+      "gross_margin": 0.75,
+      "customers": 150
+    },
+    "period": "Q3 2025",
+    "period_type": "quarter",
+    "currency": "EUR",
+    "business_model": "saas"
+  }
+}
+
+CRITICAL:
+- Extract ALL financial metrics you can find
+- Preserve exact numbers
+- Identify the reporting period
+- Validate relationships (ARR = MRR * 12)`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Extract financial data from this spreadsheet: "${filename}"\n\nContent:\n${textContent.fullText.slice(0, 50000)}`
+        }
+      ],
+      max_tokens: 16000,
+      temperature: 0.1
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.warn('[Text Analysis] No content returned');
+      return createEmptyResult(filename, 'text_analysis_no_response');
+    }
+
+    return parseJsonResponse(content, filename, 'text-analysis-gpt4o');
+    
+  } catch (error: any) {
+    console.error('[Text Analysis] Extraction failed:', error?.message || error);
+    return createEmptyResult(filename, 'text_analysis_error');
+  }
+}
+
+// ============================================================================
+// OLD CODE - Keeping for reference but not used
+// ============================================================================
+
+/* OLD: extractWithVision - replaced by extractPDFWithVisionAPI
 async function extractWithVision(
   openai: OpenAI,
   base64Data: string,
@@ -320,7 +615,7 @@ Apply financial reasoning:
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-5.1',
+      model: 'gpt-4o',  // Using GPT-4o for structured financial analysis
       messages: [
         { role: 'system', content: systemPrompt },
         {

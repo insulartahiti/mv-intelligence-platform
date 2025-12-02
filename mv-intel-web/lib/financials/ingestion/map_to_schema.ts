@@ -125,13 +125,20 @@ export async function mapDataToSchema(
   // Check if this is a UnifiedExtractionResult
   const isUnified = 'info' in data && 'fileType' in data;
   
+  console.log(`[Mapping] Input type: ${isUnified ? 'UnifiedExtractionResult' : 'Legacy'}, fileType: ${fileType}`);
+  
   // If unified, extract financial_summary metrics first (highest confidence)
   if (isUnified) {
     const unifiedData = data as UnifiedExtractionResult;
     const financialSummary = unifiedData.financial_summary;
     
+    console.log(`[Mapping] Unified data: ${unifiedData.pageCount} pages, fullText length: ${unifiedData.fullText?.length || 0}`);
+    console.log(`[Mapping] financial_summary present: ${!!financialSummary}, key_metrics: ${financialSummary?.key_metrics ? Object.keys(financialSummary.key_metrics).length : 0}`);
+    console.log(`[Mapping] Pages with tables: ${unifiedData.pages?.filter(p => p.tables?.length > 0).length || 0}`);
+    
     if (financialSummary?.key_metrics) {
       console.log(`[Mapping] Using ${Object.keys(financialSummary.key_metrics).length} metrics from financial_summary`);
+      console.log(`[Mapping] Metrics: ${JSON.stringify(financialSummary.key_metrics)}`);
       
       for (const [metricKey, value] of Object.entries(financialSummary.key_metrics)) {
         if (typeof value === 'number' && !isNaN(value)) {
@@ -147,6 +154,8 @@ export async function mapDataToSchema(
           });
         }
       }
+    } else {
+      console.warn(`[Mapping] No financial_summary or key_metrics found in unified result`);
     }
     
     // Convert unified to legacy format for remaining processing
