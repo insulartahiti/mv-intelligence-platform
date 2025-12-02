@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 02, 2025 (v3.0 - Unified Extraction)
+**Last Updated:** Dec 02, 2025 (v3.1 - Visual Audit Highlighting)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -344,9 +344,13 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
 4.  **Period Detection**: Extracted from document content (headers, titles, "As of...") by GPT-5.1. Filename is fallback only.
 5.  **Mapping**: `mapDataToSchema` converts unified results to normalized `fact_financials` using Portco Guide rules.
 6.  **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
-7.  **Audit**: Source snippets (PDF page crops via `pdf-lib`) saved to `financial-snippets` bucket.
+7.  **Audit Trail with Visual Highlighting** (v3.1):
+    *   **Bounding Box Extraction**: GPT-4o returns `source_locations` with bbox coordinates (percentage of page)
+    *   **Snippet Generation**: `pdf_snippet.ts` extracts single pages with annotations
+    *   **Visual Highlighting**: Ellipse circles drawn around extracted values with labels
+    *   **Storage**: Annotated snippets saved to `financial-snippets` bucket with signed URLs
 
-### Unified Extraction Architecture (v3.0)
+### Unified Extraction Architecture (v3.1)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -394,7 +398,31 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
 | Reconciliation | `gpt-5.1` | Merge parallel results, flag discrepancies |
 | Excel parsing | `xlsx` | Deterministic cell values (100% confidence) |
 | Benchmarks | `perplexity/sonar-pro` | Industry comparisons, outlier flagging |
-| Audit snippets | `pdf-lib` | Single page extraction for source linking |
+| Audit snippets | `pdf-lib` | Single page extraction with visual highlighting |
+
+### Visual Audit Highlighting (v3.1)
+
+When GPT-4o extracts metrics, it also returns `source_locations` with bounding box coordinates:
+
+```json
+{
+  "financial_summary": {
+    "actuals": { "mrr": 782800, "arr": 9393600 },
+    "source_locations": {
+      "mrr": { "page": 1, "bbox": { "x": 0.6, "y": 0.3, "width": 0.15, "height": 0.03 } },
+      "arr": { "page": 1, "bbox": { "x": 0.6, "y": 0.35, "width": 0.15, "height": 0.03 } }
+    }
+  }
+}
+```
+
+The `pdf_snippet.ts` module then:
+1. Extracts the relevant page from the source PDF
+2. Draws ellipse annotations around each extracted value
+3. Adds labels showing the metric name and value
+4. Uploads the annotated snippet to storage
+
+This provides **pixel-level auditability** - users can see exactly where each number came from.
 
 **Key Benefits:**
 - Cross-validation between models catches extraction errors
@@ -619,12 +647,17 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### Features Added
 
-*   **Financial Data Ingestion System v3.0**: Unified extraction pipeline for portfolio financials.
+*   **Financial Data Ingestion System v3.1**: Unified extraction with visual audit highlighting.
+    *   **Visual Audit Highlighting** (NEW): Ellipse annotations drawn around extracted values in PDF snippets
+    *   **Bounding Box Extraction**: GPT-4o returns `source_locations` with bbox coordinates (% of page)
+    *   **Enhanced `pdf_snippet.ts`**: Draws ellipses and labels on extracted pages using `pdf-lib`
     *   **Unified Extractor** (`unified_extractor.ts`): Single pipeline for PDF + Excel
     *   **Parallel LLM Processing**: GPT-4o Vision + GPT-5.1 Structured run in parallel
     *   **Cross-Validation**: Reconciliation step merges results and flags discrepancies
     *   **Perplexity Benchmarks**: Industry comparison via Sonar Pro API
     *   **Smart Period Detection**: Extracts reporting period from document content (not just filename)
+    *   **Budget vs Actual Separation**: Distinguishes actuals from budget/plan numbers
+    *   **Standard Metric ID Normalization**: Maps variations to consistent IDs (mrr, arr, nrr, etc.)
     *   Common Metrics dictionary with SaaS/Fintech KPIs
     *   YAML-based Portco Guides for company-specific mapping
     *   Import UI (`/import`) with drag-and-drop support

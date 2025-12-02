@@ -14,6 +14,13 @@ export interface NormalizedLineItem {
     cell?: string; // Excel
     page?: number; // PDF
     context?: string; // Extra debug info
+    // Bounding box for visual highlighting (percentage of page, 0-1 range)
+    bbox?: {
+      x: number;      // Left edge
+      y: number;      // Top edge
+      width: number;
+      height: number;
+    };
   };
 }
 
@@ -209,6 +216,9 @@ export async function mapDataToSchema(
     
     console.log(`[Mapping] Actuals: ${Object.keys(actuals).length} metrics, Budget: ${Object.keys(budget).length} metrics`);
     
+    // Get source locations for visual highlighting
+    const sourceLocations = financialSummary?.source_locations || {};
+    
     // Extract ACTUALS
     if (Object.keys(actuals).length > 0) {
       console.log(`[Mapping] Actuals metrics: ${JSON.stringify(actuals)}`);
@@ -217,6 +227,10 @@ export async function mapDataToSchema(
         if (typeof value === 'number' && !isNaN(value)) {
           // Normalize metric key to standard ID
           const normalizedKey = normalizeMetricKey(metricKey);
+          
+          // Get source location with bbox if available
+          const srcLoc = sourceLocations[metricKey] || sourceLocations[normalizedKey];
+          
           results.push({
             line_item_id: normalizedKey,
             amount: value,
@@ -224,7 +238,8 @@ export async function mapDataToSchema(
             scenario: 'actual',
             source_location: {
               file_type: unifiedData.fileType,
-              page: 1,
+              page: srcLoc?.page || 1,
+              bbox: srcLoc?.bbox,
               context: `GPT-4o actuals (${financialSummary?.currency || 'EUR'})`
             }
           });
@@ -239,6 +254,10 @@ export async function mapDataToSchema(
       for (const [metricKey, value] of Object.entries(budget)) {
         if (typeof value === 'number' && !isNaN(value)) {
           const normalizedKey = normalizeMetricKey(metricKey);
+          
+          // Get source location with bbox if available (budget metrics may have different key)
+          const srcLoc = sourceLocations[`budget_${metricKey}`] || sourceLocations[metricKey];
+          
           results.push({
             line_item_id: normalizedKey,
             amount: value,
@@ -246,7 +265,8 @@ export async function mapDataToSchema(
             scenario: 'budget',
             source_location: {
               file_type: unifiedData.fileType,
-              page: 1,
+              page: srcLoc?.page || 1,
+              bbox: srcLoc?.bbox,
               context: `GPT-4o budget (${financialSummary?.currency || 'EUR'})`
             }
           });

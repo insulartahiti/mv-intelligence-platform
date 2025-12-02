@@ -14,7 +14,7 @@ import { extractFinancialDocument, UnifiedExtractionResult } from '@/lib/financi
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
 import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
-import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
+import { extractPageSnippet, SourceAnnotation } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic rendering - prevents edge caching issues
@@ -388,7 +388,7 @@ export async function POST(req: NextRequest) {
                     source_location: item.source_location
                 };
 
-                // Generate audit snippets for PDFs (both live and dry run for visibility)
+                // Generate audit snippets for PDFs with visual highlighting (both live and dry run)
                 if (fileType === 'pdf' && item.source_location.page) {
                     const pageNum = item.source_location.page;
                     const snippetKey = `${filePath}_page_${pageNum}`;
@@ -399,7 +399,24 @@ export async function POST(req: NextRequest) {
                     } else if (!processedPages.has(snippetKey)) {
                         console.log(`[Ingest] Generating audit snippet for ${fileMeta.filename} page ${pageNum}...`);
                         try {
-                            const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum);
+                            // Collect all annotations for this page (metrics with bboxes)
+                            const pageAnnotations: SourceAnnotation[] = lineItems
+                                .filter(li => li.source_location.page === pageNum && li.source_location.bbox)
+                                .map(li => ({
+                                    label: li.line_item_id.replace(/_/g, ' ').toUpperCase(),
+                                    value: li.amount.toLocaleString(),
+                                    bbox: li.source_location.bbox
+                                }));
+                            
+                            console.log(`[Ingest] Adding ${pageAnnotations.length} highlight annotations to page ${pageNum}`);
+                            
+                            // Generate snippet with visual highlights
+                            const snippetBuffer = await extractPageSnippet(
+                                fileMeta.buffer, 
+                                pageNum,
+                                pageAnnotations.length > 0 ? pageAnnotations : undefined
+                            );
+                            
                             const safeFilename = fileMeta.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
                             // Use temp prefix for dry runs to distinguish from production snippets
                             const prefix = dryRun ? `_dry_run/${companySlug}` : companySlug;

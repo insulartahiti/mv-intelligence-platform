@@ -66,6 +66,16 @@ export interface ExtractedTable {
   confidence: number;
 }
 
+export interface SourceLocation {
+  page: number;
+  bbox?: {
+    x: number;      // Left edge as percentage (0-1)
+    y: number;      // Top edge as percentage (0-1)
+    width: number;  // Width as percentage (0-1)
+    height: number; // Height as percentage (0-1)
+  };
+}
+
 export interface FinancialSummary {
   // New structure: separate actuals from budget
   actuals?: Record<string, number>;
@@ -76,6 +86,8 @@ export interface FinancialSummary {
   period_type?: string;      // "month", "quarter", "year", "ytd"
   currency?: string;
   business_model?: string;
+  // Source locations for audit trail highlighting
+  source_locations?: Record<string, SourceLocation>;
 }
 
 export interface BenchmarkContext {
@@ -250,7 +262,11 @@ Extract ALL financial data and return structured JSON:
     "period": "September 2025",
     "period_type": "month",
     "currency": "EUR",
-    "business_model": "saas"
+    "business_model": "saas",
+    "source_locations": {
+      "mrr": { "page": 1, "bbox": { "x": 0.6, "y": 0.3, "width": 0.15, "height": 0.03 } },
+      "arr": { "page": 1, "bbox": { "x": 0.6, "y": 0.35, "width": 0.15, "height": 0.03 } }
+    }
   }
 }
 
@@ -287,7 +303,13 @@ CRITICAL - Metrics:
 - Map ALL metrics to standard IDs above
 - Calculate ARR = MRR * 12 if only MRR is given
 - Preserve exact numbers (no rounding)
-- Convert percentages to decimals (75% = 0.75)`;
+- Convert percentages to decimals (75% = 0.75)
+
+CRITICAL - Source Locations (for audit trail):
+- For each metric in "actuals" and "budget", provide its location in "source_locations"
+- "bbox" = bounding box as percentage of page (0-1 range): x=left edge, y=top edge
+- This enables visual highlighting of where each number was found
+- If you cannot determine exact location, provide "page" number only`;
 
     // Use the responses.create endpoint
     const response = await openai.responses.create({
