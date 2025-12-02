@@ -32,7 +32,8 @@ export async function mapDataToSchema(
   // 1. Handle Excel Mapping
   if (fileType === 'xlsx' && Array.isArray(data)) {
     const sheets = data as ExtractedSheet[];
-    const rules = guide.mapping_rules.line_items;
+    // Safely access mapping_rules (Nelly guide might not have this structure)
+    const rules = guide.mapping_rules?.line_items || {};
 
     for (const [lineItemId, mapping] of Object.entries(rules)) {
       if (mapping.source !== 'financials') continue;
