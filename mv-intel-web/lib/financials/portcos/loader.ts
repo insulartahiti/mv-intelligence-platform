@@ -20,6 +20,8 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
     // Nelly-style format: company: { name, currency, business_models, ... }
     company_metadata = {
       name: rawGuide.company.name,
+      domain: rawGuide.company.domain || rawGuide.company.website,
+      aliases: rawGuide.company.aliases || [],
       currency: rawGuide.company.currency || 'USD',
       fiscal_year_end: rawGuide.company.fiscal_year_end_month 
         ? `12-${String(rawGuide.company.fiscal_year_end_month).padStart(2, '0')}`

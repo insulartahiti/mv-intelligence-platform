@@ -281,129 +281,72 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
 
 ---
 
-## 4. Financial Data Ingestion System
+## 4. Financial Data Ingestion System (Knowledge Graph Extension)
 
-A comprehensive system for ingesting portfolio company financials (PDF, Excel) and computing auditable KPIs. **Status: Staging**
+**Status: Staging**
 
-### Architecture Overview
+This module extends the Knowledge Graph by attaching structured financial performance data (`fact_financials`, `fact_metrics`) and unstructured narrative insights (`company_insights`) to existing portfolio company nodes.
+
+### Architectural Philosophy
+1.  **Extension, Not Silo**: Financial data is not a separate "app". It is an attribute of the Company Entity in the Knowledge Graph.
+2.  **Unified Identity**: Ingestion relies on the `companies` table (synced from Affinity) as the source of truth. We do not create new companies during financial ingestion; we attach data to existing ones.
+3.  **RAG-Ready**: Narrative content (board deck summaries, risks, strategy) is stored in `company_insights` and will be vector-embedded for semantic search.
+4.  **Agent-Accessible**: Structured metrics (ARR, Growth, Burn) will be exposed to the Chat Agent via a dedicated tool (`get_financial_metrics`), allowing queries like *"Compare the burn multiple of SaaS portcos"* or *"Show me Nelly's NRR trend"*.
+
+### Data Flow
 ```
-Upload (UI) → Storage → Ingestion API → Parser → Mapper → Database
-                                           ↓
-                                    Snippet Generator → Audit Storage
+[Source Files] -> [Ingestion Pipeline] -> [Normalized DB Schema] <---(Linked via company_id)---> [Knowledge Graph]
+                                                  |
+                                                  v
+                                          [Vector Embeddings]
+                                          (for company_insights)
 ```
 
-### Key Components
+### Ingestion Pipeline
+1.  **Upload**: User drags files to `/import`. Frontend detects company name via filename heuristics.
+2.  **Entity Resolution**: Backend resolves the target company against the `companies` table.
+    *   **Strategy**: Exact Match → Fuzzy Match (stripping "GmbH", "Inc", etc.) → Alias Match (future).
+    *   **Constraint**: Target company MUST exist in Affinity (and thus in `companies` table).
+3.  **Processing**:
+    *   **Financials**: Parsed from Excel/PDF tables -> `fact_financials`.
+    *   **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
+    *   **Insights**: Extracted via GPT-4 -> `company_insights`.
+4.  **Audit**: Source snippets (PDF crops) saved to `financial-snippets` bucket.
 
-| Component | Path | Purpose |
-| :--- | :--- | :--- |
-| **Import UI** | `app/import/page.tsx` | Drag-and-drop file upload with company detection |
-| **Upload API** | `app/api/upload/route.ts` | Service-role storage upload (bypasses RLS) |
-| **Ingest API** | `app/api/ingest/route.ts` | Orchestrates parsing, mapping, and storage |
-| **File Loader** | `lib/financials/ingestion/load_file.ts` | Loads from Supabase Storage or local FS |
-| **PDF Parser** | `lib/financials/ingestion/parse_pdf.ts` | Extracts text per page |
-| **Excel Parser** | `lib/financials/ingestion/parse_excel.ts` | Extracts sheets as row-major grids |
-| **Schema Mapper** | `lib/financials/ingestion/map_to_schema.ts` | Maps raw data to standardized line items |
-| **Metrics Engine** | `lib/financials/metrics/compute_metrics.ts` | Computes KPIs from normalized data |
-| **Snippet Generator** | `lib/financials/audit/pdf_snippet.ts` | Extracts source page for audit trail |
+### RAG & Search Strategy (Roadmap)
+To enable "Financial Intelligence" in the chat agent:
 
-### Database Schema (Financial Tables)
+1.  **Unstructured Search (Qualitative)**:
+    *   **Action**: Add `embedding` column to `company_insights`.
+    *   **Pipeline**: Trigger `generate_embedding` on new insight rows.
+    *   **Retrieval**: Update `postgres-vector.ts` to include `company_insights` in the vector search scope when the query implies financial/strategic context.
+
+2.  **Structured Query (Quantitative)**:
+    *   **Action**: Create an Agent Tool `get_financial_metrics(company_ids, metric_keys, period_range)`.
+    *   **Logic**: The Agent detects a quantitative question ("What is Nelly's ARR?"), calls the tool, and receives structured JSON from `fact_metrics`.
+    *   **Synthesis**: Agent formats the JSON into a natural language answer or table.
+
+### Database Schema (Financial Extension)
 
 ```sql
--- Dimension: Standardized Line Items
-dim_line_item (id, name, category, description)
+-- Fact: Normalized Financial Data (Linked to Companies)
+fact_financials (id, company_id, date, line_item_id, amount, ...)
 
--- Dimension: Source Files
-dim_source_files (id, company_id, filename, storage_path, file_type, ingested_at, ingestion_status, metadata)
+-- Fact: Computed KPIs (The "Answer Key" for Agents)
+fact_metrics (id, company_id, metric_id, value, period, ...)
 
--- Fact: Normalized Financial Data
-fact_financials (id, company_id, date, period_type, scenario, line_item_id, amount, currency, source_file_id, source_location)
-
--- Fact: Computed KPIs
-fact_metrics (id, company_id, period, metric_id, value, unit, calculation_version, inputs)
+-- Insights: Narrative Knowledge (Vectorized for RAG)
+company_insights (id, company_id, category, content, embedding, ...)
 ```
 
-### Portco Guide Format
-Each portfolio company has a `guide.yaml` defining how to map their specific file formats:
+### Portco Guide (`guide.yaml`)
+Configuration file per company. **Crucial**: The `company.name` in the guide must resolve to an existing Knowledge Graph entity.
 
 ```yaml
-company_metadata:
-  name: "Acme Corp"
-  currency: "USD"
-  business_models: ["saas"]
-
-source_docs:
-  - type: "financials"
-    format: "xlsx"
-    pattern: "Acme_Financials_*.xlsx"
-
-mapping_rules:
-  line_items:
-    revenue_recurring:
-      source: "financials"
-      sheet: "Summary P&L"
-      label_match: "Subscription Revenue"
-    arr_current:
-      source: "financials"
-      sheet: "KPIs"
-      label_match: "Ending ARR"
-
-validation_rules:
-  - check: "revenue_recurring + revenue_services == revenue_total"
-    tolerance: 0.01
+company:
+  name: "Nelly Solutions GmbH" # Must match 'companies' table (fuzzy match supported)
+  ...
 ```
-
-### Common Metrics
-Defined in `lib/financials/metrics/common_metrics.json`. Includes:
-- ARR Growth YoY
-- Gross Margin
-- Net Revenue Retention (NRR)
-- LTV/CAC
-- CAC Payback
-- Burn Multiple
-- Rule of 40
-
-Each metric specifies: `id`, `name`, `formula`, `inputs`, `unit`, `benchmark_bands` (poor/good/great).
-
-### Qualitative Insights (NEW)
-Defined in `lib/financials/qualitative/insights_schema.ts`. Captures narrative data:
-- **Categories**: key_highlight, risk_factor, strategic_initiative, market_observation, management_commentary, customer_update, product_update, team_update, fundraising, regulatory
-- **Fields**: title, content, sentiment, confidence, source_location
-- **Storage**: `company_insights` table with full audit trail
-
-### LLM Extraction Service (NEW)
-Located in `lib/financials/extraction/llm_extractor.ts`. Uses OpenAI GPT-4:
-- **Period Extraction**: Determines reporting period from filename/content
-- **Insight Extraction**: Extracts qualitative insights from document text
-- **Table Extraction**: Uses GPT-4 Vision for scanned/image PDFs
-- **Data Validation**: Cross-checks extracted values for consistency
-
-**Why OpenAI over Google Vision?**
-- Consistent with existing platform LLM usage
-- Single API/billing relationship
-- GPT-4V combines OCR + semantic understanding
-- Better financial domain comprehension
-
-### Upload Flow
-1. User drops files on `/import` page
-2. Frontend detects company from filename (slug matching with word boundaries)
-3. Files uploaded via `/api/upload` (service role, bypasses RLS)
-4. `/api/ingest` called with file paths
-5. Backend loads guide, parses files, maps to schema
-6. **Company Resolution**: Looks up company in `companies` table (Affinity-synced)
-   - Tries exact match first
-   - Falls back to fuzzy match (strips legal suffixes like GmbH, Inc.)
-   - Fails if company not found (must exist in main DB first)
-7. Line items saved to `fact_financials`
-8. Metrics computed and saved to `fact_metrics`
-9. PDF snippets extracted for audit trail → `financial-snippets` bucket
-10. Source files deleted from `financial-docs` (success only)
-
-### Important: Company Name Matching
-The Portco Guide's `company.name` (or `company_metadata.name`) must match a company that **already exists** in the `companies` table. This table is synced from Affinity CRM.
-
-- **Exact Match**: `Nelly Solutions` matches `Nelly Solutions`
-- **Fuzzy Match**: `Nelly Solutions GmbH` matches `Nelly Solutions` (legal suffix stripped)
-- **No Match**: If the company doesn't exist in Affinity, add it there first and run the sync pipeline
 
 ### Error Handling
 - **Success (200)**: All files ingested with data extracted

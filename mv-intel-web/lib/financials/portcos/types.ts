@@ -1,5 +1,7 @@
 export interface PortcoMetadata {
   name: string;
+  domain?: string; // Primary domain for Knowledge Graph matching (e.g. nelly.com)
+  aliases?: string[]; // Alternative names (e.g. "Nelly", "Nelly Solutions")
   currency: string;
   fiscal_year_end?: string;
   business_models: string[];
