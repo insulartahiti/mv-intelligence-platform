@@ -14,5 +14,10 @@ const nextConfig = {
     // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
+  // Include YAML files in serverless function bundles
+  outputFileTracingIncludes: {
+    '/api/ingest': ['./lib/financials/portcos/**/*'],
+    '/api/detect-company': ['./lib/financials/portcos/**/*'],
+  },
 };
 module.exports = nextConfig;

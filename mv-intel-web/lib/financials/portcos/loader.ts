@@ -3,7 +3,26 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { PortcoGuide, PortcoMetadata, MappingRules } from './types';
 
-const PORTCOS_DIR = path.join(process.cwd(), 'lib/financials/portcos');
+// Try multiple possible locations for the portcos directory
+// This handles differences between local dev, Vercel, and other environments
+function getPortcosDir(): string {
+  const candidates = [
+    path.join(process.cwd(), 'lib/financials/portcos'),           // Local dev (Next.js)
+    path.join(process.cwd(), 'mv-intel-web/lib/financials/portcos'), // If running from repo root
+    path.join(__dirname, '.'),                                      // Relative to this file
+  ];
+  
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) {
+      return dir;
+    }
+  }
+  
+  // Default to first candidate (will fail with descriptive error if not found)
+  return candidates[0];
+}
+
+const PORTCOS_DIR = getPortcosDir();
 
 /**
  * Normalizes different YAML guide formats into the standard PortcoGuide interface.

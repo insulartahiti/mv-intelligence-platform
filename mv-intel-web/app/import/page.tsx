@@ -153,12 +153,21 @@ export default function ImportPage() {
           
           const data = await res.json();
           
-          if (res.ok) {
+          if (res.ok && data.status !== 'error') {
               setDryRunResults(data.results || []);
               setUploadStatus('success');
               setStatusMessage(`Test Run Complete (using ${data.company || testCompany} guide)`);
           } else {
-              throw new Error(data.error || 'Test run failed');
+              // Show detailed error from results if available
+              const errorDetails = data.results?.map((r: any) => 
+                  r.status === 'error' ? `${r.file}: ${r.error}` : null
+              ).filter(Boolean).join('\n') || data.error || 'Test run failed';
+              
+              // Still show any partial results
+              if (data.results?.length > 0) {
+                  setDryRunResults(data.results);
+              }
+              throw new Error(errorDetails);
           }
       } catch (err: any) {
           console.error('Dry run error:', err);
