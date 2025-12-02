@@ -169,15 +169,17 @@ export async function mapDataToSchema(
             console.log(`[Ingestion] Found potential table '${tableKey}' on page(s) ${targetPages.join(', ')}`);
             
             // Basic Heuristic Extraction (Stub for LLM)
-            // Attempt to find metric labels on the page and extract the nearest number
+            // Attempt to find metric labels on ALL matching pages (not just the first)
             if (tableConfig.metric_rows && targetPages.length > 0) {
-                // Validate page number is within bounds
-                const pageIndex = targetPages[0] - 1;
-                if (pageIndex < 0 || pageIndex >= pdfContent.pages.length) {
-                    console.warn(`[Ingestion] Page ${targetPages[0]} out of bounds (PDF has ${pdfContent.pages.length} pages)`);
-                    continue;
-                }
-                const pageText = pdfContent.pages[pageIndex].text;
+                // Process ALL matching pages to handle multi-page tables
+                for (const pageNum of targetPages) {
+                    // Validate page number is within bounds
+                    const pageIndex = pageNum - 1;
+                    if (pageIndex < 0 || pageIndex >= pdfContent.pages.length) {
+                        console.warn(`[Ingestion] Page ${pageNum} out of bounds (PDF has ${pdfContent.pages.length} pages)`);
+                        continue;
+                    }
+                    const pageText = pdfContent.pages[pageIndex].text;
                 
                 for (const [metricKey, label] of Object.entries(tableConfig.metric_rows)) {
                     // Simple regex: Label followed by some chars and then a number
@@ -207,13 +209,14 @@ export async function mapDataToSchema(
                                 date: periodDate,
                                 source_location: {
                                     file_type: 'pdf',
-                                    page: targetPages[0],
+                                    page: pageNum,  // Use current page, not first page
                                     context: `Extracted via regex from '${label}'`
                                 }
                             });
                         }
                     }
                 }
+                }  // End of: for (const pageNum of targetPages)
             }
          }
        }
