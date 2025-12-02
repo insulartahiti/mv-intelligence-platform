@@ -76,10 +76,9 @@ export default function ImportPage() {
 
         // 1. Upload files to Supabase Storage
         for (const file of files) {
-            const path = `financial-docs/${selectedCompany}/${Date.now()}_${file.name}`;
-            // Remove 'financial-docs/' prefix for the upload call itself, as the bucket is defined in the client method
-            // Actually supabase.storage.from('bucket').upload('path/to/file')
-            const relativePath = `${selectedCompany}/${Date.now()}_${file.name}`;
+            // Use a single consistent timestamp for the file path
+            const timestamp = Date.now();
+            const relativePath = `${selectedCompany}/${timestamp}_${file.name}`;
             
             const { data, error } = await supabase.storage
                 .from('financial-docs')

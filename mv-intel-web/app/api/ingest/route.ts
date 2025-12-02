@@ -4,7 +4,7 @@ import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
 import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
 import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
-import { computeMetricsForPeriod } from '@/lib/financials/metrics/compute_metrics';
+import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
 import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
 
@@ -58,6 +58,24 @@ export async function POST(req: NextRequest) {
             const companyId = companyData?.id || '00000000-0000-0000-0000-000000000000';
             
             // 3. Parse & Map
+            // Register source file in DB
+            const { data: sourceFile, error: sourceFileError } = await supabase
+                .from('dim_source_files')
+                .insert({
+                    company_id: companyId,
+                    filename: fileMeta.filename,
+                    storage_path: filePath,
+                    file_type: fileMeta.filename.split('.').pop()?.toLowerCase() || 'unknown'
+                })
+                .select()
+                .single();
+
+            if (sourceFileError) {
+                console.error('Error creating source file record:', sourceFileError);
+                // Continue but without linking to source file ID
+            }
+            const sourceFileId = sourceFile?.id;
+
             let extractedData;
             let fileType: 'pdf' | 'xlsx' = 'pdf';
             
@@ -75,34 +93,63 @@ export async function POST(req: NextRequest) {
             const periodDate = '2025-09-01'; 
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
             
-            // 4b. Generate Audit Snippets (PDF Pages)
-            // We do this BEFORE metrics computation so we can attach snippet URLs to the facts if needed.
-            // For now, we'll just generate them for every line item that has a page number.
-            
-            // Cache snippets to avoid re-generating same page multiple times
+            // 4b. Generate Audit Snippets & Prepare Fact Rows
             const processedPages = new Set<number>();
-            
+            const factRows = [];
+
             for (const item of lineItems) {
+                // Prepare fact row
+                const factRow = {
+                    company_id: companyId,
+                    date: item.date || periodDate,
+                    line_item_id: item.line_item_id,
+                    amount: item.amount,
+                    currency: guide.company_metadata.currency || 'USD',
+                    source_file_id: sourceFileId,
+                    source_location: item.source_location as any // Cast for now, will update with snippet
+                };
+
                 if (fileType === 'pdf' && item.source_location.page) {
                     const pageNum = item.source_location.page;
+                    
+                    // Generate snippet if not cached
                     if (!processedPages.has(pageNum)) {
                         console.log(`[Ingest] Generating audit snippet for page ${pageNum}...`);
-                        const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum);
-                        
-                        // Upload to 'financial-snippets' bucket
-                        const snippetPath = `${companySlug}/${Date.now()}_page_${pageNum}.pdf`;
-                        const { error: uploadError } = await supabase.storage
-                            .from('financial-snippets')
-                            .upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
+                        try {
+                            const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum);
+                            const snippetPath = `${companySlug}/${Date.now()}_page_${pageNum}.pdf`;
                             
-                        if (uploadError) {
-                            console.error('Failed to upload snippet:', uploadError);
-                        } else {
-                            // Link snippet to the item (in a real DB save, we'd update the fact row)
-                            // item.source_location.snippet_url = ...
+                            const { error: uploadError } = await supabase.storage
+                                .from('financial-snippets')
+                                .upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
+                                
+                            if (uploadError) {
+                                console.error('Failed to upload snippet:', uploadError);
+                            } else {
+                                // In a real scenario we might store the snippet URL in the fact
+                                // For now, we assume standard naming convention or just presence in bucket
+                            }
+                        } catch (err) {
+                            console.error(`Failed to generate/upload snippet for page ${pageNum}`, err);
+                        } finally {
+                            // Mark processed regardless of success to prevent endless retries in this request
                             processedPages.add(pageNum);
                         }
                     }
+                }
+                
+                factRows.push(factRow);
+            }
+
+            // 4c. Persist Raw Facts
+            if (factRows.length > 0) {
+                const { error: factsError } = await supabase
+                    .from('fact_financials')
+                    .insert(factRows);
+                
+                if (factsError) {
+                    console.error('Error persisting fact_financials:', factsError);
+                    throw new Error('Failed to save financial data to database');
                 }
             }
 
@@ -114,6 +161,11 @@ export async function POST(req: NextRequest) {
             });
 
             const metrics = computeMetricsForPeriod(companyId, periodDate, facts);
+            
+            // 5b. Persist Metrics
+            if (metrics.length > 0) {
+                await saveMetricsToDb(metrics, companyId, supabase);
+            }
 
             results.push({
                 file: fileMeta.filename,
