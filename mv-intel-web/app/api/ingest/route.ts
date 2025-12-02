@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
 import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
-import { parsePDF } from '@/lib/financials/ingestion/parse_pdf';
+import { parsePDFWithVision } from '@/lib/financials/ingestion/parse_pdf_vision';
 import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
@@ -284,7 +284,9 @@ export async function POST(req: NextRequest) {
             // Case-insensitive extension matching
             const filenameLower = fileMeta.filename.toLowerCase();
             if (filenameLower.endsWith('.pdf')) {
-                extractedData = await parsePDF(fileMeta);
+                // Use GPT-4 Vision for PDF extraction (works reliably in serverless)
+                console.log(`[Ingest] Using Vision-based PDF extraction for ${fileMeta.filename}`);
+                extractedData = await parsePDFWithVision(fileMeta);
                 fileType = 'pdf';
             } else if (filenameLower.endsWith('.xlsx') || filenameLower.endsWith('.xls')) {
                 extractedData = await parseExcel(fileMeta);
@@ -461,10 +463,12 @@ export async function POST(req: NextRequest) {
                 }
             });
             
-            const metrics = computeMetricsForPeriod(companyId, periodDate, facts);
+            // Use mock ID for metrics computation if company not resolved (dry run)
+            const metricsCompanyId = companyId || '00000000-0000-0000-0000-000000000000';
+            const metrics = computeMetricsForPeriod(metricsCompanyId, periodDate, facts);
             
             // 5b. Persist Metrics (SKIP IF DRY RUN)
-            if (!dryRun && metrics.length > 0) {
+            if (!dryRun && metrics.length > 0 && companyId) {
                 await saveMetricsToDb(metrics, companyId, supabase);
             } else if (dryRun) {
                 console.log(`[Dry Run] Skipping fact_metrics insert (${metrics.length} rows)`);

@@ -1,6 +1,6 @@
 import { PortcoGuide, LineItemMapping } from '../portcos/types';
 import { ExtractedSheet, getCellValue } from './parse_excel';
-import { PDFContent, findPagesWithKeywords } from './parse_pdf';
+import { PDFContent, findPagesWithKeywords } from './parse_pdf_vision';
 // Import dynamically to avoid potential circular dep issues during init if any
 // import { extractFinancialsFromExcelLLM } from '../extraction/llm_extractor'; 
 
