@@ -129,7 +129,16 @@ export default function ImportPage() {
             })
         });
         
-        const data = await res.json();
+        let data;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            data = await res.json();
+        } else {
+            // Handle non-JSON responses (e.g. Vercel 500/404/Auth pages)
+            const text = await res.text();
+            console.error('Non-JSON response from API:', text.slice(0, 500));
+            throw new Error(`Server returned ${res.status}: ${res.statusText}. See console for details.`);
+        }
         
         // Check response body status, not just HTTP status
         // API returns: 'success' (all files), 'partial' (some failed), 'error' (all failed)
@@ -157,15 +166,21 @@ export default function ImportPage() {
             const reviewCount = data.summary?.needs_review || 0;
             const totalProblems = errorCount + reviewCount;
             setStatusMessage(`${totalProblems} of ${data.summary?.total || 0} files had issues. Check: ${failedNames}`);
+            
+            // Alert details for partial failures
+            console.warn('Partial success details:', data);
         } else {
             // Complete failure
             setUploadStatus('error');
-            setStatusMessage(data.error || 'Processing failed - all files had errors');
+            const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Processing failed');
+            setStatusMessage(errorMessage);
+            alert(`Ingestion Failed:\n${errorMessage}`); // Explicitly alert user
         }
-    } catch (err) {
-        console.error(err);
+    } catch (err: any) {
+        console.error('Submission error:', err);
         setUploadStatus('error');
-        setStatusMessage('Upload failed');
+        setStatusMessage(`Upload failed: ${err.message || 'Unknown error'}`);
+        alert(`Error: ${err.message || 'Unknown error occurred'}`);
     } finally {
         setIsUploading(false);
     }

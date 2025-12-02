@@ -19,3 +19,4 @@ on storage.objects for select
 to authenticated
 using ( bucket_id in ('financial-docs', 'financial-snippets') );
 
+

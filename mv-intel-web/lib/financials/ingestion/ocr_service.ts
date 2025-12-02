@@ -34,3 +34,4 @@ export async function extractTableFromImage(imageBuffer: Buffer): Promise<any> {
 }
 
 
+
