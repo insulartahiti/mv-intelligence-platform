@@ -170,11 +170,28 @@ export default function ImportPage() {
             // Alert details for partial failures
             console.warn('Partial success details:', data);
         } else {
-            // Complete failure
+            // Complete failure (overallStatus === 'error')
             setUploadStatus('error');
-            const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Processing failed');
-            setStatusMessage(errorMessage);
-            alert(`Ingestion Failed:\n${errorMessage}`); // Explicitly alert user
+            
+            // Try to extract specific errors from results if available
+            let errorMessage = '';
+            if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+                const errors = data.results
+                    .filter((r: any) => r.status === 'error' && r.error)
+                    .map((r: any) => `${r.file}: ${r.error}`)
+                    .join('\n');
+                if (errors) {
+                    errorMessage = errors;
+                }
+            }
+            
+            // Fallback to top-level error/details if no result-specific errors found
+            if (!errorMessage) {
+                errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Processing failed');
+            }
+            
+            setStatusMessage('Ingestion failed for all files');
+            alert(`Ingestion Failed:\n${errorMessage}`); // Explicitly alert user with detailed errors
         }
     } catch (err: any) {
         console.error('Submission error:', err);
