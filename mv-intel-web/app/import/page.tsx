@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, Check, AlertCircle, Loader2, Search } from 'lucide-react';
+import { Upload, FileText, Check, AlertCircle, Loader2, Search, Database, Cloud } from 'lucide-react';
 
 export default function ImportPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -17,10 +17,25 @@ export default function ImportPage() {
   const [resolvedCompanyId, setResolvedCompanyId] = useState('');
   const [dryRunResults, setDryRunResults] = useState<any[]>([]);
   
+  // Local mode state
+  const [localMode, setLocalMode] = useState(true); // Default to local for development
+  const [useCache, setUseCache] = useState(true);
+  const [localStorageSummary, setLocalStorageSummary] = useState<any>(null);
+  
   // Search state for modal
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{id: string, name: string}[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Load local storage summary on mount
+  useEffect(() => {
+    if (localMode) {
+      fetch('/api/ingest-local')
+        .then(res => res.json())
+        .then(data => setLocalStorageSummary(data))
+        .catch(() => {});
+    }
+  }, [localMode]);
 
   // Auto-detect company when files are added
   useEffect(() => {
@@ -115,7 +130,7 @@ export default function ImportPage() {
       
       setIsUploading(true);
       setUploadStatus('idle');
-      setStatusMessage(`Running dry run with ${testCompany} guide...`);
+      setStatusMessage(`Running ${localMode ? 'LOCAL' : 'dry'} run with ${testCompany} guide...`);
       setDryRunResults([]); // Clear previous results
 
       try {
@@ -139,24 +154,36 @@ export default function ImportPage() {
               uploadedPaths.push(urlData.path);
           }
 
-          setStatusMessage('Processing test run...');
+          setStatusMessage(localMode ? 'Processing locally (checking cache)...' : 'Processing test run...');
           
-          const res = await fetch('/api/ingest', { 
+          // Use local endpoint if local mode is enabled
+          const endpoint = localMode ? '/api/ingest-local' : '/api/ingest';
+          const res = await fetch(endpoint, { 
               method: 'POST', 
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   companySlug: testCompany,
                   filePaths: uploadedPaths,
-                  dryRun: true
+                  dryRun: !localMode, // Only needed for non-local mode
+                  useCache: useCache, // Local mode caching option
+                  forceReextract: false
               })
           });
           
           const data = await res.json();
           
+          // Update local storage summary
+          if (localMode && data.local_storage) {
+              setLocalStorageSummary(data.local_storage);
+          }
+          
           if (res.ok && data.status !== 'error') {
               setDryRunResults(data.results || []);
               setUploadStatus('success');
-              setStatusMessage(`Test Run Complete (using ${data.company || testCompany} guide)`);
+              const cacheInfo = localMode && data.summary?.cached > 0 
+                  ? ` (${data.summary.cached} from cache)` 
+                  : '';
+              setStatusMessage(`${localMode ? 'Local' : 'Test'} Run Complete${cacheInfo}`);
           } else {
               // Show detailed error from results if available
               const errorDetails = data.results?.map((r: any) => 
@@ -463,13 +490,62 @@ export default function ImportPage() {
         )}
 
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-            Portfolio Data Ingestion
-          </h1>
-          <p className="text-gray-400 mt-2">
-            Upload board decks, financial models, or paste investor updates.
-          </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+              Portfolio Data Ingestion
+            </h1>
+            <p className="text-gray-400 mt-2">
+              Upload board decks, financial models, or paste investor updates.
+            </p>
+          </div>
+          
+          {/* Mode Toggle */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-lg px-4 py-2">
+              <button
+                onClick={() => setLocalMode(false)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  !localMode 
+                    ? 'bg-blue-600 text-white' 
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Cloud size={14} />
+                Cloud
+              </button>
+              <button
+                onClick={() => setLocalMode(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  localMode 
+                    ? 'bg-green-600 text-white' 
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Database size={14} />
+                Local
+              </button>
+            </div>
+            
+            {localMode && (
+              <div className="flex items-center gap-2 text-xs">
+                <label className="flex items-center gap-1.5 text-gray-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useCache}
+                    onChange={(e) => setUseCache(e.target.checked)}
+                    className="w-3 h-3 rounded border-gray-600 text-green-500 focus:ring-green-500"
+                  />
+                  Use API cache
+                </label>
+                {localStorageSummary && (
+                  <span className="text-gray-500">
+                    ({localStorageSummary.extractions} extractions, {localStorageSummary.cacheEntries} cached)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Company Selector */}
@@ -583,10 +659,21 @@ export default function ImportPage() {
             <button
                 onClick={handleTestRun}
                 disabled={isUploading || files.length === 0}
-                className="px-6 py-3 rounded-xl font-medium text-blue-400 border border-blue-500/30 hover:bg-blue-500/10 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Test extraction using Nelly guide (no database writes)"
+                className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  localMode 
+                    ? 'text-green-400 border border-green-500/30 hover:bg-green-500/10'
+                    : 'text-blue-400 border border-blue-500/30 hover:bg-blue-500/10'
+                }`}
+                title={localMode ? "Extract locally with caching (no API costs for cached files)" : "Test extraction using Nelly guide (no database writes)"}
             >
-                Test Run (Nelly)
+                {localMode ? (
+                  <>
+                    <Database size={16} className="inline mr-2" />
+                    Extract Locally
+                  </>
+                ) : (
+                  'Test Run (Nelly)'
+                )}
             </button>
             
             <button
@@ -723,6 +810,60 @@ export default function ImportPage() {
                                           </table>
                                       </div>
                                   </details>
+                              )}
+                              
+                              {/* Diff View (Local Mode) */}
+                              {res.diff && (
+                                  <details className="group">
+                                      <summary className="cursor-pointer text-sm text-yellow-400 hover:text-yellow-300 mb-2">
+                                          📊 Changes from Previous Extraction
+                                      </summary>
+                                      <div className="mt-2 pl-4 border-l-2 border-yellow-500/30 space-y-2 text-xs">
+                                          {res.diff.added.length > 0 && (
+                                              <div>
+                                                  <span className="text-green-400 font-medium">+ Added:</span>
+                                                  <ul className="ml-4 text-gray-300">
+                                                      {res.diff.added.map((item: any, i: number) => (
+                                                          <li key={i}>{item.metric}: {item.value.toLocaleString()}</li>
+                                                      ))}
+                                                  </ul>
+                                              </div>
+                                          )}
+                                          {res.diff.removed.length > 0 && (
+                                              <div>
+                                                  <span className="text-red-400 font-medium">- Removed:</span>
+                                                  <ul className="ml-4 text-gray-300">
+                                                      {res.diff.removed.map((item: any, i: number) => (
+                                                          <li key={i}>{item.metric}: {item.value.toLocaleString()}</li>
+                                                      ))}
+                                                  </ul>
+                                              </div>
+                                          )}
+                                          {res.diff.changed.length > 0 && (
+                                              <div>
+                                                  <span className="text-yellow-400 font-medium">~ Changed:</span>
+                                                  <ul className="ml-4 text-gray-300">
+                                                      {res.diff.changed.map((item: any, i: number) => (
+                                                          <li key={i}>
+                                                              {item.metric}: {item.oldValue.toLocaleString()} → {item.newValue.toLocaleString()}
+                                                              <span className={item.delta > 0 ? 'text-green-400' : 'text-red-400'}>
+                                                                  {' '}({item.delta > 0 ? '+' : ''}{item.delta.toLocaleString()})
+                                                              </span>
+                                                          </li>
+                                                      ))}
+                                                  </ul>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </details>
+                              )}
+                              
+                              {/* Cache indicator */}
+                              {res.usedCache && (
+                                  <div className="text-xs text-gray-500 flex items-center gap-1">
+                                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                      Loaded from cache (no API call)
+                                  </div>
                               )}
                               
                               {res.error && (

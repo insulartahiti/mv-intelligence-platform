@@ -1,2 +1,5 @@
 .vercel
 .env*.local
+
+# Local development data (extraction cache, facts, metrics)
+.local-data/

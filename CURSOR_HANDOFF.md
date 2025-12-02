@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 02, 2025 (v3.2 - Guide-Aware Extraction)
+**Last Updated:** Dec 02, 2025 (v3.3 - Local Development Mode)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -649,19 +649,19 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### Features Added
 
-*   **Financial Data Ingestion System v3.2**: Guide-aware extraction with improved accuracy.
-    *   **Guide-Aware Extraction** (NEW): Portco Guide context injected into LLM prompt
+*   **Financial Data Ingestion System v3.3**: Local development mode for fast iteration.
+    *   **Local Development Mode** (NEW): File-based storage for extraction results, facts, metrics
+    *   **API Response Caching**: Cached OpenAI responses keyed by file hash - no repeated API calls
+    *   **Extraction Diff View**: Compare current extraction to previous runs (added/removed/changed)
+    *   **Mode Toggle UI**: Switch between Local (green) and Cloud (blue) modes in import page
+    *   **Guide-Aware Extraction**: Portco Guide context injected into LLM prompt
     *   **No Hallucination**: Prompt uses placeholders, not example values that could be copied
     *   **Fail-Fast**: Removed fallback methods - extraction fails clearly instead of degrading
     *   **Scenario Separation**: Actuals vs Budget clearly separated in UI and computation
     *   **Deduplication**: Same metric from multiple sources uses latest value, not sum
     *   **Visual Audit Highlighting**: Ellipse annotations drawn around extracted values in PDF snippets
-    *   **Bounding Box Extraction**: GPT-5.1 returns `source_locations` with bbox coordinates (% of page)
-    *   **Enhanced `pdf_snippet.ts`**: Draws ellipses and labels on extracted pages using `pdf-lib`
     *   **Unified Extractor** (`unified_extractor.ts`): Single pipeline for PDF + Excel
     *   **Perplexity Benchmarks**: Industry comparison via Sonar Pro API
-    *   **Smart Period Detection**: Extracts reporting period from document content (not just filename)
-    *   **Standard Metric ID Normalization**: Maps variations to consistent IDs (mrr, arr, nrr, etc.)
     *   Common Metrics dictionary with SaaS/Fintech KPIs
     *   YAML-based Portco Guides for company-specific mapping
     *   Import UI (`/import`) with drag-and-drop support
