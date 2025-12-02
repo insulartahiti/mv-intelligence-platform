@@ -600,6 +600,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed zero-extraction files being deleted (now retained with `needs_review` status for debugging)
     *   Added `export const dynamic = 'force-dynamic'` to prevent Vercel edge caching issues
     *   Implemented **LLM Cross-Check** for Excel ingestion: Now runs GPT-4 extraction alongside deterministic mapping to verify values and catch missing items.
+    *   **Fixed DOMMatrix not defined error**: Added polyfill in `parse_pdf.ts` for serverless environments. The `pdf-parse` library uses `pdfjs-dist` which requires browser APIs (`DOMMatrix`) not available in Node.js/Vercel serverless.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)
