@@ -233,6 +233,11 @@ export async function POST(req: NextRequest) {
                 status: 'success'
             });
 
+            // 6. Cleanup: Delete file from storage ONLY on success
+            // User requirement: "failed files should be retained for investigation"
+            console.log(`[Ingest] Deleting ${filePath} from storage...`);
+            await deleteFile(filePath);
+
         } catch (fileError: any) {
             console.error(`Error processing file ${filePath}:`, fileError);
             results.push({
@@ -240,11 +245,7 @@ export async function POST(req: NextRequest) {
                 status: 'error',
                 error: fileError.message
             });
-        } finally {
-            // 6. Cleanup: Delete file from storage
-            // User requirement: "once files are extracted we should not store them"
-            console.log(`[Ingest] Deleting ${filePath} from storage...`);
-            await deleteFile(filePath);
+            // Do NOT delete file here, keep for debugging
         }
     }
 
