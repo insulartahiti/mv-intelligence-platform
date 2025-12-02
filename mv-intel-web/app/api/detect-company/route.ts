@@ -29,14 +29,23 @@ export async function GET(req: NextRequest) {
   for (const slug of sortedPortcos) {
     const slugLower = slug.toLowerCase();
     
-    // Escape regex meta-characters in slug to prevent injection
-    // e.g., "acme.corp" should match literally, not "acmexcorp" where dot is any char
-    const escapedSlug = slugLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // IMPORTANT: Replace hyphens with flexible pattern BEFORE escaping
+    // This allows "acme-corp" to match "acme_corp", "acme corp", "acmecorp" in filenames
+    const flexibleSlug = slugLower.replace(/-/g, '[-_\\s]?');
+    
+    // Escape remaining regex meta-characters (but not the flexible pattern we just added)
+    // We need to escape: . * + ? ^ $ { } ( ) | [ ] \
+    // But NOT the [-_\s]? pattern we inserted, so we escape the original slug parts only
+    const parts = flexibleSlug.split(/(\[-_\\s\]\?)/);
+    const escapedParts = parts.map(part => 
+      part === '[-_\\s]?' ? part : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    );
+    const escapedSlug = escapedParts.join('');
     
     // Check for slug match with word boundaries to avoid partial matches
     // Match: "Nelly_Board_Q3.pdf", "nelly-financials.xlsx", "NELLY report.pdf"
     // Reject: "nellyland_report.pdf" matching "nelly" (no boundary after)
-    const boundaryRegex = new RegExp(`(^|[^a-z0-9])${escapedSlug.replace(/-/g, '[-_\\s]?')}([^a-z0-9]|$)`, 'i');
+    const boundaryRegex = new RegExp(`(^|[^a-z0-9])${escapedSlug}([^a-z0-9]|$)`, 'i');
     
     if (boundaryRegex.test(filenameLower) && slug.length > longestMatch) {
         detected = slug;

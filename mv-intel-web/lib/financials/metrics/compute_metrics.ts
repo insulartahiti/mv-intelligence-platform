@@ -105,8 +105,8 @@ export async function saveMetricsToDb(
 
   const { error } = await supabaseClient
     .from('fact_metrics')
-    // Supabase v2 upsert uses comma-separated column names (not constraint name)
-    .upsert(rows, { onConflict: 'company_id,period,metric_id' });
+    // Use the explicit constraint name from migration 20251202000002_add_metrics_unique_constraint.sql
+    .upsert(rows, { onConflict: 'fact_metrics_company_period_metric_key' });
 
   if (error) {
     console.error('Error saving metrics to DB:', error);

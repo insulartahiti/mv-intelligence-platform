@@ -143,12 +143,20 @@ export default function ImportPage() {
                 setSelectedCompany('');
                 setStatusMessage('');
             }, 3000);
-        } else if (data.status === 'partial') {
-            // Partial success - some files failed
+        } else if (data.status === 'partial' || data.status === 'needs_review') {
+            // Partial success - some files failed or need review
             setUploadStatus('error');
-            const failedFiles = data.results?.filter((r: any) => r.status === 'error') || [];
-            const failedNames = failedFiles.map((f: any) => f.file?.split('/').pop() || f.file).join(', ');
-            setStatusMessage(`Partial failure: ${data.summary?.error || 0} of ${data.summary?.total || 0} files failed. Check: ${failedNames}`);
+            // Include both error and needs_review files in the message
+            const problemFiles = data.results?.filter((r: any) => r.status === 'error' || r.status === 'needs_review') || [];
+            const failedNames = problemFiles.map((f: any) => {
+                const filename = f.file?.split('/').pop() || f.file;
+                const statusLabel = f.status === 'needs_review' ? ' (needs review)' : ' (failed)';
+                return filename + statusLabel;
+            }).join(', ');
+            const errorCount = data.summary?.error || 0;
+            const reviewCount = data.summary?.needs_review || 0;
+            const totalProblems = errorCount + reviewCount;
+            setStatusMessage(`${totalProblems} of ${data.summary?.total || 0} files had issues. Check: ${failedNames}`);
         } else {
             // Complete failure
             setUploadStatus('error');
