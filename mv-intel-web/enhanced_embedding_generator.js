@@ -372,10 +372,7 @@ Summary: ${analysis.summary}
         console.log(`   ⏭️ Marking ${id} to skip until ${skipUntil} (${newAttempts} failed attempts)`);
       }
       
-      const { error } = await supabase
-        .schema('graph')
-        .from('entities')
-        .update({
+      const payload = {
           embedding: richEmb,
           taxonomy_embedding: taxEmb,
           taxonomy: taxonomyAssignment.primary,
@@ -390,10 +387,37 @@ Summary: ${analysis.summary}
           // Track failed taxonomy attempts
           taxonomy_attempts: newAttempts,
           taxonomy_skip_until: skipUntil
-        })
-        .eq('id', id)
+      }
       
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+            .schema('graph')
+            .from('entities')
+            .update(payload)
+            .eq('id', id)
+        
+        if (error) throw error;
+      } catch (err) {
+        // Robust Fallback: If schema is missing the new columns, retry without them
+        // This handles the case where code is deployed but DB migration hasn't run yet
+        if (err.message && err.message.includes("Could not find the 'taxonomy_attempts' column")) {
+             console.warn(`   ⚠️ Schema mismatch: 'taxonomy_attempts' missing in DB. Retrying without skip logic.`);
+             
+             // Remove the new columns and retry
+             delete payload.taxonomy_attempts;
+             delete payload.taxonomy_skip_until;
+             
+             const { error: retryError } = await supabase
+              .schema('graph')
+              .from('entities')
+              .update(payload)
+              .eq('id', id);
+              
+             if (retryError) throw retryError;
+             return;
+        }
+        throw err;
+      }
     })
   }
 
