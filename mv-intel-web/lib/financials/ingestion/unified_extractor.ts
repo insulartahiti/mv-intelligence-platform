@@ -67,7 +67,11 @@ export interface ExtractedTable {
 }
 
 export interface FinancialSummary {
-  key_metrics: Record<string, number>;
+  // New structure: separate actuals from budget
+  actuals?: Record<string, number>;
+  budget?: Record<string, number>;
+  // Legacy: key_metrics (for backward compatibility, maps to actuals)
+  key_metrics?: Record<string, number>;
   period?: string;           // e.g., "Q3 2025", "September 2025"
   period_type?: string;      // "month", "quarter", "year", "ytd"
   currency?: string;
@@ -214,40 +218,76 @@ Extract ALL financial data and return structured JSON:
       "tables": [
         {
           "title": "Table name",
-          "headers": ["Metric", "Value"],
-          "rows": [["ARR", 5000000], ["MRR", 416667]],
+          "headers": ["Metric", "Actual", "Budget", "Variance"],
+          "rows": [["MRR", 782800, 750000, 32800]],
           "confidence": 0.95
         }
       ]
     }
   ],
   "financial_summary": {
-    "key_metrics": {
-      "arr": 5000000,
-      "mrr": 416667,
+    "actuals": {
+      "arr": 9393600,
+      "mrr": 782800,
+      "mrr_saas": 429800,
+      "mrr_finos": 353000,
+      "customers": 106,
+      "customers_saas": 61,
+      "customers_finos": 45,
       "gross_margin": 0.75,
-      "customers": 150,
+      "monthly_burn": 130000,
+      "cash_balance": 3250000,
+      "runway_months": 25,
       "arr_growth_yoy": 0.45,
-      "net_revenue_retention": 1.15,
+      "nrr": 1.15,
       "logo_churn": 0.02
     },
-    "period": "Q3 2025",
-    "period_type": "quarter",
+    "budget": {
+      "arr": 9000000,
+      "mrr": 750000,
+      "customers": 100
+    },
+    "period": "September 2025",
+    "period_type": "month",
     "currency": "EUR",
     "business_model": "saas"
   }
 }
 
+STANDARD METRIC IDs (use these exact keys):
+- arr: Annual Recurring Revenue (MRR * 12)
+- mrr: Monthly Recurring Revenue (total)
+- mrr_saas: MRR from SaaS segment
+- mrr_finos: MRR from FinOS/other segment
+- customers: Total customer count
+- customers_saas: SaaS customer count
+- customers_finos: FinOS customer count
+- gross_margin: Gross margin percentage (0.75 = 75%)
+- monthly_burn: Monthly cash burn
+- cash_balance: Current cash position
+- runway_months: Cash runway in months
+- arr_growth_yoy: Year-over-year ARR growth (0.45 = 45%)
+- nrr: Net Revenue Retention (1.15 = 115%)
+- grr: Gross Revenue Retention
+- logo_churn: Customer churn rate (0.02 = 2%)
+- cac: Customer Acquisition Cost
+- ltv: Customer Lifetime Value
+- payback_months: CAC payback period
+
+CRITICAL - Actual vs Budget:
+- Separate "actuals" (reported/actual numbers) from "budget" (plan/forecast)
+- Look for columns labeled "Actual", "Budget", "Plan", "Forecast", "Variance"
+- If only one set of numbers, assume they are "actuals"
+
 CRITICAL - Period Detection:
 - Look for "Q3 2025", "September 2025", "Month ending...", "As of..."
-- Check headers, titles, footers for dates
 - "period" = REPORTING PERIOD of the data
 
 CRITICAL - Metrics:
-- Extract ALL visible KPIs and financial metrics
+- Map ALL metrics to standard IDs above
+- Calculate ARR = MRR * 12 if only MRR is given
 - Preserve exact numbers (no rounding)
-- Include currency symbols
-- Validate relationships (ARR = MRR * 12)`;
+- Convert percentages to decimals (75% = 0.75)`;
 
     // Use the responses.create endpoint
     const response = await openai.responses.create({

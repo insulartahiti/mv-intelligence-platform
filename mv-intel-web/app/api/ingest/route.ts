@@ -382,7 +382,8 @@ export async function POST(req: NextRequest) {
                     date: item.date || periodDate,
                     line_item_id: item.line_item_id,
                     amount: item.amount,
-                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'USD',
+                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'EUR',
+                    scenario: item.scenario || 'Actual', // Actual, Budget, or Forecast
                     source_file_id: sourceFileId,
                     source_location: item.source_location
                 };

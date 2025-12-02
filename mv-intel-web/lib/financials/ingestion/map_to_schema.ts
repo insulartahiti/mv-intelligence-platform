@@ -6,7 +6,8 @@ import { UnifiedExtractionResult } from './unified_extractor';
 export interface NormalizedLineItem {
   line_item_id: string;
   amount: number;
-  date?: string; 
+  date?: string;
+  scenario?: 'actual' | 'budget' | 'forecast'; // Actual vs Budget vs Forecast
   source_location: {
     file_type: 'xlsx' | 'pdf';
     sheet?: string; // Excel
@@ -14,6 +15,73 @@ export interface NormalizedLineItem {
     page?: number; // PDF
     context?: string; // Extra debug info
   };
+}
+
+/**
+ * Normalize extracted metric keys to standard IDs
+ * Maps variations like "total_actual_mrr" -> "mrr", "monthly_revenue" -> "mrr"
+ */
+function normalizeMetricKey(key: string): string {
+  const lowerKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  
+  // Direct mappings for common variations
+  const mappings: Record<string, string> = {
+    // MRR variations
+    'total_actual_mrr': 'mrr',
+    'actual_mrr': 'mrr',
+    'monthly_recurring_revenue': 'mrr',
+    'monthly_revenue': 'mrr',
+    'total_mrr': 'mrr',
+    
+    // MRR by segment
+    'actual_saas_mrr': 'mrr_saas',
+    'saas_mrr': 'mrr_saas',
+    'actual_finos_mrr': 'mrr_finos',
+    'finos_mrr': 'mrr_finos',
+    
+    // ARR variations
+    'annual_recurring_revenue': 'arr',
+    'total_arr': 'arr',
+    'actual_arr': 'arr',
+    
+    // Customer variations
+    'customer_count': 'customers',
+    'total_customers': 'customers',
+    'saas': 'customers_saas',
+    'saas_customers': 'customers_saas',
+    'finos': 'customers_finos',
+    'finos_customers': 'customers_finos',
+    
+    // Cash/Runway
+    'cash': 'cash_balance',
+    'cash_position': 'cash_balance',
+    'runway': 'runway_months',
+    'cash_runway': 'runway_months',
+    
+    // Burn
+    'burn': 'monthly_burn',
+    'burn_rate': 'monthly_burn',
+    'net_burn': 'monthly_burn',
+    
+    // Growth
+    'mrr_growth': 'mrr_growth_mom',
+    'arr_growth': 'arr_growth_yoy',
+    'revenue_growth': 'revenue_growth_mom',
+    
+    // Retention
+    'net_revenue_retention': 'nrr',
+    'gross_revenue_retention': 'grr',
+    'churn': 'logo_churn',
+    'customer_churn': 'logo_churn',
+  };
+  
+  // Check direct mapping
+  if (mappings[lowerKey]) {
+    return mappings[lowerKey];
+  }
+  
+  // Return as-is if no mapping found (already normalized or custom metric)
+  return lowerKey;
 }
 
 /**
@@ -133,29 +201,61 @@ export async function mapDataToSchema(
     const financialSummary = unifiedData.financial_summary;
     
     console.log(`[Mapping] Unified data: ${unifiedData.pageCount} pages, fullText length: ${unifiedData.fullText?.length || 0}`);
-    console.log(`[Mapping] financial_summary present: ${!!financialSummary}, key_metrics: ${financialSummary?.key_metrics ? Object.keys(financialSummary.key_metrics).length : 0}`);
     console.log(`[Mapping] Pages with tables: ${unifiedData.pages?.filter(p => p.tables?.length > 0).length || 0}`);
     
-    if (financialSummary?.key_metrics) {
-      console.log(`[Mapping] Using ${Object.keys(financialSummary.key_metrics).length} metrics from financial_summary`);
-      console.log(`[Mapping] Metrics: ${JSON.stringify(financialSummary.key_metrics)}`);
+    // Handle new actuals/budget structure
+    const actuals = financialSummary?.actuals || financialSummary?.key_metrics || {};
+    const budget = financialSummary?.budget || {};
+    
+    console.log(`[Mapping] Actuals: ${Object.keys(actuals).length} metrics, Budget: ${Object.keys(budget).length} metrics`);
+    
+    // Extract ACTUALS
+    if (Object.keys(actuals).length > 0) {
+      console.log(`[Mapping] Actuals metrics: ${JSON.stringify(actuals)}`);
       
-      for (const [metricKey, value] of Object.entries(financialSummary.key_metrics)) {
+      for (const [metricKey, value] of Object.entries(actuals)) {
         if (typeof value === 'number' && !isNaN(value)) {
+          // Normalize metric key to standard ID
+          const normalizedKey = normalizeMetricKey(metricKey);
           results.push({
-            line_item_id: metricKey,
+            line_item_id: normalizedKey,
             amount: value,
             date: periodDate,
+            scenario: 'actual',
             source_location: {
               file_type: unifiedData.fileType,
               page: 1,
-              context: `GPT-5.1 financial_summary (${financialSummary.currency || 'USD'})`
+              context: `GPT-4o actuals (${financialSummary?.currency || 'EUR'})`
             }
           });
         }
       }
-    } else {
-      console.warn(`[Mapping] No financial_summary or key_metrics found in unified result`);
+    }
+    
+    // Extract BUDGET/PLAN
+    if (Object.keys(budget).length > 0) {
+      console.log(`[Mapping] Budget metrics: ${JSON.stringify(budget)}`);
+      
+      for (const [metricKey, value] of Object.entries(budget)) {
+        if (typeof value === 'number' && !isNaN(value)) {
+          const normalizedKey = normalizeMetricKey(metricKey);
+          results.push({
+            line_item_id: normalizedKey,
+            amount: value,
+            date: periodDate,
+            scenario: 'budget',
+            source_location: {
+              file_type: unifiedData.fileType,
+              page: 1,
+              context: `GPT-4o budget (${financialSummary?.currency || 'EUR'})`
+            }
+          });
+        }
+      }
+    }
+    
+    if (Object.keys(actuals).length === 0 && Object.keys(budget).length === 0) {
+      console.warn(`[Mapping] No financial_summary metrics found in unified result`);
     }
     
     // Convert unified to legacy format for remaining processing
