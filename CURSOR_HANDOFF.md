@@ -156,11 +156,12 @@ A comprehensive system for ingesting portfolio company financials (PDF, Excel) a
 *   `lib/financials/metrics/`: Common metrics dictionary (`common_metrics.json`) and computation logic.
 *   `lib/financials/portcos/`: Per-company "Guides" (`guide.yaml`) defining mapping rules.
 *   `lib/financials/ingestion/`: ETL pipeline components:
-    *   `load_file.ts`: File handling.
+    *   `load_file.ts`: File handling (supports Supabase Storage paths).
     *   `parse_pdf.ts` & `parse_excel.ts`: Extraction engines.
     *   `map_to_schema.ts`: Semantic mapping logic (supports Nelly-style complex guides).
     *   `ocr_service.ts`: Stub for future OCR integration.
-*   `app/import/`: Drag-and-drop UI for file uploads.
+    *   `audit/`: Snippet generation for audit trails.
+*   `app/import/`: Drag-and-drop UI for file uploads. Uses **Client-to-Storage** pattern to bypass serverless payload limits.
 *   `app/api/ingest/`: API route handling uploads and triggering ingestion.
 
 ### Centralized Taxonomy Architecture
@@ -316,6 +317,13 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Common Metrics**: Standardized dictionary of SaaS/Fintech KPIs.
     *   **Portco Guides**: YAML-based configuration for mapping company-specific files (e.g. `nelly/guide.yaml`) to the standard schema.
     *   **Import UI**: New `/import` page with drag-and-drop support and company auto-detection.
+    *   **Auditability**: System generates cropped PDF/image snippets for every data point and stores them in `financial-snippets` bucket.
+    *   **Large File Support**: Implemented Client-to-Storage upload pattern to bypass Vercel 4.5MB payload limits.
+    *   **Bug Fixes**:
+        *   Resolved migration issues by creating `financial-snippets` bucket in a dedicated migration.
+        *   Fixed upsert failures by adding unique constraint to `fact_metrics`.
+        *   Fixed logic error in snippet retry mechanism.
+        *   Ensured Company ID resolution from slug uses UUIDs correctly.
 *   **Affinity Orphan Detection**: Added `cleanOrphanedAffinityEntities()` to `intelligent_cleanup.ts`. Identifies entities with stale Affinity IDs (not updated in 30+ days) and flags them for re-sync verification. Prevents accumulation of orphaned data from entities deleted in Affinity CRM.
 *   **Affinity Sync Resilience**: Updated `lib/affinity/sync.ts` to gracefully handle 404 errors (entity deleted from Affinity) and null content fields. Logs warnings instead of failing the pipeline.
 *   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.
