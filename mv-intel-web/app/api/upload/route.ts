@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Admin client with service role key
-// This bypasses RLS policies entirely
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Helper to create Supabase client lazily (inside handler, not at module load time)
+// This prevents Vercel build failures when env vars aren't available during build
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 /**
  * GET: Generate a signed upload URL for direct client-to-storage upload
@@ -23,8 +26,8 @@ export async function GET(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Create admin client
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create admin client (lazy init to avoid build-time env var issues)
+    const supabase = getSupabaseClient();
 
     // Generate unique path
     const timestamp = Date.now();
@@ -80,8 +83,8 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Create admin client for each request to ensure fresh connection
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create admin client (lazy init to avoid build-time env var issues)
+    const supabase = getSupabaseClient();
 
     // Generate unique path
     const timestamp = Date.now();

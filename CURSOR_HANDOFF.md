@@ -556,6 +556,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   Fixed null Company ID prevention and optional currency fallback
     *   Fixed case-sensitive file extension matching (now handles `.PDF`, `.XLSX`)
     *   Fixed snippet path collisions when processing multiple PDFs in same batch
+    *   Fixed 405 Method Not Allowed on `/api/ingest` and `/api/upload` (moved Supabase client init inside handlers)
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)

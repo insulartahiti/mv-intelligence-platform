@@ -9,14 +9,20 @@ import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loade
 import { extractPageSnippet } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Admin for snippet uploads
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Helper to create Supabase client lazily (inside handler, not at module load time)
+// This prevents Vercel build failures when env vars aren't available during build
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 // Process files from Storage - POST handler for financial data ingestion
 // Accepts: { companySlug: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
+  // Initialize Supabase client inside handler (lazy initialization)
+  const supabase = getSupabaseClient();
+  
   try {
     const json = await req.json();
     const { companySlug, filePaths, notes } = json;
