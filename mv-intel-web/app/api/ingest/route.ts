@@ -25,8 +25,15 @@ export const runtime = 'nodejs';
 // Helper to create Supabase client lazily (inside handler, not at module load time)
 // This prevents Vercel build failures when env vars aren't available during build
 function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      'Missing Supabase configuration. Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in environment variables.'
+    );
+  }
+  
   return createClient(supabaseUrl, supabaseKey);
 }
 
