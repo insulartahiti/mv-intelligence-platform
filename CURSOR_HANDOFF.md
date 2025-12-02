@@ -51,6 +51,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `/api/chat` | POST | Conversational agent |
 | `/api/universal-search` | POST | Hybrid vector + taxonomy search |
 | `/api/ingest` | POST | Financial file ingestion |
+| `/api/detect-company` | GET | Detect company slug from filename |
 | `/api/upload` | GET | Generate signed upload URL |
 | `/api/upload` | POST | Direct storage upload (fallback) |
 | `/api/auth/check-access` | POST | Email authorization check |

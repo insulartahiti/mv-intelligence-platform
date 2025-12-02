@@ -96,8 +96,14 @@ export async function mapDataToSchema(
             
             // Basic Heuristic Extraction (Stub for LLM)
             // Attempt to find metric labels on the page and extract the nearest number
-            if (tableConfig.metric_rows) {
-                const pageText = pdfContent.pages[targetPages[0] - 1].text;
+            if (tableConfig.metric_rows && targetPages.length > 0) {
+                // Validate page number is within bounds
+                const pageIndex = targetPages[0] - 1;
+                if (pageIndex < 0 || pageIndex >= pdfContent.pages.length) {
+                    console.warn(`[Ingestion] Page ${targetPages[0]} out of bounds (PDF has ${pdfContent.pages.length} pages)`);
+                    continue;
+                }
+                const pageText = pdfContent.pages[pageIndex].text;
                 
                 for (const [metricKey, label] of Object.entries(tableConfig.metric_rows)) {
                     // Simple regex: Label followed by some chars and then a number

@@ -16,10 +16,16 @@ export default function ImportPage() {
   useEffect(() => {
     if (files.length > 0 && !selectedCompany) {
       const detect = async () => {
-        const res = await fetch(`/api/ingest?filename=${encodeURIComponent(files[0].name)}`);
-        const data = await res.json();
-        if (data.detected_slug) {
-          setSelectedCompany(data.detected_slug);
+        try {
+          const res = await fetch(`/api/detect-company?filename=${encodeURIComponent(files[0].name)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.detected_slug) {
+              setSelectedCompany(data.detected_slug);
+            }
+          }
+        } catch (err) {
+          console.warn('Company detection failed:', err);
         }
       };
       detect();
