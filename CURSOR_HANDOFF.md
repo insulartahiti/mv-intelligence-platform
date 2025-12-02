@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 02, 2025
+**Last Updated:** Dec 02, 2025 (v3.0 - Unified Extraction)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -333,28 +333,74 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
     *   **Strategy**: Exact Match → Fuzzy Match (Prefix/Substring) → Manual Resolution.
     *   **Manual Fallback**: If no match found or ambiguous, returns `company_not_found` status. Frontend shows a modal for user to select from candidates (searching `graph.entities`).
     *   **Constraint**: Target company MUST exist in the Knowledge Graph.
-3.  **Processing**:
-    *   **PDF Extraction**: Uses **GPT-4 Vision** to extract text and tables (replaced `pdf-parse` which failed in Vercel serverless).
-    *   **Excel Extraction**: Uses `xlsx` library with LLM cross-check.
-    *   **Financials**: Parsed from Excel/PDF tables -> `fact_financials`.
-    *   **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
-    *   **Insights**: Extracted via GPT-4 -> `company_insights`.
-4.  **Audit**: Source snippets (PDF page crops via `pdf-lib`) saved to `financial-snippets` bucket.
+3.  **Unified Extraction** (v3.0 - Dec 2025):
+    *   **Single Pipeline for PDF + Excel**: `unified_extractor.ts` handles both file types with the same architecture.
+    *   **Parallel LLM Processing**:
+        - **GPT-4o Vision**: Visual extraction (charts, complex layouts, scanned docs)
+        - **GPT-5.1 Structured**: Deep financial reasoning, metric validation, period detection
+    *   **Deterministic Excel**: `xlsx` library for precise cell references (highest confidence)
+    *   **Reconciliation**: GPT-5.1 merges all results, prefers structured for numbers, vision for visuals
+    *   **Perplexity Sonar Pro**: Industry benchmark validation (optional)
+4.  **Period Detection**: Extracted from document content (headers, titles, "As of...") by GPT-5.1. Filename is fallback only.
+5.  **Mapping**: `mapDataToSchema` converts unified results to normalized `fact_financials` using Portco Guide rules.
+6.  **Metrics**: Computed from Common Metrics definitions -> `fact_metrics`.
+7.  **Audit**: Source snippets (PDF page crops via `pdf-lib`) saved to `financial-snippets` bucket.
 
-### PDF Extraction Architecture
-**Current Implementation: GPT-4 Vision (Option A)**
+### Unified Extraction Architecture (v3.0)
 
-| Component | Library | Purpose |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    UNIFIED EXTRACTOR                            │
+│                  (PDF + Excel → Same Pipeline)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │  GPT-4o      │    │  GPT-5.1     │    │ Deterministic│      │
+│  │  Vision      │    │  Structured  │    │ xlsx Parser  │      │
+│  │              │    │              │    │ (Excel only) │      │
+│  │ • Charts     │    │ • Metrics    │    │              │      │
+│  │ • Layouts    │    │ • Validation │    │ • Cell refs  │      │
+│  │ • Scanned    │    │ • Period     │    │ • 100% conf  │      │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
+│         │                   │                   │               │
+│         └───────────────────┼───────────────────┘               │
+│                             ▼                                   │
+│                   ┌──────────────────┐                          │
+│                   │  RECONCILIATION  │                          │
+│                   │    (GPT-5.1)     │                          │
+│                   │                  │                          │
+│                   │ • Merge results  │                          │
+│                   │ • Flag conflicts │                          │
+│                   │ • Confidence     │                          │
+│                   └────────┬─────────┘                          │
+│                            ▼                                    │
+│                   ┌──────────────────┐                          │
+│                   │   PERPLEXITY     │                          │
+│                   │   Sonar Pro      │                          │
+│                   │                  │                          │
+│                   │ • Benchmarks     │                          │
+│                   │ • Market context │                          │
+│                   └────────┬─────────┘                          │
+│                            ▼                                    │
+│              UnifiedExtractionResult                            │
+│   { pages[], financial_summary, benchmarks }                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Component | Model/Library | Purpose |
 | :--- | :--- | :--- |
-| Page count/metadata | `pdf-lib` | Lightweight, works in serverless |
-| Text/Table extraction | `gpt-4o` (Vision) | Sends PDF as base64, extracts structured content |
-| Audit snippets | `pdf-lib` | Extracts single pages for source linking |
+| Visual extraction | `gpt-4o` | Charts, complex tables, scanned docs |
+| Financial analysis | `gpt-5.1` | Metric validation, period detection, business model ID |
+| Reconciliation | `gpt-5.1` | Merge parallel results, flag discrepancies |
+| Excel parsing | `xlsx` | Deterministic cell values (100% confidence) |
+| Benchmarks | `perplexity/sonar-pro` | Industry comparisons, outlier flagging |
+| Audit snippets | `pdf-lib` | Single page extraction for source linking |
 
-**Why Vision over Text Extraction:**
-- `pdf-parse` (pdfjs-dist) fails in Vercel serverless ("r is not a function" error)
-- GPT-4V handles complex layouts, scanned docs, and tables better
-- Single API call does OCR + semantic understanding
-- Trade-off: Higher cost per page, but reliable
+**Key Benefits:**
+- Cross-validation between models catches extraction errors
+- Best-in-class for each task (vision for visuals, structured for reasoning)
+- Graceful fallbacks if one model fails
+- Same quality for PDF and Excel files
 
 ### RAG & Search Strategy (Roadmap)
 To enable "Financial Intelligence" in the chat agent:
@@ -550,21 +596,22 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 - **Audit Trail**: Aggregations are logged for visibility
 - **Real-World Fit**: Financial data often has multiple rows that should aggregate (e.g., revenue by product line)
 
-### Why GPT-4 Vision for PDF Extraction?
-**Decision**: Use GPT-4 Vision (`gpt-4o`) instead of `pdf-parse` for extracting text/tables from PDFs.
+### Why Unified Multi-Model Extraction?
+**Decision**: Use parallel GPT-4o + GPT-5.1 + Perplexity instead of single-model or deterministic-only extraction.
 
 **Rationale**:
-- **Serverless Compatibility**: `pdf-parse` (pdfjs-dist) fails in Vercel with "r is not a function" error due to missing browser APIs
-- **Complex Layouts**: Vision handles tables, multi-column layouts, and scanned docs better than text extraction
-- **Single API**: OCR + semantic understanding in one call (no separate OCR step)
-- **Reliability**: Works consistently across different PDF types
+- **Serverless Compatibility**: `pdf-parse` (pdfjs-dist) fails in Vercel with "r is not a function" error
+- **Cross-Validation**: Multiple models catch each other's errors (e.g., OCR misreads)
+- **Best-in-Class**: GPT-4o for visuals, GPT-5.1 for financial reasoning, xlsx for precision
+- **Period Detection**: GPT-5.1 extracts reporting period from document content (not just filename)
+- **Benchmark Context**: Perplexity adds industry comparisons for outlier detection
 
 **Trade-offs**:
-- **Cost**: ~$0.01-0.03 per page (vs. free for text extraction)
-- **Latency**: ~2-5s per page (vs. <1s for text extraction)
-- **Rate Limits**: Subject to OpenAI API limits
+- **Cost**: ~$0.05-0.15 per document (parallel API calls)
+- **Latency**: ~5-10s per document (parallel, so not 3x slower)
+- **Rate Limits**: Subject to OpenAI + Perplexity API limits
 
-**Implementation**: `lib/financials/ingestion/parse_pdf_vision.ts` uses `pdf-lib` for metadata and `gpt-4o` for content extraction.
+**Implementation**: `lib/financials/ingestion/unified_extractor.ts` - single entry point for PDF and Excel.
 
 ---
 
@@ -572,7 +619,12 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ### Features Added
 
-*   **Financial Data Ingestion System**: New subsystem (`lib/financials`) for ingesting portfolio financials.
+*   **Financial Data Ingestion System v3.0**: Unified extraction pipeline for portfolio financials.
+    *   **Unified Extractor** (`unified_extractor.ts`): Single pipeline for PDF + Excel
+    *   **Parallel LLM Processing**: GPT-4o Vision + GPT-5.1 Structured run in parallel
+    *   **Cross-Validation**: Reconciliation step merges results and flags discrepancies
+    *   **Perplexity Benchmarks**: Industry comparison via Sonar Pro API
+    *   **Smart Period Detection**: Extracts reporting period from document content (not just filename)
     *   Common Metrics dictionary with SaaS/Fintech KPIs
     *   YAML-based Portco Guides for company-specific mapping
     *   Import UI (`/import`) with drag-and-drop support

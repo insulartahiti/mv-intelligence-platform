@@ -5,13 +5,12 @@
  * Accepts: { companySlug: string, filePaths: string[], notes?: string }
  * Returns: { status, company, summary, results }
  * 
- * @version 2.1.0 - Added needs_review status for zero-extraction files
+ * @version 3.0.0 - Unified extraction pipeline (GPT-4o + GPT-5.1 + Perplexity)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
 import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
-import { parsePDFWithVision } from '@/lib/financials/ingestion/parse_pdf_vision';
-import { parseExcel } from '@/lib/financials/ingestion/parse_excel';
+import { extractFinancialDocument, UnifiedExtractionResult } from '@/lib/financials/ingestion/unified_extractor';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
 import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
@@ -278,49 +277,44 @@ export async function POST(req: NextRequest) {
                 console.log(`[Dry Run] Skipping dim_source_files insert`);
             }
 
-            let extractedData;
-            let fileType: 'pdf' | 'xlsx' = 'pdf';
+            // 3. Unified Extraction (GPT-4o Vision + GPT-5.1 + Perplexity)
+            console.log(`[Ingest] Starting unified extraction for ${fileMeta.filename}`);
+            const extractedData: UnifiedExtractionResult = await extractFinancialDocument(fileMeta);
+            const fileType = extractedData.fileType;
             
-            // Case-insensitive extension matching
-            const filenameLower = fileMeta.filename.toLowerCase();
-            if (filenameLower.endsWith('.pdf')) {
-                // Use GPT-4 Vision for PDF extraction (works reliably in serverless)
-                console.log(`[Ingest] Using Vision-based PDF extraction for ${fileMeta.filename}`);
-                extractedData = await parsePDFWithVision(fileMeta);
-                fileType = 'pdf';
-            } else if (filenameLower.endsWith('.xlsx') || filenameLower.endsWith('.xls')) {
-                extractedData = await parseExcel(fileMeta);
-                fileType = 'xlsx';
-            } else {
-                throw new Error(`Unsupported file type: ${fileMeta.filename}. Supported: .pdf, .xlsx, .xls`);
+            console.log(`[Ingest] Extraction complete: ${extractedData.pageCount} pages, ${Object.keys(extractedData.financial_summary?.key_metrics || {}).length} metrics`);
+            if (extractedData.benchmarks) {
+                console.log(`[Ingest] Perplexity benchmarks: ${Object.keys(extractedData.benchmarks.industry_benchmarks || {}).length} comparisons`);
             }
 
             // 4. Extract period date
-            let periodDate = extractPeriodDateFromFilename(fileMeta.filename);
-            let periodType = 'month';
+            // Priority: 1) GPT-5.1 financial_summary (from document content)
+            //           2) Filename patterns (fallback)
+            const summary = extractedData.financial_summary;
+            let periodDate: string | null = null;
+            let periodType = summary?.period_type || 'month';
             
+            // Try GPT-5.1 extracted period first (from document content)
+            if (summary?.period) {
+                periodDate = extractPeriodDateFromFilename(summary.period);
+                if (periodDate) {
+                    console.log(`[Ingest] Period from document: ${summary.period} → ${periodDate} (${periodType})`);
+                }
+            }
+            
+            // Fallback to filename
             if (!periodDate) {
-                const contentPreview = fileType === 'pdf' 
-                    ? (extractedData as any).fullText?.slice(0, 1000) || ''
-                    : JSON.stringify((extractedData as any)[0]?.data?.slice(0, 5) || []);
-                
-                try {
-                    const { extractPeriodFromDocument } = await import('@/lib/financials/extraction/llm_extractor');
-                    const extracted = await extractPeriodFromDocument(fileMeta.filename, contentPreview);
-                    if (extracted.period_date) {
-                        periodDate = extracted.period_date;
-                        periodType = extracted.period_type !== 'unknown' ? extracted.period_type : 'month';
-                        console.log(`[Ingest] LLM extracted period: ${periodDate} (${periodType})`);
-                    }
-                } catch (llmErr) {
-                    console.warn('[Ingest] LLM period extraction failed, using fallback:', llmErr);
+                periodDate = extractPeriodDateFromFilename(fileMeta.filename);
+                if (periodDate) {
+                    console.log(`[Ingest] Period from filename: ${periodDate}`);
                 }
             }
             
             if (!periodDate) {
                 console.error(`[Ingest] CRITICAL: Could not determine reporting period for ${fileMeta.filename}`);
                 throw new Error(
-                    `Could not determine reporting period for file '${fileMeta.filename}'.`
+                    `Could not determine reporting period for file '${fileMeta.filename}'. ` +
+                    `Ensure the document or filename contains a date (e.g., "Q3 2025", "September 2025").`
                 );
             }
             

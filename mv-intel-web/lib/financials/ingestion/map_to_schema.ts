@@ -1,8 +1,7 @@
 import { PortcoGuide, LineItemMapping } from '../portcos/types';
 import { ExtractedSheet, getCellValue } from './parse_excel';
 import { PDFContent, findPagesWithKeywords } from './parse_pdf_vision';
-// Import dynamically to avoid potential circular dep issues during init if any
-// import { extractFinancialsFromExcelLLM } from '../extraction/llm_extractor'; 
+import { UnifiedExtractionResult } from './unified_extractor'; 
 
 export interface NormalizedLineItem {
   line_item_id: string;
@@ -107,16 +106,67 @@ function parseLocalizedNumber(rawNum: string, defaultCurrency: string = 'USD'): 
 
 /**
  * Core logic to map extracted data to normalized schema.
- * Now enhanced to support complex "document_structure" and "parsing_hints" from guides (like Nelly).
+ * 
+ * Supports both:
+ * - Legacy format: ExtractedSheet[] | PDFContent
+ * - Unified format: UnifiedExtractionResult (from unified_extractor.ts)
+ * 
+ * The unified format includes financial_summary from GPT-5.1 and benchmarks from Perplexity.
  */
 export async function mapDataToSchema(
   fileType: 'xlsx' | 'pdf',
-  data: ExtractedSheet[] | PDFContent,
+  data: ExtractedSheet[] | PDFContent | UnifiedExtractionResult,
   guide: PortcoGuide,
   filename: string,
   periodDate: string 
 ): Promise<NormalizedLineItem[]> {
   const results: NormalizedLineItem[] = [];
+  
+  // Check if this is a UnifiedExtractionResult
+  const isUnified = 'info' in data && 'fileType' in data;
+  
+  // If unified, extract financial_summary metrics first (highest confidence)
+  if (isUnified) {
+    const unifiedData = data as UnifiedExtractionResult;
+    const financialSummary = unifiedData.financial_summary;
+    
+    if (financialSummary?.key_metrics) {
+      console.log(`[Mapping] Using ${Object.keys(financialSummary.key_metrics).length} metrics from financial_summary`);
+      
+      for (const [metricKey, value] of Object.entries(financialSummary.key_metrics)) {
+        if (typeof value === 'number' && !isNaN(value)) {
+          results.push({
+            line_item_id: metricKey,
+            amount: value,
+            date: periodDate,
+            source_location: {
+              file_type: unifiedData.fileType,
+              page: 1,
+              context: `GPT-5.1 financial_summary (${financialSummary.currency || 'USD'})`
+            }
+          });
+        }
+      }
+    }
+    
+    // Convert unified to legacy format for remaining processing
+    if (unifiedData.fileType === 'xlsx' && unifiedData.info.deterministic_data) {
+      // Use deterministic Excel data
+      data = unifiedData.info.deterministic_data.sheets.map((s: any) => ({
+        sheetName: s.sheetName,
+        data: s.data,
+        range: s.range
+      })) as ExtractedSheet[];
+    } else {
+      // Use pages as PDFContent
+      data = {
+        pageCount: unifiedData.pageCount,
+        pages: unifiedData.pages,
+        fullText: unifiedData.fullText,
+        info: unifiedData.info
+      } as PDFContent;
+    }
+  }
   
   // 1. Handle Excel Mapping
   if (fileType === 'xlsx' && Array.isArray(data)) {
@@ -218,91 +268,146 @@ export async function mapDataToSchema(
     }
   }
 
-  // 2. Handle PDF Mapping (Complex/Nelly Style)
+  // 2. Handle PDF Mapping (Enhanced with GPT-4o + GPT-5.1 extraction)
   if (fileType === 'pdf' && 'pages' in (data as any)) {
     const pdfContent = data as PDFContent;
+    const currency = guide.company_metadata?.currency || 'USD';
     
-    // Check for "document_structure" in the guide (Nelly style)
-    // This part is "bespoke" interpretation of the YAML structure we saw in Nelly's guide.
-    // We need to iterate over the 'kpi_tables' defined in the guide.
+    // A. First, extract from financial_summary if available (from GPT-5.1 structured analysis)
+    const financialSummary = pdfContent.info?.financial_summary;
+    if (financialSummary?.key_metrics) {
+      console.log(`[Ingestion] Using GPT-5.1 financial_summary with ${Object.keys(financialSummary.key_metrics).length} metrics`);
+      
+      for (const [metricKey, value] of Object.entries(financialSummary.key_metrics)) {
+        if (typeof value === 'number' && !isNaN(value)) {
+          results.push({
+            line_item_id: metricKey,
+            amount: value,
+            date: periodDate,
+            source_location: {
+              file_type: 'pdf',
+              page: 1,
+              context: `GPT-5.1 financial_summary extraction`
+            }
+          });
+        }
+      }
+    }
     
-    const docStructure = (guide as any).document_structure; // Cast to access flexible schema
+    // B. Extract from structured tables found by GPT-4o Vision
+    for (const page of pdfContent.pages) {
+      if (!page.tables || page.tables.length === 0) continue;
+      
+      for (const table of page.tables) {
+        // Try to map table rows to known metrics
+        if (table.headers && table.rows) {
+          // Find value column index (look for "Value", "Amount", "End of Month", etc.)
+          const valueColIndex = table.headers.findIndex(h => 
+            /value|amount|total|end\s*of\s*month|actual|current/i.test(String(h))
+          );
+          const metricColIndex = table.headers.findIndex(h =>
+            /metric|kpi|item|description|name/i.test(String(h))
+          );
+          
+          for (const row of table.rows) {
+            // Get metric name and value
+            let metricName = metricColIndex >= 0 ? String(row[metricColIndex] || '') : String(row[0] || '');
+            let rawValue = valueColIndex >= 0 ? row[valueColIndex] : row[row.length - 1];
+            
+            if (!metricName || rawValue === undefined || rawValue === null) continue;
+            
+            // Convert metric name to standard ID format
+            const metricId = metricName
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_')
+              .replace(/^_|_$/g, '');
+            
+            // Parse value
+            let amount: number | null = null;
+            if (typeof rawValue === 'number') {
+              amount = rawValue;
+            } else if (typeof rawValue === 'string') {
+              amount = parseLocalizedNumber(rawValue, currency);
+            }
+            
+            if (amount !== null && !isNaN(amount) && metricId) {
+              // Check if this metric already exists (from financial_summary)
+              const existingIndex = results.findIndex(r => r.line_item_id === metricId);
+              if (existingIndex === -1) {
+                results.push({
+                  line_item_id: metricId,
+                  amount,
+                  date: periodDate,
+                  source_location: {
+                    file_type: 'pdf',
+                    page: page.pageNumber,
+                    context: `GPT-4o table: ${table.title || 'Unnamed'}`
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // C. Fallback: Guide-based regex extraction (for metrics not found by LLM)
+    const docStructure = (guide as any).document_structure;
     if (docStructure) {
-       // Loop through known templates (e.g. monthly_investor_report_template_2025)
        for (const templateKey of Object.keys(docStructure)) {
          const template = docStructure[templateKey];
          if (!template.kpi_tables) continue;
-
-         // Identify if this file matches the template (e.g. via filename or content)
-         // For now, assume if the user selected the guide, we try to apply it.
          
          for (const [tableKey, tableConfig] of Object.entries(template.kpi_tables) as [string, any][]) {
-            // Find the page(s) for this table
             let targetPages: number[] = [];
             
-            // If hints exist for this specific file ID (from guide source_docs), use them
-            // Otherwise use anchor text
             if (tableConfig.anchor_text) {
                targetPages = findPagesWithKeywords(pdfContent, tableConfig.anchor_text);
             }
 
             if (targetPages.length === 0) continue;
-
-            // Mock Extraction: In a real system, we'd send these pages to an LLM or OCR table extractor
-            // "Here is the text of page 5. Extract the value for 'Total actual MRR' from column 'End of Month'."
             
-            // For this stub, we will just log that we found the page and "pretend" to extract if we had an LLM
-            // We can't do robust table extraction with just regex on raw PDF text usually.
+            console.log(`[Ingestion] Guide-based search: table '${tableKey}' on page(s) ${targetPages.join(', ')}`);
             
-            console.log(`[Ingestion] Found potential table '${tableKey}' on page(s) ${targetPages.join(', ')}`);
-            
-            // Basic Heuristic Extraction (Stub for LLM)
-            // Attempt to find metric labels on ALL matching pages (not just the first)
             if (tableConfig.metric_rows && targetPages.length > 0) {
-                // Process ALL matching pages to handle multi-page tables
                 for (const pageNum of targetPages) {
-                    // Validate page number is within bounds
                     const pageIndex = pageNum - 1;
-                    if (pageIndex < 0 || pageIndex >= pdfContent.pages.length) {
-                        console.warn(`[Ingestion] Page ${pageNum} out of bounds (PDF has ${pdfContent.pages.length} pages)`);
-                        continue;
-                    }
+                    if (pageIndex < 0 || pageIndex >= pdfContent.pages.length) continue;
+                    
                     const pageText = pdfContent.pages[pageIndex].text;
                 
-                for (const [metricKey, label] of Object.entries(tableConfig.metric_rows)) {
-                    // Simple regex: Label followed by some chars and then a number
-                    // We escape the label for regex safety
-                    const escapedLabel = (label as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    // Look for label, allowing for whitespace, then capturing a number (including decimals/commas)
-                    // This is very naive and assumes the number is to the right or below.
-                    const regex = new RegExp(`${escapedLabel}[^\\d\\n]*([\\d,.]+)`, 'i');
-                    const match = pageText.match(regex);
-                    
-                    if (match && match[1]) {
-                        // Parse number with EUR/US format detection
-                        // Use guide currency as hint for ambiguous cases
-                        const currency = guide.company_metadata?.currency || 'USD';
-                        const cleanNum = parseLocalizedNumber(match[1], currency);
+                    for (const [metricKey, label] of Object.entries(tableConfig.metric_rows)) {
+                        // Skip if already found by LLM extraction
+                        if (results.some(r => r.line_item_id === metricKey)) continue;
                         
-                        if (cleanNum !== null) {
-                            results.push({
-                                line_item_id: metricKey,
-                                amount: cleanNum,
-                                date: periodDate,
-                                source_location: {
-                                    file_type: 'pdf',
-                                    page: pageNum,  // Use current page, not first page
-                                    context: `Extracted via regex from '${label}'`
-                                }
-                            });
+                        const escapedLabel = (label as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`${escapedLabel}[^\\d\\n]*([\\d,.]+)`, 'i');
+                        const match = pageText.match(regex);
+                        
+                        if (match && match[1]) {
+                            const cleanNum = parseLocalizedNumber(match[1], currency);
+                            
+                            if (cleanNum !== null) {
+                                results.push({
+                                    line_item_id: metricKey,
+                                    amount: cleanNum,
+                                    date: periodDate,
+                                    source_location: {
+                                        file_type: 'pdf',
+                                        page: pageNum,
+                                        context: `Guide regex from '${label}'`
+                                    }
+                                });
+                            }
                         }
                     }
                 }
-                }  // End of: for (const pageNum of targetPages)
             }
          }
        }
     }
+    
+    console.log(`[Ingestion] PDF mapping complete: ${results.length} line items extracted`);
   }
 
   return results;
