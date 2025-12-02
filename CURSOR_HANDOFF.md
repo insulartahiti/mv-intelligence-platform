@@ -608,6 +608,8 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Fixed partial status message missing needs_review files**: Frontend import UI now shows both `error` and `needs_review` files with appropriate status labels when displaying partial results.
     *   **Fixed false negative detection in parseLocalizedNumber**: `rawNum.includes('-')` matched any hyphen (e.g., in company names like "acme-corp-123"), causing false positive negative number detection. Now only checks for leading minus signs or parentheses notation.
     *   **Added env var validation in ingest API**: Missing `OPENAI_API_KEY` or Supabase env vars now throw descriptive errors instead of cryptic 500s.
+    *   **Improved frontend error handling**: `import/page.tsx` now handles non-JSON responses (like Vercel error pages) gracefully and alerts the user with the actual error text.
+    *   **Lazy loaded `pdf-parse`**: Moved `require('pdf-parse')` inside the `parsePDF` function to prevent module-level crashes (e.g., due to missing dependencies or canvas issues) from bringing down the entire API route during cold start.
 
 *   **Pipeline & Enrichment**:
     *   Fixed Affinity sync 404 handling (warnings, not failures)

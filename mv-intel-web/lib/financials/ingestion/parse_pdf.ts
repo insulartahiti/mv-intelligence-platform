@@ -32,7 +32,7 @@ if (typeof globalThis.DOMMatrix === 'undefined') {
 }
 
 // import pdf from 'pdf-parse';
-const pdf = require('pdf-parse');
+// const pdf = require('pdf-parse'); // Moved inside function for safety
 import { FileMetadata } from './load_file';
 
 export interface PDFPage {
@@ -49,6 +49,15 @@ export interface PDFContent {
 
 export async function parsePDF(file: FileMetadata): Promise<PDFContent> {
   const dataBuffer = file.buffer;
+
+  // Lazy load pdf-parse to prevent module-level crashes in serverless
+  let pdf;
+  try {
+    pdf = require('pdf-parse');
+  } catch (err) {
+    console.error('Failed to load pdf-parse module:', err);
+    throw new Error('PDF parsing is not available in this environment.');
+  }
 
   try {
     const pages: PDFPage[] = [];
