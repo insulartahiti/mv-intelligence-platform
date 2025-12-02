@@ -1,0 +1,70 @@
+company_metadata:
+  name: "Acme Corp"
+  currency: "USD"
+  fiscal_year_end: "12-31"
+  business_models: ["saas"]
+
+source_docs:
+  - type: "board_deck"
+    format: "pdf"
+    pattern: "Acme_Board_Deck_*.pdf"
+    frequency: "monthly"
+  - type: "financials"
+    format: "xlsx"
+    pattern: "Acme_Financials_*.xlsx"
+    frequency: "monthly"
+
+mapping_rules:
+  line_items:
+    revenue_recurring:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B5" # Assumes months go across columns
+      label_match: "Subscription Revenue"
+    revenue_services:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B6"
+      label_match: "Services Revenue"
+    cogs_total:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B10"
+      label_match: "Total COGS"
+    opex_sales_marketing:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B15"
+      label_match: "Sales & Marketing"
+    opex_r_and_d:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B16"
+      label_match: "R&D"
+    opex_g_and_a:
+      source: "financials"
+      sheet: "Summary P&L"
+      range_start: "B17"
+      label_match: "G&A"
+    arr_current:
+      source: "financials"
+      sheet: "KPIs"
+      range_start: "B3"
+      label_match: "Ending ARR"
+    customer_count:
+      source: "financials"
+      sheet: "KPIs"
+      range_start: "B8"
+      label_match: "Total Customers"
+
+business_logic_overrides:
+  - metric_id: "gross_margin"
+    note: "Acme explicitly separates Customer Success from COGS. Using standard definition but noting mapping."
+  - metric_id: "cac_payback"
+    note: "Acme calculates on gross margin including onboarding fees."
+
+validation_rules:
+  - check: "revenue_recurring + revenue_services == revenue_total"
+    tolerance: 0.01
+
+

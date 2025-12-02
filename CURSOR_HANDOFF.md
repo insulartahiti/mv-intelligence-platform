@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 01, 2025
+**Last Updated:** Dec 02, 2025
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -12,7 +12,7 @@ The Motive Intelligence Platform is a **Conversational Knowledge Graph** that ag
 
 ### Core Stack
 - **Frontend**: Next.js 14 (App Router), React, Tailwind CSS.
-- **Primary Database**: Supabase (PostgreSQL) - Stores structured entity data, interaction logs, and vector embeddings (`pgvector`).
+- **Primary Database**: Supabase (PostgreSQL) - Stores structured entity data, interaction logs, vector embeddings (`pgvector`), and **Financial Data**.
 - **Graph Database**: Neo4j (AuraDB) - Stores relationship nodes and edges for visualization and traversal.
 - **AI/LLM**: OpenAI GPT-5.1 (Reasoning, Synthesis, Taxonomy Classification), Perplexity `sonar-pro` (Enrichment), Supabase Edge Functions.
 - **Hosting**: Vercel (Production URL: `https://motivepartners.ai`)
@@ -151,6 +151,18 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 **Note:** Components relying on `graphology` (e.g., `EnhancedClientGraph.tsx`) have been disabled to fix build issues.
 
+### Financial Data Ingestion System (New)
+A comprehensive system for ingesting portfolio company financials (PDF, Excel) and computing auditable KPIs.
+*   `lib/financials/metrics/`: Common metrics dictionary (`common_metrics.json`) and computation logic.
+*   `lib/financials/portcos/`: Per-company "Guides" (`guide.yaml`) defining mapping rules.
+*   `lib/financials/ingestion/`: ETL pipeline components:
+    *   `load_file.ts`: File handling.
+    *   `parse_pdf.ts` & `parse_excel.ts`: Extraction engines.
+    *   `map_to_schema.ts`: Semantic mapping logic (supports Nelly-style complex guides).
+    *   `ocr_service.ts`: Stub for future OCR integration.
+*   `app/import/`: Drag-and-drop UI for file uploads.
+*   `app/api/ingest/`: API route handling uploads and triggering ingestion.
+
 ### Centralized Taxonomy Architecture
 The IFT (Integrated Fintech Taxonomy) is defined in a **single source of truth**: `lib/taxonomy/schema.ts`.
 
@@ -218,6 +230,7 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
     *   Category dashboard with subcategory cards and entity grids (right)
     *   **Spotlight-style search bar** for searching taxonomy codes/labels AND company names
     *   Strict canonical taxonomy policy (non-schema paths show error state)
+*   `/import`: **Data Ingestion** — Drag-and-drop interface for uploading portfolio financials.
 
 ---
 
@@ -272,6 +285,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Conversational Agent**: **Live**. Uses GPT-5.1 with query expansion and tool calling (`search_notes`, `traverse_graph`).
 *   **Graph UI**: **Stable**. Features "Highlighting" for cited nodes and "Densification" to show hidden connections.
 *   **Data Pipeline**: **Stable**. Migrated to `supabase-js` to resolve server-side DNS issues.
+*   **Financial Ingestion**: **Staging**. New module for processing Portco financials (PDF/Excel) with drag-and-drop UI and "Portco Guide" mapping logic.
 *   **Deployment**: **Production**. Live at https://motivepartners.ai.
 
 ### Known Risks & Limitations
@@ -296,8 +310,12 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ---
 
-## Appendix: Recent Changelog (Dec 01, 2025)
+## Appendix: Recent Changelog (Dec 02, 2025)
 
+*   **Financial Data Ingestion**: Added a new subsystem (`lib/financials`) for ingesting portfolio financials.
+    *   **Common Metrics**: Standardized dictionary of SaaS/Fintech KPIs.
+    *   **Portco Guides**: YAML-based configuration for mapping company-specific files (e.g. `nelly/guide.yaml`) to the standard schema.
+    *   **Import UI**: New `/import` page with drag-and-drop support and company auto-detection.
 *   **Affinity Orphan Detection**: Added `cleanOrphanedAffinityEntities()` to `intelligent_cleanup.ts`. Identifies entities with stale Affinity IDs (not updated in 30+ days) and flags them for re-sync verification. Prevents accumulation of orphaned data from entities deleted in Affinity CRM.
 *   **Affinity Sync Resilience**: Updated `lib/affinity/sync.ts` to gracefully handle 404 errors (entity deleted from Affinity) and null content fields. Logs warnings instead of failing the pipeline.
 *   **Taxonomy Skip Mechanism**: Added `taxonomy_attempts` and `taxonomy_skip_until` fields to prevent repeated failed classification attempts. After 3 failed attempts (still `IFT.UNKNOWN`), entity is skipped for 30 days. Use `--force` flag to override.

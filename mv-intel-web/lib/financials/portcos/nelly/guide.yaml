@@ -1,0 +1,373 @@
+company:
+  name: Nelly Solutions GmbH
+  slug: nelly
+  business_models:
+    - saas
+    - factoring_private
+    - factoring_public
+    - pos
+  currency: EUR
+  fiscal_year_end_month: 12
+  main_entities:
+    - name: Nelly Solutions GmbH
+      role: operating_company
+    - name: Nelly Finance GmbH
+      role: factoring_spv
+
+reporting_profile:
+  cadence: monthly
+  primary_period_granularity: monthly
+  scenario_defaults:
+    - name: Actuals
+      code: ACT
+    - name: Budget
+      code: BUD
+    - name: Forecast
+      code: FCST
+  notes: >
+    Monthly investor reports are the canonical source of MRR / MR by product,
+    customer counts, CSAT and cash / runway. Board decks add ARR run-rate
+    metrics, unit economics, cash-flow vs budget and M&A overlays.
+
+source_docs:
+  - id: 2025_09_investor_report
+    type: monthly_investor_report
+    file_name: "Nelly's Monthly Investor Reporting for September 2025.pdf"
+    description: "Canonical monthly KPI & financial reporting pack – September 2025."
+    coverage:
+      from: "2025-09-01"
+      to: "2025-09-30"
+    key_sections:
+      - "Summary"
+      - "1. KPIs"
+      - "2. Financials"
+      - "3. People"
+      - "4. Sales & Marketing"
+      - "5. Product"
+      - "6. Customer Success"
+      - "7. Risk & Financial Products"
+      - "8. International Expansion"
+  - id: 2025_08_investor_report
+    type: monthly_investor_report
+    file_name: "Nelly Investor Reporting August 2025.pdf"
+    description: "Canonical monthly KPI & financial reporting pack – August 2025."
+    coverage:
+      from: "2025-08-01"
+      to: "2025-08-31"
+    key_sections:
+      - "Summary"
+      - "1. KPIs"
+      - "2. Financials"
+      - "3. People"
+      - "4. Sales & Marketing"
+      - "5. Product"
+      - "6. Customer Success"
+      - "7. Risk & Financial Products"
+      - "8. International Expansion (Italy & Spain)"
+  - id: 2025_q3_board_deck
+    type: board_deck
+    file_name: "Nelly_Board Meeting_Q3 2025_Final.pdf"
+    description: "Q3 2025 board pack with performance snapshot, financials, unit economics and M&A outlook."
+    coverage:
+      from: "2025-07-01"
+      to: "2025-09-30"
+    key_sections:
+      - "Executive Summary"
+      - "Performance Snapshot"
+      - "Financials (Cash flow, Cash balance, P&L, Unit economics)"
+      - "Invisalign partnership"
+      - "Goya deep dive"
+      - "M&A update and outlook"
+
+parsing_hints:
+  pdf:
+    default_ocr: "auto"
+    table_detection: "high_recall"
+    page_hints:
+      2025_08_investor_report:
+        kpi_main: 5
+        other_kpis: 6
+        financials: 7
+        sales_marketing: 8
+        product: 9
+        customer_success: 10-11
+        international_expansion: 12
+      2025_09_investor_report:
+        kpi_main: 6
+        other_kpis: 7
+        financials: 7-8
+        sales_marketing: 9
+        product: 10
+        customer_success: 11-12
+        international_expansion: 12-13
+      2025_q3_board_deck:
+        exec_summary: 3
+        key_operating_metrics: 5
+        revenue_by_lob: 10-12
+        cash_flow: 19
+        cash_balance: 20
+        amortisation_plan: 21
+        pnl_ytd_vs_budget: 22
+        unit_economics: 23
+  excel:
+    prefer_named_ranges: true
+    header_row_max_scan: 8
+
+document_structure:
+  monthly_investor_report_template_2025:
+    kpi_tables:
+      actual_and_booked_revenue:
+        docs: ["2025_08_investor_report", "2025_09_investor_report"]
+        anchor_text:
+          - "Actual revenue KPIs"
+          - "Booked revenue KPIs"
+        granularity: monthly
+        columns:
+          - "End of Month"
+          - "MoM difference in EUR"
+          - "MoM difference in %"
+        metric_rows:
+          total_actual_mrr: "Total actual MRR"
+          actual_saas_mrr: "Actual SaaS MRR"
+          actual_finos_mrr: "Actual FinOS MRR"
+          total_booked_revenue: "Booked revenue Total"
+          total_actual_revenue: "Total actual revenue"
+          contracted_revenue_not_onboarded: "Total contracted revenue not onboarded yet"
+          contracted_saas_mrr_not_onboarded: "→ Thereof contracted SaaS MRR"
+          contracted_finos_mrr_not_onboarded: "→ Thereof contracted FinOS MRR"
+      other_kpis:
+        docs: ["2025_08_investor_report", "2025_09_investor_report"]
+        anchor_text:
+          - "Other KPIs"
+        granularity: monthly
+        columns:
+          - "End of Month"
+          - "MoM difference in #"
+          - "MoM difference in %"
+        metric_rows:
+          saas_customers: "SaaS Customers"
+          private_factoring_customers: "Priv. Factoring Customers*"
+          public_factoring_customers: "Pub. Factoring Customers"
+          pos_customers: "POS Customers"
+          churned_saas_customers_all_time: "SaaS customers churned all time"
+          avg_saas_fee: "Average SaaS fee"
+          total_employees_fte: "Total employees (FTEs)"
+      sales_kpis:
+        docs: ["2025_08_investor_report", "2025_09_investor_report"]
+        anchor_text:
+          - "Sales & Marketing"
+        granularity: monthly
+        metric_rows:
+          deals_closed_total: "# of deals closed won total"
+          deals_closed_inbound: "thereof # of deals inbound sales channel"
+          deals_closed_outbound: "thereof # of deals outbound sales channel"
+          deals_closed_existing_business: "thereof # of deals existing business*"
+          mrr_closed_total: "MRR deals closed won total"
+          mrr_closed_inbound: "thereof MR inbound sales channel"
+          mrr_closed_outbound: "thereof MR outbound sales channel"
+      financials:
+        docs: ["2025_08_investor_report", "2025_09_investor_report"]
+        anchor_text:
+          - "Nelly Solutions GmbH"
+          - "Nelly Finance GmbH (Factoring SPV)"
+        granularity: monthly
+        metric_rows:
+          monthly_burn_net: "Monthly burn (net)"
+          cash_balance_os: "Cash balance"
+          runway_months: "Runway*"
+          spv_cash_balance: "Cash balance (incl. Adyen)"
+          spv_outstanding_receivables: "Outstanding receivables**"
+          spv_cash_plus_receivables: "Cash + Receivables"
+          spv_issued_senior_loan: "Issued senior loan"
+          spv_equity: "Equity"
+          spv_total_financing: "Total financing"
+          spv_net_value_creation_to_date: "Net Value Creation to date"
+      international_expansion:
+        docs: ["2025_08_investor_report", "2025_09_investor_report"]
+        anchor_text:
+          - "Int. Expansion KPIs"
+        granularity: monthly
+        metric_rows:
+          intl_actual_mrr: "Actual MRR"
+          intl_paying_customers: "# of paying customers"
+          intl_contracted_mrr: "Contracted MRR"
+          intl_contracted_customers: "# of contracted"
+          intl_total_patients: "# of total patients"
+          intl_docs_signed: "# of docs signed"
+  board_deck_q3_2025:
+    key_operating_metrics:
+      slide: 5
+      metrics:
+        actual_revenue_run_rate: "Actual Revenue Run Rate"
+        booked_revenue_run_rate: "Booked Revenue Run Rate"
+        actual_customers: "Actual Customers"
+        acv_per_customer: "ACV / Customer"
+        blended_gross_margin: "Blended Gross Margin"
+        burn_multiple_l3m: "Burn multiple (L3M)"
+        cac_payback_months: "CAC payback (L3M)"
+        intl_revenue_share: "Int. Revenue Share"
+    pnl_ytd_vs_budget:
+      slide: 22
+      description: >
+        Full P&L (Mar–Sep 2025) vs budget. Use as canonical P&L for YTD and
+        for mapping revenue and cost line items into normalized chart of accounts.
+    unit_economics:
+      slide: 23
+      description: "Per-invoice Private Factoring economics and per-practice SaaS economics."
+      notes:
+        - "Private Factoring table is per invoice (EUR)."
+        - "SaaS table is per practice (EUR per month)."
+        - "Target columns represent EOY targets; actual columns are current month."
+
+metrics_mapping:
+  total_actual_mrr:
+    labels:
+      - "Total actual MRR"
+    description: "Total monthly recurring revenue (all products) at end of month."
+    unit: "EUR_k"
+    source_tables:
+      - "monthly_investor_report_template_2025.kpi_tables.actual_and_booked_revenue"
+  actual_saas_mrr:
+    labels:
+      - "Actual SaaS MRR"
+    description: "Monthly recurring SaaS revenue at end of month."
+    unit: "EUR_k"
+  actual_finos_mrr:
+    labels:
+      - "Actual FinOS MRR"
+    description: "Monthly recurring FinOS / factoring revenue at end of month."
+    unit: "EUR_k"
+  total_booked_revenue:
+    labels:
+      - "Booked revenue Total"
+    description: "Total booked monthly revenue (actual + contracted) end of month."
+    unit: "EUR_m"
+  saas_customers:
+    labels:
+      - "SaaS Customers"
+    description: "Number of live SaaS practices at end of month."
+    unit: "count"
+  private_factoring_customers:
+    labels:
+      - "Priv. Factoring Customers*"
+    description: "Number of private factoring customers (practices) – note seasonal booking pattern."
+    unit: "count"
+    notes:
+      - "KPI is noisy due to quarterly booking cadence; changes month-to-month do not equal net adds."
+  pos_customers:
+    labels:
+      - "POS Customers"
+    description: "Number of POS customers at end of month."
+    unit: "count"
+  monthly_burn_net:
+    labels:
+      - "Monthly burn (net)"
+    description: "Net operating cash burn for Nelly Solutions GmbH in the month."
+    unit: "EUR_m"
+  cash_balance_os:
+    labels:
+      - "Cash balance"
+    description: "Unrestricted cash balance Nelly Solutions GmbH."
+    unit: "EUR_m"
+  runway_months:
+    labels:
+      - "Runway*"
+    description: "Runway in months, defined as cash balance divided by current-month net burn."
+    unit: "months"
+  csat_support:
+    labels:
+      - "CSAT* Support"
+      - "Customer CSAT"
+    description: "Customer satisfaction for support interactions."
+    unit: "percent"
+  csat_patient:
+    labels:
+      - "CSAT* Patient"
+      - "Patient CSAT"
+    description: "Patient satisfaction for Nelly touchpoints."
+    unit: "percent"
+  intl_actual_mrr:
+    labels:
+      - "Total MRR/MR"
+      - "Actual MRR"
+    description: "Monthly recurring revenue from international expansion (initially Italy & Spain)."
+    unit: "EUR_k"
+
+line_item_mapping:
+  revenue_total:
+    patterns:
+      - "Total Revenue"
+      - "Total actual revenue"
+  revenue_saas:
+    patterns:
+      - "SaaS"
+      - "SaaS Revenue"
+  revenue_factoring_private:
+    patterns:
+      - "Private Factoring"
+  revenue_factoring_public:
+    patterns:
+      - "Public Factoring"
+  revenue_pos:
+    patterns:
+      - "POS"
+  cogs_total:
+    patterns:
+      - "Cost of Sales"
+      - "COGS"
+  opex_functional:
+    sales_marketing:
+      patterns:
+        - "Sales & Marketing"
+    research_development:
+      patterns:
+        - "R&D"
+        - "Product & Engineering"
+    general_admin:
+      patterns:
+        - "G&A"
+        - "Administration"
+  ebitda:
+    patterns:
+      - "EBITDA"
+      - "Operating result"
+
+data_quality_and_reconciliation:
+  checks:
+    - name: "MRR vs actual revenue consistency"
+      description: >
+        For each month, check that total_actual_mrr (from investor report) is broadly
+        consistent with ARR / run-rate figures in the Q3 board deck for overlapping periods.
+    - name: "Cash vs cash-flow bridge"
+      description: >
+        Reconcile cash_balance_os from monthly investor reports with cash balance and
+        restricted cash charts in board deck (slides 19–20) for overlapping dates.
+    - name: "Customer counts monotonicity"
+      description: >
+        SaaS customers should be non-decreasing aside from churn; flag months with large
+        backward jumps for manual review.
+    - name: "Factoring customer seasonality"
+      description: >
+        Treat month-on-month changes in private factoring customers with caution; the
+        investor reporting notes that booking cadence causes seasonal variance rather than
+        true churn/addition. Use quarterly averages where possible.
+
+custom_logic:
+  seasonality_notes:
+    private_factoring_customers: >
+      Metric is impacted by orthodontists who bill quarterly; monthly declines do not
+      imply net customer loss. In analytics, prefer Q/Q trends and use commentary in
+      investor reports as override signal.
+  definitions_overrides:
+    actual_revenue_run_rate: >
+      In board deck slide 5 this is ARR / annualized revenue, not the single-month
+      GAAP revenue. In the normalized model, tag as `arr_run_rate` and avoid mixing
+      with monthly P&L revenue.
+  ingestion_priority:
+    - "2025_09_investor_report"
+    - "2025_08_investor_report"
+    - "2025_q3_board_deck"
+  human_review_required:
+    - "First ingestion of any new monthly investor report template version."
+    - "Any month where reconciliation checks fail beyond tolerance."
+    - "Unit economics slide extraction until template is proven stable."

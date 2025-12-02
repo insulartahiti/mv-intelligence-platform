@@ -22,12 +22,18 @@ export default function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:block">
-            <div className="nav-links">
+            <div className="nav-links flex items-center space-x-2">
               <Link 
                 href="/knowledge-graph" 
                 className="text-white/80 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-white/10"
               >
                 Knowledge Graph
+              </Link>
+              <Link 
+                href="/import" 
+                className="text-white/80 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-white/10"
+              >
+                Import Data
               </Link>
             </div>
           </div>
@@ -63,6 +69,13 @@ export default function Navigation() {
               onClick={() => setIsMobileMenuOpen(false)}
             >
               Knowledge Graph
+            </Link>
+            <Link 
+              href="/import" 
+              className="text-white/80 hover:text-white block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              Import Data
             </Link>
             <div className="pt-4 border-t border-white/10">
               <button className="glass-button w-full text-left px-3 py-2">
