@@ -528,19 +528,26 @@ export default function ImportPage() {
             </div>
             
             {localMode && (
-              <div className="flex items-center gap-2 text-xs">
-                <label className="flex items-center gap-1.5 text-gray-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useCache}
-                    onChange={(e) => setUseCache(e.target.checked)}
-                    className="w-3 h-3 rounded border-gray-600 text-green-500 focus:ring-green-500"
-                  />
-                  Use API cache
-                </label>
-                {localStorageSummary && (
-                  <span className="text-gray-500">
-                    ({localStorageSummary.extractions} extractions, {localStorageSummary.cacheEntries} cached)
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2 text-xs">
+                  <label className="flex items-center gap-1.5 text-gray-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useCache}
+                      onChange={(e) => setUseCache(e.target.checked)}
+                      className="w-3 h-3 rounded border-gray-600 text-green-500 focus:ring-green-500"
+                    />
+                    Use API cache
+                  </label>
+                  {localStorageSummary && (
+                    <span className="text-gray-500">
+                      ({localStorageSummary.extractions} extractions, {localStorageSummary.cacheEntries} cached)
+                    </span>
+                  )}
+                </div>
+                {process.env.NODE_ENV !== 'development' && (
+                  <span className="text-[10px] text-yellow-500/80">
+                    Warning: Ephemeral storage (Vercel)
                   </span>
                 )}
               </div>

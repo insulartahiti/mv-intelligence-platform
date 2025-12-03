@@ -19,13 +19,34 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
 
-const LOCAL_DATA_DIR = path.join(process.cwd(), '.local-data');
+// Determine storage directory
+// If running on Vercel (SERVERLESS), use /tmp as fallback (ephemeral)
+// If running locally, use .local-data for persistence
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+const LOCAL_DATA_DIR = isServerless 
+  ? path.join(os.tmpdir(), 'mv-intel-local-data')
+  : path.join(process.cwd(), '.local-data');
+
+if (isServerless) {
+  console.log(`[Local Mode] Running in serverless environment. Using ephemeral storage: ${LOCAL_DATA_DIR}`);
+}
 
 // Ensure directory exists
 function ensureDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+    try {
+      fs.mkdirSync(dirPath, { recursive: true });
+    } catch (error) {
+      console.error(`[Local Mode] Failed to create directory ${dirPath}:`, error);
+      // Attempt to use /tmp if not already
+      if (!dirPath.startsWith(os.tmpdir())) {
+         // Last resort fallback
+         const tmpPath = path.join(os.tmpdir(), 'mv-intel-fallback');
+         if (!fs.existsSync(tmpPath)) fs.mkdirSync(tmpPath, { recursive: true });
+      }
+    }
   }
 }
 
