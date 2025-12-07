@@ -381,6 +381,21 @@ async function expandIDsByName(initialIDs: string[], names: string[], supabase: 
 }
 
 // OpenAI Tool Definitions
+const webSearchTool = {
+  type: "function",
+  function: {
+    name: "perform_web_search",
+    description: "Search the live web for real-time information, news, or companies NOT in the database. Use this when the user explicitly asks for external/web search or for recent events (2024-2025).",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The search query optimized for a search engine." }
+      },
+      required: ["query"]
+    }
+  }
+};
+
 const tools = [
   {
     type: "function",
@@ -502,7 +517,7 @@ const tools = [
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { message, conversationId: existingId, userEntity } = body;
+        const { message, conversationId: existingId, userEntity, enableExternalSearch } = body;
 
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -632,6 +647,7 @@ export async function POST(req: NextRequest) {
                     let finalReply = "";
                     
                     let finalRelevantNodeIds: string[] = [];
+                    let finalExternalNodes: any[] = [];
                     let finalMessageDrafts: any[] = [];
 
                     sendEvent('thought', { content: "Reasoning about your request..." });
@@ -639,10 +655,12 @@ export async function POST(req: NextRequest) {
                     while (turnCount < MAX_TURNS) {
                         turnCount++;
                         
+                        const currentTools = enableExternalSearch ? [...tools, webSearchTool] : tools;
+
                         const completion = await openai.chat.completions.create({
                             model: "gpt-5.1",
                             messages: messages as any,
-                            tools: tools as any,
+                            tools: currentTools as any,
                             tool_choice: "auto"
                         });
 
@@ -878,6 +896,60 @@ View full analysis at: /portfolio/legal/analysis?id=${a.id}`;
                                         return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
                                     }
                                 }
+                                else if (toolCall.function.name === 'perform_web_search') {
+                                    sendEvent('thought', { content: `Searching the web for: "${args.query}"` });
+                                    
+                                    try {
+                                        const perplexityRes = await fetch('https://api.perplexity.ai/chat/completions', {
+                                            method: 'POST',
+                                            headers: {
+                                                'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+                                                'Content-Type': 'application/json'
+                                            },
+                                            body: JSON.stringify({
+                                                model: 'sonar-pro',
+                                                messages: [{ role: 'user', content: args.query }]
+                                            })
+                                        });
+
+                                        if (!perplexityRes.ok) {
+                                            throw new Error(`Perplexity API Error: ${perplexityRes.status}`);
+                                        }
+
+                                        const data = await perplexityRes.json();
+                                        const answer = data.choices?.[0]?.message?.content || "No results found.";
+                                        const citations = data.citations || [];
+
+                                        // Create Virtual Nodes from Citations
+                                        const newVirtualNodes = citations.map((url: string) => {
+                                            let domain = url;
+                                            try {
+                                                domain = new URL(url).hostname.replace('www.', '');
+                                            } catch (e) { /* ignore invalid urls */ }
+                                            
+                                            return {
+                                                id: `ext-${crypto.randomUUID()}`, // Virtual ID
+                                                label: domain,
+                                                group: 'external', // SPECIAL GROUP
+                                                properties: {
+                                                    description: `Source for: ${args.query}`,
+                                                    url: url,
+                                                    ai_summary: `External Source: ${url}`,
+                                                    is_portfolio: false
+                                                }
+                                            };
+                                        });
+
+                                        finalExternalNodes.push(...newVirtualNodes);
+                                        
+                                        contextText = `WEB SEARCH RESULTS:\n${answer}\n\nSOURCES:\n${citations.join('\n')}`;
+                                        return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
+                                    } catch (e: any) {
+                                        console.error("Web Search Error:", e);
+                                        contextText = `Web search failed: ${e.message}`;
+                                        return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
+                                    }
+                                }
                                 
                                 return { id: toolCall.id, result: "Unknown tool", nodeIds: [], draft: null };
                             });
@@ -922,10 +994,16 @@ View full analysis at: /portfolio/legal/analysis?id=${a.id}`;
                     }
 
                     // Fetch final subgraph based on ALL accumulated nodes
-                    let finalSubgraph = null;
+                    let finalSubgraph: { nodes: any[], edges: any[] } | null = null;
                     if (finalRelevantNodeIds.length > 0) {
                         sendEvent('thought', { content: "Visualizing graph network..." });
                         finalSubgraph = await fetchSubgraph(finalRelevantNodeIds, supabase);
+                    }
+
+                    // MERGE: Add external nodes to the graph payload
+                    if (finalExternalNodes.length > 0) {
+                        if (!finalSubgraph) finalSubgraph = { nodes: [], edges: [] };
+                        finalSubgraph.nodes = [...finalSubgraph.nodes, ...finalExternalNodes];
                     }
 
                     // Save Assistant Message

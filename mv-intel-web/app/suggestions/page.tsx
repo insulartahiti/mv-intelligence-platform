@@ -84,21 +84,25 @@ export default function SuggestionsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-8 pt-24 font-sans">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-100">Community Suggestions</h1>
-            <p className="text-slate-400 mt-2">Vote on features you want to see prioritized.</p>
-          </div>
-          {user && (
-            <button
-              onClick={() => setModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <Plus size={20} />
-              New Suggestion
-            </button>
-          )}
+      <div className="max-w-4xl mx-auto text-center space-y-8">
+        <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+          Community Suggestions
+        </h1>
+        
+        <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+          Help shape the platform. Vote on features you want to see prioritized or suggest new ideas.
+        </p>
+
+        <div className="flex justify-center mt-8">
+            {user && (
+                <button
+                onClick={() => setModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-blue-900/20 hover:scale-105 font-medium"
+                >
+                <Plus size={20} />
+                New Suggestion
+                </button>
+            )}
         </div>
 
         {loading ? (
@@ -106,9 +110,9 @@ export default function SuggestionsPage() {
             <Loader2 className="animate-spin text-blue-500" size={32} />
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-6 mt-12 text-left">
             {suggestions.map((suggestion) => (
-              <div key={suggestion.id} className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl flex gap-6 hover:border-slate-700 transition-colors">
+              <div key={suggestion.id} className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 p-6 rounded-2xl flex gap-6 hover:border-slate-700 transition-colors shadow-lg">
                 <button
                   onClick={() => handleVote(suggestion.id)}
                   disabled={!user}
@@ -127,7 +131,7 @@ export default function SuggestionsPage() {
                     <h3 className="text-xl font-semibold text-slate-200">{suggestion.title}</h3>
                     <StatusBadge status={suggestion.status} />
                   </div>
-                  <p className="text-slate-400 leading-relaxed">{suggestion.description}</p>
+                  <p className="text-slate-400 leading-relaxed text-lg">{suggestion.description}</p>
                   
                   {suggestion.ai_summary && (
                     <div className="mt-4 text-xs text-slate-500 italic border-l-2 border-slate-800 pl-3">
@@ -139,8 +143,8 @@ export default function SuggestionsPage() {
             ))}
             
             {suggestions.length === 0 && (
-              <div className="text-center py-12 text-slate-500 italic bg-slate-900/30 rounded-xl border border-slate-800">
-                No suggestions yet. Be the first!
+              <div className="text-center py-16 text-slate-500 italic bg-slate-900/30 rounded-2xl border border-slate-800 border-dashed">
+                No suggestions yet. Be the first to add one!
               </div>
             )}
           </div>
@@ -150,7 +154,7 @@ export default function SuggestionsPage() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-800">
               <h2 className="text-xl font-bold">New Suggestion</h2>
             </div>

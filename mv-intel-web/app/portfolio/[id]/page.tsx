@@ -27,7 +27,8 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { FinancialsDashboard } from '@/app/portfolio/components/FinancialsDashboard';
@@ -514,16 +515,40 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                          <Loader2 size={14} className="animate-spin" /> Loading updates...
                        </div>
                     ) : news.length > 0 ? (
-                      news.map((item, idx) => (
-                        <div key={idx} className="p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
-                          <div className="flex justify-between items-start mb-1">
-                             <span className="text-sm font-medium text-emerald-400 line-clamp-2">{item.title}</span>
-                             <span className="text-xs text-white/40 whitespace-nowrap ml-2">{item.date}</span>
+                      news.map((item, idx) => {
+                        const hasUrl = (item as any).url;
+                        const Content = (
+                          <>
+                             <div className="flex justify-between items-start mb-1">
+                                <span className={`text-sm font-medium text-emerald-400 line-clamp-2 ${hasUrl ? 'group-hover:underline' : ''}`}>{item.title}</span>
+                                <span className="text-xs text-white/40 whitespace-nowrap ml-2">{item.date}</span>
+                             </div>
+                             <div className="text-xs text-white/50 mb-2">{item.source}</div>
+                             <p className="text-xs text-white/70 line-clamp-3">{item.summary}</p>
+                             {hasUrl && (
+                               <div className="mt-2 text-[10px] text-blue-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Read full article <ExternalLink size={10} />
+                               </div>
+                             )}
+                          </>
+                        );
+
+                        return hasUrl ? (
+                          <a 
+                             key={idx} 
+                             href={(item as any).url} 
+                             target="_blank" 
+                             rel="noopener noreferrer" 
+                             className="block p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors group cursor-pointer"
+                          >
+                             {Content}
+                          </a>
+                        ) : (
+                          <div key={idx} className="p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors group">
+                             {Content}
                           </div>
-                          <div className="text-xs text-white/50 mb-2">{item.source}</div>
-                          <p className="text-xs text-white/70 line-clamp-3">{item.summary}</p>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-sm text-white/40 italic">
                         No recent news found.

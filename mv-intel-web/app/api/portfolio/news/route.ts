@@ -3,6 +3,8 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
+// Force dynamic rendering - prevents edge caching issues
+export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 function getSupabaseClient() {
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest) {
     - "date" (approximate is fine, e.g. "Oct 2024")
     - "source" (domain or publication name)
     - "summary" (1-2 sentences)
+    - "url" (direct link to source)
     
     Do not include any markdown formatting or explanations, just the JSON array.`;
 

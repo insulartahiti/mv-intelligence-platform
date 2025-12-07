@@ -102,8 +102,8 @@ function extractPeriodDateFromFilename(filename: string): string | null {
 
 // Simple concurrency limiter
 async function pLimit<T>(concurrency: number, tasks: (() => Promise<T>)[]): Promise<PromiseSettledResult<T>[]> {
-    const results: PromiseSettledResult<T>[] = [];
-    const executing: Promise<void>[] = [];
+    const results: PromiseSettledResult<T>[] = new Array(tasks.length).fill({ status: 'rejected', reason: 'Not executed' });
+    const executing = new Set<Promise<void>>();
     
     // Wrapper to handle individual task execution and result tracking
     const runTask = async (task: () => Promise<T>, index: number) => {
@@ -115,20 +115,18 @@ async function pLimit<T>(concurrency: number, tasks: (() => Promise<T>)[]): Prom
         }
     };
 
-    // Pre-allocate results array to maintain order
     for (let i = 0; i < tasks.length; i++) {
-        results.push({ status: 'rejected', reason: 'Not executed' }); // Placeholder
-    }
-
-    for (let i = 0; i < tasks.length; i++) {
-        const p = runTask(tasks[i], i).then(() => {
-            // Remove self from executing list
-            executing.splice(executing.indexOf(p), 1);
+        const p = Promise.resolve().then(() => runTask(tasks[i], i));
+        
+        // We use a separate promise for tracking completion in the set
+        // ensuring we remove the specific promise reference we added
+        const e = p.then(() => {
+            executing.delete(e);
         });
         
-        executing.push(p);
+        executing.add(e);
         
-        if (executing.length >= concurrency) {
+        if (executing.size >= concurrency) {
             await Promise.race(executing);
         }
     }

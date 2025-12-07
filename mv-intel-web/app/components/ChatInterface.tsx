@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
+import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit, Globe } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 const PLACEHOLDERS = [
@@ -67,6 +67,7 @@ export default function ChatInterface({
     const [internalMessages, setInternalMessages] = useState<Message[]>([]);
     const [internalLoading, setInternalLoading] = useState(false);
     const [input, setInput] = useState('');
+    const [enableExternalSearch, setEnableExternalSearch] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -132,6 +133,7 @@ export default function ChatInterface({
                 body: JSON.stringify({
                     conversationId,
                     message: currentInput,
+                    enableExternalSearch,
                     userEntity: userEntity ? {
                         id: userEntity.id,
                         name: userEntity.name,
@@ -326,11 +328,23 @@ export default function ChatInterface({
     return (
         <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur">
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur flex justify-between items-center">
                 <h2 className="font-semibold text-slate-200 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-blue-400" />
                     Motive Intelligence
                 </h2>
+                
+                <button
+                    onClick={() => setEnableExternalSearch(!enableExternalSearch)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                        enableExternalSearch 
+                            ? 'bg-amber-900/20 text-amber-400 border-amber-500/50' 
+                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                    }`}
+                >
+                    <Globe className="w-3 h-3" />
+                    {enableExternalSearch ? 'Web Search ON' : 'Web Search OFF'}
+                </button>
             </div>
 
             {/* Messages Area */}
@@ -462,30 +476,55 @@ export default function ChatInterface({
                             {/* Inline Results Grid (Only for Assistant) */}
                             {msg.role === 'assistant' && msg.results && msg.results.length > 0 && (
                                 <div className="grid grid-cols-1 gap-2 mt-1 w-full animate-fadeIn">
-                                    {msg.results.slice(0, 3).map((node: any) => (
-                                        <div 
-                                            key={node.id}
-                                            onClick={() => onNodeSelect?.(node.id)}
-                                            className="bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-blue-500/50 rounded-lg p-3 cursor-pointer transition-all flex items-start gap-3 group"
-                                        >
-                                            <div className={`p-2 rounded-md flex-shrink-0 ${
-                                                node.group === 'organization' ? 'bg-purple-900/20 text-purple-400' : 'bg-blue-900/20 text-blue-400'
-                                            }`}>
-                                                {node.group === 'organization' ? <Building2 className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between mb-0.5">
-                                                    <h4 className="font-medium text-slate-200 truncate group-hover:text-blue-400 transition-colors">{node.label}</h4>
-                                                    {node.properties?.is_portfolio && (
-                                                        <span className="text-[10px] bg-green-900/30 text-green-400 px-1.5 py-0.5 rounded border border-green-900/50">PORTFOLIO</span>
-                                                    )}
+                                    {msg.results.slice(0, 3).map((node: any) => {
+                                        const isExternal = node.group === 'external';
+                                        return (
+                                            <div 
+                                                key={node.id}
+                                                onClick={() => {
+                                                    if (isExternal && node.properties?.url) {
+                                                        window.open(node.properties.url, '_blank');
+                                                    } else {
+                                                        onNodeSelect?.(node.id);
+                                                    }
+                                                }}
+                                                className={`border rounded-lg p-3 cursor-pointer transition-all flex items-start gap-3 group ${
+                                                    isExternal 
+                                                        ? 'bg-amber-900/10 hover:bg-amber-900/20 border-amber-500/30 hover:border-amber-500' 
+                                                        : 'bg-slate-800/50 hover:bg-slate-800 border-slate-700/50 hover:border-blue-500/50'
+                                                }`}
+                                            >
+                                                <div className={`p-2 rounded-md flex-shrink-0 ${
+                                                    isExternal 
+                                                        ? 'bg-amber-900/20 text-amber-500' 
+                                                        : (node.group === 'organization' ? 'bg-purple-900/20 text-purple-400' : 'bg-blue-900/20 text-blue-400')
+                                                }`}>
+                                                    {isExternal ? <Globe className="w-4 h-4" /> : 
+                                                     (node.group === 'organization' ? <Building2 className="w-4 h-4" /> : <Users className="w-4 h-4" />)}
                                                 </div>
-                                                <p className="text-xs text-slate-500 line-clamp-2">
-                                                    {node.properties?.ai_summary || node.properties?.description || node.properties?.business_analysis?.core_business || 'No description available'}
-                                                </p>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center justify-between mb-0.5">
+                                                        <h4 className={`font-medium truncate transition-colors ${
+                                                            isExternal ? 'text-amber-200 group-hover:text-amber-100' : 'text-slate-200 group-hover:text-blue-400'
+                                                        }`}>
+                                                            {node.label}
+                                                        </h4>
+                                                        {node.properties?.is_portfolio && (
+                                                            <span className="text-[10px] bg-green-900/30 text-green-400 px-1.5 py-0.5 rounded border border-green-900/50">PORTFOLIO</span>
+                                                        )}
+                                                        {isExternal && (
+                                                            <span className="text-[10px] bg-amber-900/40 text-amber-400 px-1.5 py-0.5 rounded border border-amber-900/60 ml-auto">
+                                                                WEB SOURCE
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 line-clamp-2">
+                                                        {node.properties?.ai_summary || node.properties?.description || node.properties?.business_analysis?.core_business || 'No description available'}
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                     {msg.results.length > 3 && (
                                         <button 
                                             className="text-xs text-slate-500 hover:text-slate-300 text-left px-1"

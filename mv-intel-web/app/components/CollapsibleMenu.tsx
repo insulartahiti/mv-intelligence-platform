@@ -65,7 +65,6 @@ export default function CollapsibleMenu() {
           <MenuItem onClick={close} href="/suggestions" icon={<Lightbulb size={18} />} label="Suggestions" active={pathname === '/suggestions'} />
           <MenuItem onClick={close} href="/taxonomy" icon={<Database size={18} />} label="Taxonomy View" active={pathname === '/taxonomy'} />
           <MenuItem onClick={close} href="/architecture" icon={<Layout size={18} />} label="Architecture" active={pathname === '/architecture'} />
-          <MenuItem onClick={close} href="/chrome-extension" icon={<Chrome size={18} />} label="Chrome Extension" active={pathname === '/chrome-extension'} />
           <MenuItem onClick={close} href="/status" icon={<Activity size={18} />} label="Status Dashboard" active={pathname === '/status'} />
           
           {isAdmin && (

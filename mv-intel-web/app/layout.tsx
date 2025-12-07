@@ -42,6 +42,8 @@ export const viewport: Viewport = {
   themeColor: '#3b82f6',
 };
 
+import FeedbackButton from './components/FeedbackButton';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -66,6 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="min-h-screen">
           {children}
         </main>
+        <FeedbackButton />
         <ToastContainer />
         <PWAStatus />
         <PWAInstaller />

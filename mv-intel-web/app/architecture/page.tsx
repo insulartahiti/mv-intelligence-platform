@@ -96,7 +96,14 @@ export default function ArchitecturePage() {
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="fixed inset-y-0 right-0 w-full sm:w-96 bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 shadow-2xl p-6 z-50 overflow-y-auto"
             >
-              <div className="flex justify-between items-start mb-8">
+              <button 
+                onClick={() => setSelectedNode(null)}
+                className="absolute left-6 top-6 text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors z-20"
+              >
+                <Icons.X size={20} />
+              </button>
+
+              <div className="flex justify-end items-start mb-8 pl-12">
                 <div className="flex items-center gap-4">
                   <div className={`p-3 rounded-xl ${getNodeColor(selectedNode.type)} border border-white/10`}>
                     <IconRenderer name={selectedNode.iconName} className="text-white" size={24} />
@@ -106,20 +113,27 @@ export default function ArchitecturePage() {
                     <span className="text-xs text-slate-500 font-mono uppercase tracking-wider">{selectedNode.type}</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setSelectedNode(null)}
-                  className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors"
-                >
-                  <Icons.X size={20} />
-                </button>
               </div>
               
-              <div className="space-y-8">
-                <div>
-                  <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <Icons.FileText size={12} /> Description
-                  </h3>
-                  <p className="text-slate-300 leading-relaxed text-sm">{selectedNode.description}</p>
+              <div className="space-y-8 pt-4">
+                {/* Notebook-style commentary section */}
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <div className="p-4 bg-blue-900/10 border-l-2 border-blue-500 rounded-r-lg mb-6">
+                    <h3 className="text-blue-400 font-semibold mb-2 flex items-center gap-2">
+                      <Icons.BrainCircuit size={16} />
+                      Architectural Context
+                    </h3>
+                    <p className="text-slate-300 italic">
+                      This component is a critical part of the {selectedNode.type} layer. It facilitates data flow and ensures system modularity.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Icons.FileText size={12} /> Description
+                    </h3>
+                    <p className="text-slate-300 leading-relaxed text-sm">{selectedNode.description}</p>
+                  </div>
                 </div>
                 
                 <div>
