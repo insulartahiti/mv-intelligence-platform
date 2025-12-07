@@ -54,13 +54,50 @@ const CONFIG_OPTIONS: { key: ConfigKey; label: string; description: string }[] =
   }
 ];
 
+// Add these defaults at the top of the file
+const DEFAULT_CONFIGS: Record<ConfigKey, string> = {
+  legal_analysis_system_prompt: `You are an expert legal analyst specializing in venture capital documentation. 
+Your task is to analyze legal documents to extract key terms, rights, and obligations.
+Identify the jurisdiction, document type, and key parties involved.`,
+  
+  semantic_normalization: `// Semantic Normalization Rules
+// Map variations of terms to standard keys.
+{
+  "liquidation_preference": ["liq pref", "liquidation preference", "preference amount"],
+  "voting_rights": ["voting", "voting power", "votes"],
+  "drag_along": ["drag-along", "drag along rights", "forced sale"],
+  "tag_along": ["tag-along", "co-sale", "right of co-sale"],
+  "information_rights": ["info rights", "information rights", "financial statements"],
+  "pro_rata": ["pro rata", "preemptive rights", "right of first offer"]
+}`,
+
+  economics_prompt: `Extract detailed economic terms including:
+- Liquidation preference (multiple, participation, cap)
+- Anti-dilution provisions (weighted average, full ratchet)
+- Dividend rights (cumulative, non-cumulative, rate)
+- Redemption rights
+- Conversion rights`,
+
+  governance_prompt: `Extract governance terms including:
+- Board composition and designation rights
+- Protective provisions (veto rights)
+- Voting thresholds for key decisions
+- Observer rights`,
+
+  legal_gc_prompt: `Extract legal risk factors including:
+- Representations and warranties (survival period, caps, baskets)
+- Indemnification obligations
+- Governing law and dispute resolution
+- Exclusivity and no-shop provisions`,
+
+  standalone_prompt: `Analyze this standalone document. 
+Identify its purpose, key obligations, termination clauses, and any unusual terms.`
+};
+
 export function LegalConfigEditor() {
   const [selectedKey, setSelectedKey] = useState<ConfigKey>('legal_analysis_system_prompt');
   const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
+  // ... existing state ...
 
   useEffect(() => {
     fetchConfig(selectedKey);
@@ -69,8 +106,7 @@ export function LegalConfigEditor() {
   const fetchConfig = async (key: ConfigKey) => {
     setLoading(true);
     setStatus('idle');
-    setContent(''); // Reset content while loading to show placeholder correctly if we used a loader overlay, but here we want to keep old content or clear it? 
-    // Better to clear it so we don't show old config for a new key briefly.
+    setContent(''); 
     
     try {
       const res = await fetch(`/api/portfolio/legal-config?key=${key}`);
@@ -78,10 +114,11 @@ export function LegalConfigEditor() {
       if (data.content) {
         setContent(data.content);
       } else {
-        // Content is empty/null
-        setContent(''); 
+        // Content is empty/null - Load DEFAULT
+        setContent(DEFAULT_CONFIGS[key] || ''); 
       }
     } catch (err) {
+// ... rest of function
       console.error('Failed to fetch config:', err);
       setStatus('error');
       setErrorMessage('Failed to load configuration.');
@@ -208,7 +245,7 @@ export function LegalConfigEditor() {
               onChange={(e) => setContent(e.target.value)}
               className="w-full h-full bg-slate-950 p-6 text-sm font-mono text-white/80 focus:outline-none resize-none leading-relaxed"
               spellCheck={false}
-              placeholder={loading ? "// Loading..." : "// No configuration set. Enter custom prompt instructions here..."}
+              placeholder={loading ? "// Loading..." : "// Enter configuration here..."}
             />
           )}
         </div>

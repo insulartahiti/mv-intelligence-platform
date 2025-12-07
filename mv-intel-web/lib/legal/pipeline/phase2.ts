@@ -39,7 +39,7 @@ function getOpenAI(): OpenAI {
 // =============================================================================
 
 // Default prompts (used as fallback if not in legal_config)
-const DEFAULT_ECONOMICS_PROMPT = `You are a VC lawyer analyzing ECONOMICS-related documents from an investment deal.
+export const DEFAULT_ECONOMICS_PROMPT = `You are a VC lawyer analyzing ECONOMICS-related documents from an investment deal.
 
 Analyze the provided documents and extract detailed economics terms. Return JSON:
 
@@ -95,7 +95,7 @@ Analyze the provided documents and extract detailed economics terms. Return JSON
 
 Use GREEN for market-standard terms, AMBER for slightly aggressive but acceptable, RED for unusual/concerning.`;
 
-const DEFAULT_GOVERNANCE_PROMPT = `You are a VC lawyer analyzing GOVERNANCE-related documents from an investment deal.
+export const DEFAULT_GOVERNANCE_PROMPT = `You are a VC lawyer analyzing GOVERNANCE-related documents from an investment deal.
 
 Analyze the provided documents and extract detailed governance terms. Return JSON:
 
@@ -159,7 +159,7 @@ Analyze the provided documents and extract detailed governance terms. Return JSO
   "overall_rationale": "summary assessment"
 }`;
 
-const DEFAULT_LEGAL_GC_PROMPT = `You are a General Counsel analyzing LEGAL-related documents from an investment deal.
+export const DEFAULT_LEGAL_GC_PROMPT = `You are a General Counsel analyzing LEGAL-related documents from an investment deal.
 
 Analyze the provided documents for legal risks and compliance. Return JSON:
 
@@ -215,7 +215,7 @@ Analyze the provided documents for legal risks and compliance. Return JSON:
   "overall_rationale": "summary assessment"
 }`;
 
-const DEFAULT_STANDALONE_PROMPT = `You are a VC lawyer analyzing standalone documents from an investment deal.
+export const DEFAULT_STANDALONE_PROMPT = `You are a VC lawyer analyzing standalone documents from an investment deal.
 
 These documents don't fit main categories but may contain important terms. Return JSON:
 

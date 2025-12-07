@@ -511,9 +511,9 @@ export default function ImportPage() {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-              Portfolio Data Ingestion
+              Financial Intelligence
             </h1>
-            <p className="text-gray-400 mt-2">
+            <p className="text-slate-400 mt-2">
               Upload board decks, financial models, or paste investor updates.
             </p>
           </div>
@@ -616,9 +616,9 @@ export default function ImportPage() {
                     <option value="stark-industries">Stark Industries</option>
                   </select>
                   {selectedCompany && (
-                      <div className="flex items-center text-emerald-400 text-sm bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
-                          <Check size={16} className="mr-2"/> 
-                          Ready
+                      <div className="flex items-center text-emerald-400 text-sm font-medium px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                          <Check size={14} className="mr-1.5"/> 
+                          Auto-detected
                       </div>
                   )}
               </div>

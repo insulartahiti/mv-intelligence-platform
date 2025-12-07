@@ -1,17 +1,15 @@
 
-import { Client } from 'pg';
-import fs from 'fs';
-import path from 'path';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Client } = require('pg');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
 
 const envPath = path.resolve(__dirname, '../.env.local');
 console.log('Loading env from:', envPath);
-const envConfig = dotenv.parse(fs.readFileSync(envPath));
-for (const k in envConfig) process.env[k] = envConfig[k];
+if (fs.existsSync(envPath)) {
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
+    for (const k in envConfig) process.env[k] = envConfig[k];
+}
 
 async function run() {
     // Construct connection string from Supabase vars if DATABASE_URL not set
@@ -41,4 +39,3 @@ async function run() {
 }
 
 run();
-
