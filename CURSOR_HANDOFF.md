@@ -22,7 +22,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | **Search Logic** | `mv-intel-web/lib/search/` |
 | **Supabase Migrations** | `supabase/migrations/` |
 | **Edge Functions** | `supabase/functions/` |
-| **Portco Guides** | `mv-intel-web/lib/financials/portcos/{slug}/guide.yaml` |
+| **Portco Guides** | `mv-intel-web/lib/financials/portcos/{slug}/guide.yaml` (Deprecated) / `portfolio_guides` (DB) |
 
 ### Database Tables
 
@@ -38,6 +38,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `fact_metrics` | Computed KPIs (ARR growth, margins, etc.) |
 | `dim_line_item` | Standard chart of accounts |
 | `dim_source_files` | Ingested file metadata |
+| `portfolio_guides` | Dynamic YAML configurations for financial ingestion (replaces static files) |
 | `company_insights` | Qualitative insights from documents |
 | `legal_analyses` | Structured legal document analysis results |
 | `legal_term_sources` | Source attribution for extracted legal terms |
@@ -62,6 +63,8 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `/api/upload` | POST | Direct storage upload (fallback) |
 | `/api/auth/check-access` | POST | Email authorization check |
 | `/api/taxonomy/entities` | GET | Entities by taxonomy code |
+| `/api/portfolio/companies` | GET | Search and list portfolio companies |
+| `/api/portfolio/guide` | GET/POST | Retrieve or update dynamic Portco Guide configurations |
 | `/api/portfolio/legal-analysis` | POST/GET | Legal document analysis and retrieval |
 
 ---
@@ -1140,6 +1143,10 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **"Spotlight Login"**: Magic Link auth with OTP code support (bypasses corporate email scanners).
 
 *   **Database Tables**: `graph.conversations`, `graph.messages` for chat state persistence.
+
+*   **Portfolio Dashboard**: Comprehensive `/portfolio` dashboard with search, fund categorization, and company cards.
+*   **Portfolio Detail Page**: Standardized detail view (`/portfolio/[id]`) with tabs for Overview, Financials, and Configuration.
+*   **Dynamic Portco Guides**: Moved from static YAML files to `portfolio_guides` database table to enable in-app editing via AI prompts.
 
 ### Bug Fixes
 
