@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const companyId = searchParams.get('companyId');
+    const type = searchParams.get('type') || 'financial'; // Default to financial
     
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
@@ -103,10 +104,12 @@ export async function GET(req: NextRequest) {
       .from('portfolio_guides')
       .select('*')
       .eq('company_id', companyId)
-      .single();
+      .eq('type', type)
+      .maybeSingle(); // Use maybeSingle instead of single to handle 0 rows gracefully
       
-    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
-       throw error;
+    if (error) {
+       console.error('Fetch guide error:', error);
+       return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
     }
     
     if (!data) {
@@ -116,15 +119,15 @@ export async function GET(req: NextRequest) {
     
     return NextResponse.json({ guide: data });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Fetch guide error:', error);
-    return NextResponse.json({ error: 'Failed to fetch guide' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to fetch guide' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, instruction, currentYaml, filePaths } = await req.json();
+    const { companyId, instruction, currentYaml, filePaths, type = 'financial' } = await req.json();
     
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
@@ -176,7 +179,7 @@ export async function POST(req: NextRequest) {
     `;
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-5.1",
+          model: "gpt-5.1", // Primary model for guide generation
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -205,23 +208,29 @@ export async function POST(req: NextRequest) {
         throw new Error("Failed to generate YAML");
     }
 
-    // Upsert into DB
+    // Upsert into DB with explicit type and onConflict for composite unique key
     const { data, error } = await supabase
       .from('portfolio_guides')
       .upsert({
         company_id: companyId,
+        type: type, // Explicit type (default 'financial')
         content_yaml: newYaml,
         updated_at: new Date().toISOString()
+      }, { 
+        onConflict: 'company_id,type' // Specify composite unique key for conflict resolution
       })
       .select()
       .single();
       
-    if (error) throw error;
+    if (error) {
+      console.error('Guide upsert error:', error);
+      throw new Error(`Database error: ${error.message}`);
+    }
     
     return NextResponse.json({ guide: data });
 
   } catch (error: any) {
     console.error('Update guide error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to update guide' }, { status: 500 });
   }
 }
