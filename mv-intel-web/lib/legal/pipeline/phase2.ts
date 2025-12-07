@@ -9,6 +9,7 @@
  */
 
 import OpenAI from 'openai';
+import { getLegalConfig } from '../config';
 import { 
   Phase1Result, 
   Phase2Input, 
@@ -37,7 +38,8 @@ function getOpenAI(): OpenAI {
 // CATEGORY-SPECIFIC PROMPTS
 // =============================================================================
 
-const ECONOMICS_PROMPT = `You are a VC lawyer analyzing ECONOMICS-related documents from an investment deal.
+// Default prompts (used as fallback if not in legal_config)
+const DEFAULT_ECONOMICS_PROMPT = `You are a VC lawyer analyzing ECONOMICS-related documents from an investment deal.
 
 Analyze the provided documents and extract detailed economics terms. Return JSON:
 
@@ -93,7 +95,7 @@ Analyze the provided documents and extract detailed economics terms. Return JSON
 
 Use GREEN for market-standard terms, AMBER for slightly aggressive but acceptable, RED for unusual/concerning.`;
 
-const GOVERNANCE_PROMPT = `You are a VC lawyer analyzing GOVERNANCE-related documents from an investment deal.
+const DEFAULT_GOVERNANCE_PROMPT = `You are a VC lawyer analyzing GOVERNANCE-related documents from an investment deal.
 
 Analyze the provided documents and extract detailed governance terms. Return JSON:
 
@@ -157,7 +159,7 @@ Analyze the provided documents and extract detailed governance terms. Return JSO
   "overall_rationale": "summary assessment"
 }`;
 
-const LEGAL_GC_PROMPT = `You are a General Counsel analyzing LEGAL-related documents from an investment deal.
+const DEFAULT_LEGAL_GC_PROMPT = `You are a General Counsel analyzing LEGAL-related documents from an investment deal.
 
 Analyze the provided documents for legal risks and compliance. Return JSON:
 
@@ -213,7 +215,7 @@ Analyze the provided documents for legal risks and compliance. Return JSON:
   "overall_rationale": "summary assessment"
 }`;
 
-const STANDALONE_PROMPT = `You are a VC lawyer analyzing standalone documents from an investment deal.
+const DEFAULT_STANDALONE_PROMPT = `You are a VC lawyer analyzing standalone documents from an investment deal.
 
 These documents don't fit main categories but may contain important terms. Return JSON:
 
@@ -285,16 +287,16 @@ ${text}
     let systemPrompt: string;
     switch (input.category) {
       case 'economics':
-        systemPrompt = ECONOMICS_PROMPT;
+        systemPrompt = await getLegalConfig('economics_prompt') || DEFAULT_ECONOMICS_PROMPT;
         break;
       case 'governance':
-        systemPrompt = GOVERNANCE_PROMPT;
+        systemPrompt = await getLegalConfig('governance_prompt') || DEFAULT_GOVERNANCE_PROMPT;
         break;
       case 'legal_gc':
-        systemPrompt = LEGAL_GC_PROMPT;
+        systemPrompt = await getLegalConfig('legal_gc_prompt') || DEFAULT_LEGAL_GC_PROMPT;
         break;
       default:
-        systemPrompt = STANDALONE_PROMPT;
+        systemPrompt = await getLegalConfig('standalone_prompt') || DEFAULT_STANDALONE_PROMPT;
     }
     
     // Call GPT-4o for deep analysis

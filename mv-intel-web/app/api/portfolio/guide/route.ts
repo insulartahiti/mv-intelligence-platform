@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import * as XLSX from 'xlsx';
+import { parsePDF } from '../../../../lib/financials/ingestion/parse_pdf';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -36,22 +37,46 @@ async function extractFileContext(filePaths: string[], supabase: any): Promise<s
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         context += `\n\n--- FILE: ${path} (Excel) ---\n`;
         
-        // Read first 2 sheets or sheets named 'P&L', 'Revenue'
-        const sheetsToRead = workbook.SheetNames.slice(0, 2);
-        
-        for (const sheetName of sheetsToRead) {
+        // Read ALL sheets
+        for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName];
           const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
           
-          // Take first 20 rows as sample structure
-          const rows = json.slice(0, 20).map((row: any) => row.join(' | ')).join('\n');
-          context += `SHEET: ${sheetName}\n${rows}\n...\n`;
+          // Take first 100 rows (increased from 20) to capture more structure
+          const rows = json.slice(0, 100).map((row: any) => row.join(' | ')).join('\n');
+          
+          if (rows.trim().length === 0) {
+             context += `SHEET: ${sheetName} (Empty)\n`;
+          } else {
+             context += `SHEET: ${sheetName}\n${rows}\n...\n`;
+          }
+        }
+      } else if (path.toLowerCase().endsWith('.pdf')) {
+        context += `\n\n--- FILE: ${path} (PDF) ---\n`;
+        try {
+          // Use the project's standard PDF parser
+          const pdfContent = await parsePDF({ 
+            buffer, 
+            filename: path, 
+            path: path 
+          });
+          
+          // Read FULL document (all pages)
+          // "we should not limit to first three pages, it should read the full doc"
+          context += `PAGE COUNT: ${pdfContent.pageCount}\n`;
+          for (const page of pdfContent.pages) {
+             // Still limiting per-page slightly to prevent massive garbage/binary dumps
+             // but capturing enough for financial tables
+             const text = page.text; 
+             context += `PAGE ${page.pageNumber}:\n${text}\n...\n`;
+          }
+        } catch (err: any) {
+           console.warn(`Error parsing PDF ${path}:`, err);
+           context += `[Error extracting PDF text: ${err.message}]\n`;
         }
       } else {
-        // For PDF/other, just mention availability (text extraction requires more deps)
-        // Or if we have text extraction logic available, use it.
-        // For now, just passing the filename is better than nothing.
-        context += `\n\n--- FILE: ${path} (Binary) ---\n[Content analysis not fully supported in this simplified view]\n`;
+        // For other binary types
+        context += `\n\n--- FILE: ${path} (Binary) ---\n[Content analysis not fully supported for this file type]\n`;
       }
     } catch (err) {
       console.warn(`Error processing ${path}:`, err);
@@ -111,7 +136,10 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
+    // Helper to run completion with retries/fallback
+    const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
+      try {
+         const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
     Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
     
     The YAML schema structure is:
@@ -130,28 +158,40 @@ export async function POST(req: NextRequest) {
     4. If file content is provided, use it to infer metric labels (e.g. if file has "Total Revenue", map 'revenue' to labels: ["Total Revenue"]).
     `;
 
-    const userPrompt = `
+        const userPrompt = `
     Current YAML:
     ${currentYaml || 'No existing guide.'}
     
     User Instruction:
-    ${instruction || (fileContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
+    ${instruction || (promptContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
     
-    ${fileContext ? `\nFile Content Samples:\n${fileContext}` : ''}
+    ${promptContext ? `\nFile Content Samples:\n${promptContext}` : ''}
     
     Return the updated YAML.
     `;
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-5.1",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          temperature: 0,
+        });
+        
+        return completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
+      } catch (error: any) {
+        // If it fails (e.g. context length) and we haven't retried yet, try with truncated context
+        if (retryCount === 0 && promptContext.length > 50000) {
+           console.warn("First guide generation attempt failed, retrying with truncated context...");
+           // Truncate to first 50k chars (approx 12-15k tokens) as a fallback
+           return generateGuide(promptContext.substring(0, 50000) + "\n...[TRUNCATED]...", 1);
+        }
+        throw error;
+      }
+    };
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.1",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0,
-    });
-    
-    const newYaml = completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim();
+    const newYaml = await generateGuide(fileContext);
     
     if (!newYaml) {
         throw new Error("Failed to generate YAML");

@@ -45,11 +45,13 @@ export const JURISDICTION_SIGNALS: Record<Jurisdiction, string[]> = {
   Unknown: ['Genuinely unclear from document signals'],
 };
 
+import { getLegalConfig } from '../config';
+
 // =============================================================================
 // SEMANTIC NORMALIZATION GUIDE
 // =============================================================================
 
-export const SEMANTIC_NORMALIZATION = `
+export const DEFAULT_SEMANTIC_NORMALIZATION = `
 SEMANTIC NORMALISATION (Map different labels to the same concepts):
 
 PROTECTIVE PROVISIONS / VETO / RESERVED MATTERS:
@@ -220,7 +222,7 @@ export const OUTPUT_JSON_SCHEMA = {
 // MAIN SYSTEM PROMPT
 // =============================================================================
 
-export const LEGAL_ANALYSIS_SYSTEM_PROMPT = `You are an expert venture capital and growth equity lawyer-investor with cross-border experience (US, UK, and Continental Europe). Your job is to read fundraising / investor documentation (term sheets, SPAs, SHAs, Articles/Charters, SAFEs, CLAs, convertible notes, side letters, etc.) and extract the key terms that matter to:
+export const DEFAULT_LEGAL_ANALYSIS_SYSTEM_PROMPT = `You are an expert venture capital and growth equity lawyer-investor with cross-border experience (US, UK, and Continental Europe). Your job is to read fundraising / investor documentation (term sheets, SPAs, SHAs, Articles/Charters, SAFEs, CLAs, convertible notes, side letters, etc.) and extract the key terms that matter to:
 
 1) The investment team (economics, control, follow-on, downside, liquidity).
 2) General counsel (legal risk, conflicts, regulatory, enforcement).
@@ -263,7 +265,7 @@ From titles, recitals, and operative clauses, classify into:
 
 If OTHER, describe what the structure appears to be and identify the closest analog.
 
-${SEMANTIC_NORMALIZATION}
+{{SEMANTIC_NORMALIZATION}}
 
 ==================================================
 1. EXECUTIVE SUMMARY (MAX 10 BULLETS)
@@ -483,8 +485,12 @@ Throughout, prioritise terms that materially affect:
 /**
  * Build the complete prompt for legal document analysis
  */
-export function buildLegalAnalysisPrompt(documentContext?: string): string {
-  let prompt = LEGAL_ANALYSIS_SYSTEM_PROMPT;
+export async function buildLegalAnalysisPrompt(documentContext?: string): Promise<string> {
+  const normalization = await getLegalConfig('semantic_normalization') || DEFAULT_SEMANTIC_NORMALIZATION;
+  const systemPromptTemplate = await getLegalConfig('legal_analysis_system_prompt') || DEFAULT_LEGAL_ANALYSIS_SYSTEM_PROMPT;
+  
+  // Replace normalization placeholder
+  let prompt = systemPromptTemplate.replace('{{SEMANTIC_NORMALIZATION}}', normalization);
   
   if (documentContext) {
     prompt += `\n\n==================================================

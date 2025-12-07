@@ -10,12 +10,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
 import { loadFile, deleteFile } from '@/lib/financials/ingestion/load_file';
-import { extractFinancialDocument, UnifiedExtractionResult } from '@/lib/financials/ingestion/unified_extractor';
+import { extractFinancialDocument, UnifiedExtractionResult, VarianceExplanation } from '@/lib/financials/ingestion/unified_extractor';
 import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
 import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
 import { extractPageSnippet, SourceAnnotation } from '@/lib/financials/audit/pdf_snippet';
 import { createClient } from '@supabase/supabase-js';
+import { reconcileFacts, ReconciliationResult } from '@/lib/financials/ingestion/reconciliation';
+import { LocalFactRecord } from '@/lib/financials/local/storage';
 
 // Force dynamic rendering - prevents edge caching issues
 export const dynamic = 'force-dynamic';
@@ -325,10 +327,10 @@ export async function POST(req: NextRequest) {
             
             const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
             
-            // 4b. Generate Audit Snippets & Prepare Fact Rows
+            // 4b. Generate Audit Snippets & Prepare New Fact Records
             const processedPages = new Set<string>(); 
             const snippetUrls: Record<string, string> = {}; // Cache page -> URL mapping
-            const factRows: any[] = [];
+            const newFactRecords: LocalFactRecord[] = [];
             const uniqueLineItems = new Map<string, { name: string, category: string }>();
 
             // Collect unique line items
@@ -382,16 +384,7 @@ export async function POST(req: NextRequest) {
             }
 
             for (const item of lineItems) {
-                const factRow: any = {
-                    company_id: companyId,
-                    date: item.date || periodDate,
-                    line_item_id: item.line_item_id,
-                    amount: item.amount,
-                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'EUR',
-                    scenario: item.scenario || 'Actual', // Actual, Budget, or Forecast
-                    source_file_id: sourceFileId,
-                    source_location: item.source_location
-                };
+                let snippetUrl = undefined;
 
                 // Generate audit snippets for PDFs with visual highlighting (both live and dry run)
                 if (fileType === 'pdf' && item.source_location.page) {
@@ -400,7 +393,7 @@ export async function POST(req: NextRequest) {
                     
                     // Check cache first
                     if (snippetUrls[snippetKey]) {
-                        factRow.snippet_url = snippetUrls[snippetKey];
+                        snippetUrl = snippetUrls[snippetKey];
                     } else if (!processedPages.has(snippetKey)) {
                         console.log(`[Ingest] Generating audit snippet for ${fileMeta.filename} page ${pageNum}...`);
                         try {
@@ -441,7 +434,7 @@ export async function POST(req: NextRequest) {
                                     
                                 if (signedData?.signedUrl) {
                                     snippetUrls[snippetKey] = signedData.signedUrl;
-                                    factRow.snippet_url = signedData.signedUrl;
+                                    snippetUrl = signedData.signedUrl;
                                 }
                             }
                         } catch (err) {
@@ -452,33 +445,118 @@ export async function POST(req: NextRequest) {
                     }
                 }
                 
-                factRows.push(factRow);
+                // Construct LocalFactRecord for reconciliation
+                newFactRecords.push({
+                  line_item_id: item.line_item_id,
+                  amount: item.amount,
+                  scenario: item.scenario || 'Actual',
+                  date: item.date || periodDate, // Ensure extraction has date
+                  source_file: fileMeta.filename,
+                  source_location: item.source_location,
+                  snippet_url: snippetUrl
+                });
             }
 
-            // 4c. Persist Raw Facts (SKIP IF DRY RUN)
-            if (!dryRun && factRows.length > 0) {
+            // 4c. Reconcile with Existing Facts (SKIP IF DRY RUN)
+            let finalFacts = newFactRecords;
+            const filenameToId: Record<string, string> = { [fileMeta.filename]: sourceFileId || '' };
+
+            if (!dryRun && companyId) {
+                // Fetch existing facts to reconcile against
+                // Identify all dates involved to scope the query
+                const datesOfInterest = Array.from(new Set(newFactRecords.map(f => f.date)));
+                
+                const { data: existingFactsData, error: existingFactsError } = await supabase
+                    .from('fact_financials')
+                    .select('*, dim_source_files(id, filename)')
+                    .eq('company_id', companyId)
+                    .in('date', datesOfInterest);
+                
+                if (existingFactsError) {
+                   console.error('Error fetching existing facts:', existingFactsError);
+                }
+
+                const existingFacts: LocalFactRecord[] = (existingFactsData || []).map((f: any) => {
+                    // Cache source file ID mapping
+                    if (f.dim_source_files?.filename && f.dim_source_files?.id) {
+                        filenameToId[f.dim_source_files.filename] = f.dim_source_files.id;
+                    }
+                    return {
+                        line_item_id: f.line_item_id,
+                        amount: f.amount,
+                        scenario: f.scenario,
+                        date: f.date,
+                        source_file: f.dim_source_files?.filename || 'unknown',
+                        source_location: f.source_location,
+                        priority: f.priority,
+                        explanation: f.explanation,
+                        changelog: f.changelog,
+                        snippet_url: f.snippet_url
+                    };
+                });
+
+                // Get variance explanations from extraction result
+                const varianceExplanations: VarianceExplanation[] = 
+                    extractedData.financial_summary?.variance_explanations || [];
+                
+                // Run Reconciliation
+                const reconciliationResult: ReconciliationResult = reconcileFacts(
+                    newFactRecords,
+                    existingFacts,
+                    varianceExplanations
+                );
+                
+                console.log(`[Ingest] Reconciliation: ${reconciliationResult.summary.inserted} inserted, ${reconciliationResult.summary.updated} updated, ${reconciliationResult.summary.ignored} ignored, ${reconciliationResult.summary.conflicts} conflicts`);
+                
+                finalFacts = reconciliationResult.finalFacts;
+                
+                // TODO: Save conflicts to a separate table if needed (currently we just return them in response or rely on flags)
+            }
+
+            // 4d. Persist Reconciled Facts (SKIP IF DRY RUN)
+            if (!dryRun && finalFacts.length > 0) {
+                const factRows = finalFacts.map(fact => ({
+                    company_id: companyId,
+                    date: fact.date,
+                    line_item_id: fact.line_item_id,
+                    amount: fact.amount,
+                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'EUR',
+                    scenario: fact.scenario,
+                    source_file_id: filenameToId[fact.source_file] || sourceFileId, // Resolve ID from map
+                    source_location: fact.source_location,
+                    priority: fact.priority,
+                    explanation: fact.explanation,
+                    changelog: fact.changelog,
+                    snippet_url: fact.snippet_url
+                }));
+
+                // Use UPSERT with the unique constraint
                 const { error: factsError } = await supabase
                     .from('fact_financials')
-                    .insert(factRows);
+                    .upsert(factRows, { 
+                        onConflict: 'company_id,date,scenario,line_item_id',
+                        ignoreDuplicates: false 
+                    });
                 
                 if (factsError) {
                     console.error('Error persisting fact_financials:', factsError);
                     throw new Error('Failed to save financial data to database');
                 }
             } else if (dryRun) {
-                console.log(`[Dry Run] Skipping fact_financials insert (${factRows.length} rows)`);
+                console.log(`[Dry Run] Skipping fact_financials insert (${finalFacts.length} rows)`);
             }
 
             // 5. Compute Metrics (only from Actuals, not Budget)
+            // Compute from FINAL reconciled facts to ensure consistency
             const facts: Record<string, number> = {};
             
-            lineItems.forEach(item => {
-                // Only include Actuals in metric computation (Budget is stored but not used for derived metrics)
-                if (item.scenario && item.scenario !== 'actual') {
-                    return; // Skip budget/forecast items
+            finalFacts.forEach(item => {
+                // Only include Actuals in metric computation
+                if (item.scenario && item.scenario.toLowerCase() !== 'actual') {
+                    return; 
                 }
                 
-                // Deduplicate: use latest value instead of summing (prevents double-counting)
+                // Deduplicate: use latest value (reconciliation has already resolved conflicts)
                 facts[item.line_item_id] = item.amount;
             });
             
@@ -501,7 +579,7 @@ export async function POST(req: NextRequest) {
                 metrics_computed: metrics.length,
                 metrics_sample: metrics.slice(0, 3),
                 // Return full data in dry run for preview
-                extracted_data: dryRun ? factRows : undefined,
+                extracted_data: dryRun ? finalFacts : undefined,
                 computed_metrics: dryRun ? metrics : undefined,
                 status: extractionStatus,
                 ...(extractionStatus === 'needs_review' && {

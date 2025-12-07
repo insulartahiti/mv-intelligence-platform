@@ -242,6 +242,8 @@ interface CompanyDetail {
   fund?: string;
   status?: string;
   taxonomy?: string;
+  latest_summary?: string;
+  summary_updated_at?: string;
 }
 
 interface NewsItem {
@@ -443,17 +445,25 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                   </div>
                 </section>
 
-                {/* Key Updates (Placeholder) */}
+                {/* Key Updates */}
                 <section className="bg-white/5 rounded-xl p-6 border border-white/10">
                   <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                     <Calendar size={20} className="text-emerald-400" />
                     Key Updates
                   </h3>
                   <div className="space-y-4">
-                    <div className="p-4 bg-white/5 rounded-lg border-l-2 border-emerald-500">
-                      <div className="text-sm text-white/40 mb-1">Oct 2024 • Board Meeting</div>
-                      <p className="text-white/80">Strong Q3 performance with 15% QoQ growth. Launched new Enterprise tier.</p>
-                    </div>
+                    {company.latest_summary ? (
+                      <div className="p-4 bg-white/5 rounded-lg border-l-2 border-emerald-500">
+                        <div className="text-sm text-white/40 mb-1">
+                          {company.summary_updated_at 
+                            ? new Date(company.summary_updated_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric', day: 'numeric' }) + ' • AI Summary'
+                            : 'Recent Update'}
+                        </div>
+                        <p className="text-white/80 whitespace-pre-wrap">{company.latest_summary}</p>
+                      </div>
+                    ) : (
+                      <div className="text-white/40 italic text-sm">No recent key updates found.</div>
+                    )}
                   </div>
                 </section>
               </div>

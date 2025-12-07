@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
     const fund = searchParams.get('fund');
+    const companyId = searchParams.get('companyId');
     
     const supabase = getSupabaseClient();
     
@@ -58,6 +59,10 @@ export async function GET(req: NextRequest) {
     if (fund) {
       dbQuery = dbQuery.eq('fund', fund);
     }
+
+    if (companyId) {
+      dbQuery = dbQuery.eq('id', companyId);
+    }
     
     // Order by name
     dbQuery = dbQuery.order('name', { ascending: true });
@@ -74,7 +79,7 @@ export async function GET(req: NextRequest) {
 
     // Agent-style Enrichment / Mapping Logic
     // Maps properties robustly using enrichment data if primary fields are missing
-    const companies = (data || []).map((entity: any) => {
+    const companies = await Promise.all((data || []).map(async (entity: any) => {
         // Parse JSONB fields if they come as strings (sometimes happens with different clients)
         const enrichment = typeof entity.enrichment_data === 'string' 
             ? JSON.parse(entity.enrichment_data) 
@@ -83,6 +88,28 @@ export async function GET(req: NextRequest) {
         const analysis = typeof entity.business_analysis === 'string'
             ? JSON.parse(entity.business_analysis)
             : (entity.business_analysis || {});
+
+        let latestSummary = null;
+        let summaryDate = null;
+
+        // If fetching a specific company, include the latest AI summary from interaction rollup
+        if (companyId && entity.id === companyId) {
+            try {
+                const { data: summaryData } = await supabase
+                    .schema('graph')
+                    .from('entity_notes_rollup')
+                    .select('latest_summary, last_updated')
+                    .eq('entity_id', entity.id)
+                    .single();
+                
+                if (summaryData) {
+                    latestSummary = summaryData.latest_summary;
+                    summaryDate = summaryData.last_updated;
+                }
+            } catch (err) {
+                console.warn(`Failed to fetch notes rollup for ${entity.id}`, err);
+            }
+        }
 
         return {
             id: entity.id,
@@ -96,9 +123,11 @@ export async function GET(req: NextRequest) {
             brief_description: entity.brief_description || entity.ai_summary || analysis.core_business || enrichment.description,
             taxonomy: entity.taxonomy,
             logo_url: entity.linkedin_url || enrichment.logo_url || enrichment.linkedin_url, // Map linkedin_url to logo_url for frontend
-            status: entity.pipeline_stage
+            status: entity.pipeline_stage,
+            latest_summary: latestSummary,
+            summary_updated_at: summaryDate
         };
-    });
+    }));
     
     return NextResponse.json({ 
         companies,

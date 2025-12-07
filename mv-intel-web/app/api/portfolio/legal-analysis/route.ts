@@ -312,7 +312,16 @@ export async function GET(req: NextRequest) {
     // List analyses
     let query = supabase
       .from('legal_analyses')
-      .select('id, document_name, document_type, jurisdiction, executive_summary, flags, created_at')
+      .select(`
+        id, 
+        document_name, 
+        document_type, 
+        jurisdiction, 
+        executive_summary, 
+        flags, 
+        created_at,
+        company_id
+      `)
       .order('created_at', { ascending: false })
       .limit(limit);
       
