@@ -17,12 +17,14 @@ CREATE TABLE IF NOT EXISTS portfolio_guides (
 -- RLS
 ALTER TABLE portfolio_guides ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view portfolio guides" ON portfolio_guides;
 CREATE POLICY "Users can view portfolio guides" ON portfolio_guides
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update portfolio guides" ON portfolio_guides;
 CREATE POLICY "Authenticated users can update portfolio guides" ON portfolio_guides
   FOR UPDATE USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users can insert portfolio guides" ON portfolio_guides;
 CREATE POLICY "Authenticated users can insert portfolio guides" ON portfolio_guides
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
