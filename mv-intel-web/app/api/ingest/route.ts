@@ -449,7 +449,7 @@ export async function POST(req: NextRequest) {
                 newFactRecords.push({
                   line_item_id: item.line_item_id,
                   amount: item.amount,
-                  scenario: item.scenario || 'Actual',
+                  scenario: (item.scenario || 'actual').toLowerCase(),
                   date: item.date || periodDate, // Ensure extraction has date
                   source_file: fileMeta.filename,
                   source_location: item.source_location,

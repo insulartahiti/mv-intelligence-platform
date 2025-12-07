@@ -17,6 +17,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | **Pipeline Scripts** | `mv-intel-web/scripts/` |
 | **Financial Ingestion** | `mv-intel-web/lib/financials/` |
 | **Legal Analysis** | `mv-intel-web/lib/legal/` |
+| **Legal Config** | `mv-intel-web/lib/legal/config.ts` |
 | **Portfolio Section** | `mv-intel-web/app/portfolio/` |
 | **Taxonomy Schema** | `mv-intel-web/lib/taxonomy/schema.ts` |
 | **Search Logic** | `mv-intel-web/lib/search/` |
@@ -43,6 +44,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `company_insights` | Qualitative insights from documents |
 | `legal_analyses` | Structured legal document analysis results |
 | `legal_term_sources` | Source attribution for extracted legal terms |
+| `legal_config` | Dynamic configuration for legal analysis prompts and normalization |
 
 ### Storage Buckets
 
@@ -67,6 +69,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `/api/portfolio/companies` | GET | Search and list portfolio companies |
 | `/api/portfolio/guide` | GET/POST | Retrieve or update dynamic Portco Guide configurations |
 | `/api/portfolio/legal-analysis` | POST/GET | Legal document analysis and retrieval |
+| `/api/portfolio/legal-config` | GET/POST | Manage global legal analysis configuration |
 
 ---
 
@@ -736,6 +739,7 @@ The analysis extracts and classifies terms across 9 major sections:
 | `lib/legal/instrument_classifier.ts` | Jurisdiction & instrument type detection |
 | `app/portfolio/legal/page.tsx` | Upload and analysis UI |
 | `app/api/portfolio/legal-analysis/route.ts` | API endpoint |
+| `lib/legal/config.ts` | Utilities for fetching/updating legal configuration |
 
 ### Database Schema
 
@@ -763,7 +767,22 @@ legal_term_sources (
   snippet_url TEXT,        -- Link to annotated PDF page
   bbox JSONB               -- Bounding box coordinates
 )
+
+-- Global Configuration
+legal_config (
+  key TEXT PRIMARY KEY,    -- e.g. 'semantic_normalization'
+  content TEXT,            -- Prompt text or JSON config
+  description TEXT,
+  updated_at TIMESTAMPTZ,
+  updated_by UUID
+)
 ```
+
+### Dynamic Configuration
+The system now supports dynamic updates to analysis logic without code deployment via the `legal_config` table:
+1.  **Semantic Normalization**: The `semantic_normalization` key stores the prompt used to normalize extracted terms (e.g., mapping "1x non-participating" to standard values).
+2.  **System Prompts**: Core analysis prompts can be versioned and updated via the Configuration tab in the Legal Dashboard.
+
 
 ### Chat Agent Integration
 
@@ -983,6 +1002,8 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Integrated Config Testing**: Merged file upload into the Config Guide assistant panel. Users can drag & drop files directly onto the assistant to trigger a dry-run extraction test or generate a guide.
     *   **Guide Generation**: Drag-and-drop files now enables "Analyze & Generate Guide", which uses the file content to automatically create the configuration YAML.
     *   **Config Guide UI**: Improved YAML readability with styled output and clearer validation messaging.
+    *   **Integrated PDF Parsing for Guide Generation**: Updated `/api/portfolio/guide` to use `pdf-parse` (via `lib/financials/ingestion/parse_pdf.ts`) for extracting context from PDF files. The generator now reads the **full document** (all pages) instead of a sample, with an automatic fallback mechanism (retrying with truncated context) if the file size exceeds LLM limits. This ensures robust guide creation even for large board decks.
+    *   **Enhanced Excel Parsing for Guide Generation**: Updated `/api/portfolio/guide` to read **all sheets** and **first 100 rows** of uploaded Excel files, significantly improving the context for guide generation (finding hidden P&L tabs, etc.) while maintaining robustness against empty files.
 
 ### Features Added
 
@@ -1176,8 +1197,13 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **Portfolio Dashboard**: Comprehensive `/portfolio` dashboard with search, fund categorization, and company cards.
 *   **Portfolio Detail Page**: Standardized detail view (`/portfolio/[id]`) with tabs for Overview, Financials, and Configuration.
 *   **Dynamic Portco Guides**: Moved from static YAML files to `portfolio_guides` database table to enable in-app editing via AI prompts.
+*   **Legal Analysis Configuration**: Added a dedicated `legal_config` table and editor UI (`/portfolio/legal` -> Configuration) to manage global analysis prompts and semantic normalization rules without code deployments.
+*   **Dynamic Legal Prompts**: Updated legal analysis pipeline to fetch system prompts and normalization rules from `legal_config` table, enabling on-the-fly tuning of extraction logic.
 
 ### Bug Fixes
+
+*   **Fixed Duplicate "Key Updates" in Portfolio**: "Key Updates" section on Portfolio Detail page was using hardcoded placeholder text. Updated `/api/portfolio/companies` to fetch dynamic `latest_summary` from `entity_notes_rollup` when querying by `companyId`, and connected frontend to display this real-time AI summary of interactions.
+*   **Fixed Duplicate "Key Updates" in Portfolio**: "Key Updates" section on Portfolio Detail page was using hardcoded placeholder text. Updated `/api/portfolio/companies` to fetch dynamic `latest_summary` from `entity_notes_rollup` when querying by `companyId`, and connected frontend to display this real-time AI summary of interactions.
 
 *   **Financial Ingestion (Dec 03)**:
     *   Fixed column reference bug where columns beyond Z displayed incorrectly (e.g., `[231` instead of `AA231`)

@@ -181,7 +181,7 @@ export default function ImportPage() {
               setLocalStorageSummary(data.local_storage);
           }
           
-          if (res.ok && data.status !== 'error') {
+          if (data.status !== 'error') {
               setDryRunResults(data.results || []);
               setGuideUsed(data.guide_used || null);
               setExtractedCompany(data.company || selectedCompany);
@@ -381,7 +381,10 @@ export default function ImportPage() {
         setStatusMessage(`Upload failed: ${err.message || 'Unknown error'}`);
         alert(`Error: ${err.message || 'Unknown error occurred'}`);
     } finally {
-        if (!showResolutionModal) {
+        // If resolution modal is shown, we keep uploading state true to block UI
+        // until user resolves or cancels. But if we are retrying (recursive call),
+        // we need to respect the current execution context.
+        if (!showResolutionModal && !overrideCompanyId) {
              setIsUploading(false);
         }
     }
@@ -478,7 +481,11 @@ export default function ImportPage() {
 
                     <div className="flex-shrink-0 flex justify-end gap-3 pt-4 border-t border-white/10">
                         <button 
-                            onClick={() => setShowResolutionModal(false)}
+                            onClick={() => {
+                                setShowResolutionModal(false);
+                                setIsUploading(false);
+                                setUploadStatus('idle');
+                            }}
                             className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
                         >
                             Cancel

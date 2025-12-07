@@ -104,12 +104,22 @@ export async function parsePDF(file: FileMetadata): Promise<PDFContent> {
 
     pages.sort((a, b) => a.pageNumber - b.pageNumber);
     
+    // Check for truncation (if pages processed < total pages in PDF metadata)
+    let fullText = data.text;
+    const truncationWarning = data.numpages > 50 ? `Warning: Document truncated. Processed 50 of ${data.numpages} pages.` : undefined;
+    
+    if (truncationWarning) {
+        console.warn(`[PDF] ${truncationWarning}`);
+        // Append warning to text so LLM sees it
+        fullText += `\n\n[SYSTEM WARNING]: ${truncationWarning}`;
+    }
+
     console.log(`[PDF] Successfully parsed ${data.numpages} pages, extracted ${pages.length} with text`);
 
     return {
       pageCount: data.numpages,
-      info: data.info,
-      fullText: data.text,
+      info: { ...data.info, warning: truncationWarning },
+      fullText,
       pages: pages
     };
   } catch (error: any) {

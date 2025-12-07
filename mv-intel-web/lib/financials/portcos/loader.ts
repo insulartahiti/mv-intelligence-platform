@@ -3,6 +3,16 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { PortcoGuide, PortcoMetadata, MappingRules } from './types';
 
+function getFiscalYearEndDate(month: number): string {
+    // Return MM-DD format for the last day of the given month
+    // We use 2024 (leap year) to handle Feb 29 if needed, but usually 28 is safe enough for generic FYE.
+    // Actually, FYE usually implies the accounting period end.
+    // Let's use a standard mapping.
+    const daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const day = daysInMonth[month] || 31;
+    return `${String(month).padStart(2, '0')}-${day}`;
+}
+
 // Embedded Nelly guide for serverless environments where YAML files aren't bundled
 const NELLY_GUIDE_EMBEDDED = {
   company: {
@@ -111,7 +121,7 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
       aliases: rawGuide.company.aliases || [],
       currency: rawGuide.company.currency || 'USD',
       fiscal_year_end: rawGuide.company.fiscal_year_end_month 
-        ? `12-${String(rawGuide.company.fiscal_year_end_month).padStart(2, '0')}`
+        ? getFiscalYearEndDate(rawGuide.company.fiscal_year_end_month)
         : undefined,
       business_models: rawGuide.company.business_models || []
     };

@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     let dbQuery = supabase
         .schema('graph')
         .from('entities')
-        .select('id, name, domain, type')
+        .select('id, name, type')
         .eq('type', 'organization') // Filter for organizations only
         .limit(20);
         

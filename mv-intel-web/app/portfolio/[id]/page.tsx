@@ -30,6 +30,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
+import { FinancialsDashboard } from '@/app/portfolio/components/FinancialsDashboard';
 
 interface AnalysisSummary {
   id: string;
@@ -539,15 +540,12 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
             </div>
           </Tabs.Content>
 
+import { FinancialsDashboard } from '@/app/portfolio/components/FinancialsDashboard';
+
+// ...
+
           <Tabs.Content value="financials">
-             <div className="bg-white/5 rounded-xl p-12 text-center border border-white/10">
-               <TrendingUp size={48} className="mx-auto text-white/20 mb-4" />
-               <h3 className="text-xl font-medium text-white">Financial Dashboard</h3>
-               <p className="text-white/50 mt-2">Charts and metrics table will be rendered here.</p>
-               <Link href="/portfolio/financials" className="inline-block mt-6 text-emerald-400 hover:underline">
-                 Go to Global Financials View →
-               </Link>
-             </div>
+             <FinancialsDashboard companyId={params.id} />
           </Tabs.Content>
           
            <Tabs.Content value="legal">
@@ -664,7 +662,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     if (e.target.files && e.target.files.length > 0) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files)]);
+      setFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
     }
   };
 

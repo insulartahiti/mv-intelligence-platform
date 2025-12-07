@@ -80,14 +80,26 @@ export async function GET(req: NextRequest) {
     // Agent-style Enrichment / Mapping Logic
     // Maps properties robustly using enrichment data if primary fields are missing
     const companies = await Promise.all((data || []).map(async (entity: any) => {
-        // Parse JSONB fields if they come as strings (sometimes happens with different clients)
-        const enrichment = typeof entity.enrichment_data === 'string' 
-            ? JSON.parse(entity.enrichment_data) 
-            : (entity.enrichment_data || {});
+        // Parse JSONB fields safely
+        let enrichment = entity.enrichment_data || {};
+        if (typeof enrichment === 'string') {
+            try {
+                enrichment = JSON.parse(enrichment);
+            } catch (e) {
+                console.warn(`Failed to parse enrichment_data for ${entity.id}`, e);
+                enrichment = {};
+            }
+        }
             
-        const analysis = typeof entity.business_analysis === 'string'
-            ? JSON.parse(entity.business_analysis)
-            : (entity.business_analysis || {});
+        let analysis = entity.business_analysis || {};
+        if (typeof analysis === 'string') {
+            try {
+                analysis = JSON.parse(analysis);
+            } catch (e) {
+                console.warn(`Failed to parse business_analysis for ${entity.id}`, e);
+                analysis = {};
+            }
+        }
 
         let latestSummary = null;
         let summaryDate = null;
