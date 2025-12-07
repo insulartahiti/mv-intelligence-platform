@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 07, 2025 (v4.3 - Architecture UI & Community Features)
+**Last Updated:** Dec 07, 2025 (v4.4 - Financial Ingestion Refactor & Data Quality)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -66,7 +66,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | :--- | :--- | :--- |
 | `/api/chat` | POST | Conversational agent |
 | `/api/universal-search` | POST | Hybrid vector + taxonomy search |
-| `/api/ingest` | POST | Financial file ingestion (Parallel) |
+| `/api/ingest` | POST | Financial file ingestion (Job-based) |
 | `/api/detect-company` | GET | Detect company slug from filename |
 | `/api/upload` | GET | Generate signed upload URL |
 | `/api/auth/check-access` | POST | Email authorization check |
@@ -289,7 +289,7 @@ Query → [Embedding Generation] + [GPT-5.1 Taxonomy Classification] (parallel)
 
 ## 4. Financial Data Ingestion System (Knowledge Graph Extension)
 
-**Status: Staging**
+**Status: Production Staging**
 
 This module extends the Knowledge Graph by attaching structured financial performance data (`fact_financials`, `fact_metrics`) and unstructured narrative insights (`company_insights`) to existing portfolio company nodes.
 
@@ -351,8 +351,13 @@ This module extends the Knowledge Graph by attaching structured financial perfor
 | Benchmarks | `perplexity/sonar-pro` | Industry comparisons, outlier flagging |
 | Audit snippets | `pdf-lib` | Single page extraction with visual highlighting |
 
-### Systematic Row Label Extraction (v4.1)
+### Job Queue & UI Architecture (v4.4)
+To support high-volume operations, the UI at `/import` has been refactored into a **non-blocking Job Queue**.
+- **Concurrent Uploads**: Users can initiate multiple uploads for different companies without waiting for previous jobs to finish.
+- **Inline Status**: Upload progress and results are shown in an "Active Uploads" list, persisting across SPA navigation.
+- **Auto-Detection**: The interface provides immediate visual feedback while detecting companies from filenames.
 
+### Systematic Row Label Extraction (v4.1)
 The coordinate-first extraction strategy eliminates LLM hallucination by separating **structure identification** from **value reading**.
 
 **Key Benefits:**
@@ -362,7 +367,6 @@ The coordinate-first extraction strategy eliminates LLM hallucination by separat
 - **Single parse**: Values read once at the end with complete coordinate map
 
 ### Cross-File Reconciliation (v3.5)
-
 When multiple files are ingested for the same company/period, the system must intelligently resolve conflicts.
 
 #### Source Priority Rules
@@ -376,7 +380,6 @@ When multiple files are ingested for the same company/period, the system must in
 | Raw Export | 20 | Unstructured data |
 
 ### Visual Audit Highlighting (v3.1)
-
 When GPT-5.1 extracts metrics, it also returns `source_locations` with bounding box coordinates. The `pdf_snippet.ts` module extracts relevant pages, draws ellipse annotations, and uploads snippets for pixel-level auditability.
 
 ---
@@ -561,13 +564,24 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   Added Strict Portfolio Filtering (`is_portfolio=true`).
     *   Fixed Concurrency Bug in `pLimit` function (removed race condition).
     *   Fixed Caching Issue in `/api/portfolio/news` (added `force-dynamic`).
+    *   **Resolved Constraint Conflict**: Switched `saveMetricsToDb` to `DELETE` + `INSERT` logic to prevent unique constraint errors during metric updates.
+    *   **Date Parsing**: Added support for `YYYYMMDD` formatted dates in filenames.
 
 *   **Ingestion Pipeline Performance (Dec 07)**:
     *   Parallel Person Enrichment moved to concurrent block.
     *   Refactored `/api/ingest` for parallel file upload processing.
     *   Added detailed Progress Overlay to `/import` UI.
 
+*   **Data Quality (Dec 07)**:
+    *   **Nelly Correction**: Updated metadata to reflect correct Fund (MVF1) and Status (MES(E)). Fixed domain enrichment to point to fintech entity `getnelly.de` instead of fashion retailer.
+
 ### Features Added
+
+*   **Financial Ingestion Overhaul (v4.4)**:
+    *   **Non-Blocking Job Queue**: Replaced modal-based uploads with a background job queue, allowing users to navigate and queue multiple companies concurrently.
+    *   **Inline Status**: Integrated "Active Uploads" UI directly into the page layout.
+    *   **UX Polish**: Added "Detecting..." feedback for company auto-selector and removed legacy "Local Mode" toggles.
+    *   **Dashboard Linking**: Successful uploads now link directly to the specific company's Financials tab on the Portfolio Dashboard.
 
 *   **Community Suggestions Page**:
     *   Public voting and feature requests at `/suggestions`.

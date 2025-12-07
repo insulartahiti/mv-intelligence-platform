@@ -24,7 +24,8 @@ export default function FeedbackButton() {
         useCORS: true, // Handle cross-origin images if possible
         ignoreElements: (element) => element.id === 'feedback-modal', // Avoid capturing the modal itself if open (though we usually close it or move it)
       });
-      setScreenshot(canvas.toDataURL('image/png'));
+      // Use JPEG with 60% quality to reduce payload size (prevents Server Action payload limit errors)
+      setScreenshot(canvas.toDataURL('image/jpeg', 0.6));
     } catch (err) {
       console.error('Screenshot failed:', err);
       alert('Could not capture screen. You can still submit a text report.');
@@ -89,7 +90,7 @@ export default function FeedbackButton() {
             rows={3}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
             placeholder="Describe the bug or issue..."
           />
         </div>

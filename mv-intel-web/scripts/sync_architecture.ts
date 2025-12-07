@@ -1,15 +1,19 @@
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { ArchitectureData } from '../lib/architecture/types';
 import { architectureData as currentData } from '../lib/architecture/data';
+
+// Load environment variables
+dotenv.config({ path: '.env.local' });
 
 // Initialize OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const HANDOFF_PATH = path.join(process.cwd(), 'CURSOR_HANDOFF.md');
+const HANDOFF_PATH = path.join(process.cwd(), '../CURSOR_HANDOFF.md');
 const DATA_PATH = path.join(process.cwd(), 'lib/architecture/data.ts');
 
 async function syncArchitecture() {

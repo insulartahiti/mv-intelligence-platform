@@ -25,16 +25,21 @@ export async function submitIssue(
 
   // 1. Upload Screenshot if exists
   if (screenshotBase64) {
-    // Remove header data:image/png;base64,
+    // Detect mime type (default to png if missing)
+    const matches = screenshotBase64.match(/^data:(image\/[a-z]+);base64,/);
+    const mimeType = matches ? matches[1] : 'image/png';
+    const extension = mimeType.split('/')[1];
+
+    // Remove header
     const base64Data = screenshotBase64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, 'base64');
-    const fileName = `${userId}_${Date.now()}.png`;
+    const fileName = `${userId}_${Date.now()}.${extension}`;
 
     const { error: uploadError } = await supabase
       .storage
       .from('issue-screenshots')
       .upload(fileName, buffer, {
-        contentType: 'image/png'
+        contentType: mimeType
       });
 
     if (!uploadError) {
