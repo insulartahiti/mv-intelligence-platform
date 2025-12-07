@@ -152,96 +152,112 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, instruction, currentYaml, filePaths, type = 'financial' } = await req.json();
+    const { companyId, instruction, currentYaml, filePaths, type = 'financial', manualSave } = await req.json();
     
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
     }
 
-    console.log(`[Guide API] POST request for company=${companyId}, type=${type}, files=${filePaths?.length || 0}`);
-
-    // Check for OpenAI API key early
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('[Guide API] OPENAI_API_KEY is not configured');
-      return NextResponse.json({ error: 'OpenAI API key not configured on server' }, { status: 500 });
-    }
+    console.log(`[Guide API] POST request for company=${companyId}, type=${type}, manualSave=${manualSave}`);
 
     const supabase = getSupabaseClient();
-    let fileContext = "";
+    let newYaml = "";
+
+    if (manualSave) {
+        if (!currentYaml) {
+            return NextResponse.json({ error: 'No YAML content provided for manual save' }, { status: 400 });
+        }
+        newYaml = currentYaml;
+        console.log(`[Guide API] Manual save requested, skipping AI generation`);
+    } else {
+        // Check for OpenAI API key early if generating
+        if (!process.env.OPENAI_API_KEY) {
+          console.error('[Guide API] OPENAI_API_KEY is not configured');
+          return NextResponse.json({ error: 'OpenAI API key not configured on server' }, { status: 500 });
+        }
+
+        let fileContext = "";
+        
+        if (filePaths && Array.isArray(filePaths) && filePaths.length > 0) {
+          console.log(`[Guide API] Extracting context from ${filePaths.length} files`);
+          fileContext = await extractFileContext(filePaths, supabase);
+          console.log(`[Guide API] Extracted ${fileContext.length} chars of context`);
+        }
+
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        
+        // Helper to run completion with retries/fallback
+        const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
+          try {
+             const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
+        Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
+        
+        The YAML schema structure is:
+        company:
+          name: string
+          business_models: string[]
+          currency: string
+          fiscal_year_end_month: number
+        metrics_mapping:
+          metric_key: { labels: string[], unit: string }
+        
+        RULES:
+        1. Only return the valid YAML. No markdown blocks.
+        2. Preserve existing keys unless asked to remove.
+        3. Ensure valid YAML syntax.
+        4. If file content is provided, use it to infer metric labels (e.g. if file has "Total Revenue", map 'revenue' to labels: ["Total Revenue"]).
+        `;
+
+            const userPrompt = `
+        Current YAML:
+        ${currentYaml || 'No existing guide.'}
+        
+        User Instruction:
+        ${instruction || (promptContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
+        
+        ${promptContext ? `\nFile Content Samples:\n${promptContext}` : ''}
+        
+        Return the updated YAML.
+        `;
+
+            console.log(`[Guide API] Calling OpenAI gpt-5.1 (attempt ${retryCount + 1})`);
+            
+            const completion = await openai.chat.completions.create({
+              model: "gpt-5.1", // Primary model for guide generation
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+              ],
+              temperature: 0,
+            });
+            
+            const result = completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
+            console.log(`[Guide API] Generated ${result.length} chars of YAML`);
+            return result;
+            
+          } catch (error: any) {
+            console.error(`[Guide API] OpenAI error:`, error.message || error);
+            
+            // If it fails due to context length and we haven't retried yet, try with truncated context
+            const isContextError = error.code === 'context_length_exceeded' || 
+                                   (error.message && error.message.toLowerCase().includes('maximum context length'));
+                                   
+            if (retryCount === 0 && isContextError && promptContext.length > 50000) {
+               console.warn("[Guide API] Context too long, retrying with truncated context...");
+               return generateGuide(promptContext.substring(0, 50000) + "\n...[TRUNCATED]...", 1);
+            }
+            throw error;
+          }
+        };
+        
+        newYaml = await generateGuide(fileContext);
+    }
     
-    if (filePaths && Array.isArray(filePaths) && filePaths.length > 0) {
-      console.log(`[Guide API] Extracting context from ${filePaths.length} files`);
-      fileContext = await extractFileContext(filePaths, supabase);
-      console.log(`[Guide API] Extracted ${fileContext.length} chars of context`);
+    if (!newYaml) {
+        return NextResponse.json({ error: 'Failed to generate or save YAML' }, { status: 500 });
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    
-    // Helper to run completion with retries/fallback
-    const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
-      try {
-         const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
-    Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
-    
-    The YAML schema structure is:
-    company:
-      name: string
-      business_models: string[]
-      currency: string
-      fiscal_year_end_month: number
-    metrics_mapping:
-      metric_key: { labels: string[], unit: string }
-    
-    RULES:
-    1. Only return the valid YAML. No markdown blocks.
-    2. Preserve existing keys unless asked to remove.
-    3. Ensure valid YAML syntax.
-    4. If file content is provided, use it to infer metric labels (e.g. if file has "Total Revenue", map 'revenue' to labels: ["Total Revenue"]).
-    `;
-
-        const userPrompt = `
-    Current YAML:
-    ${currentYaml || 'No existing guide.'}
-    
-    User Instruction:
-    ${instruction || (promptContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
-    
-    ${promptContext ? `\nFile Content Samples:\n${promptContext}` : ''}
-    
-    Return the updated YAML.
-    `;
-
-        console.log(`[Guide API] Calling OpenAI gpt-5.1 (attempt ${retryCount + 1})`);
-        
-        const completion = await openai.chat.completions.create({
-          model: "gpt-5.1", // Primary model for guide generation
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          temperature: 0,
-        });
-        
-        const result = completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
-        console.log(`[Guide API] Generated ${result.length} chars of YAML`);
-        return result;
-        
-      } catch (error: any) {
-        console.error(`[Guide API] OpenAI error:`, error.message || error);
-        
-        // If it fails due to context length and we haven't retried yet, try with truncated context
-        const isContextError = error.code === 'context_length_exceeded' || 
-                               (error.message && error.message.toLowerCase().includes('maximum context length'));
-                               
-        if (retryCount === 0 && isContextError && promptContext.length > 50000) {
-           console.warn("[Guide API] Context too long, retrying with truncated context...");
-           return generateGuide(promptContext.substring(0, 50000) + "\n...[TRUNCATED]...", 1);
-        }
-        throw error;
-      }
-    };
-    
-    const newYaml = await generateGuide(fileContext);
+    console.log(`[Guide API] Upserting guide to database`);
     
     if (!newYaml) {
         return NextResponse.json({ error: 'Failed to generate YAML - empty response from AI' }, { status: 500 });

@@ -309,12 +309,13 @@ export default function ImportPage() {
                                     </div>
                                 </div>
                                 {job.status === 'success' && job.result?.companyId && (
-                                    <Link 
+                                    <a 
                                         href={`/portfolio/${job.result.companyId}?tab=financials`}
-                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white transition-colors"
+                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white transition-colors flex items-center gap-2"
                                     >
-                                        View Dashboard
-                                    </Link>
+                                        View Dashboard 
+                                        <ExternalLink size={14} className="text-white/50" />
+                                    </a>
                                 )}
                                 {job.status === 'error' && (
                                     <button onClick={() => setJobs(prev => prev.filter(j => j.id !== job.id))} className="text-gray-500 hover:text-white p-2">

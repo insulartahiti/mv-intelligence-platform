@@ -617,9 +617,9 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
     }
   };
 
-  const handleUpdate = async () => {
-    // We allow update if there is an instruction OR if there are files to analyze
-    if (!instruction && files.length === 0) return;
+  const handleUpdate = async (manualSave = false) => {
+    // We allow update if manual save OR (instruction/files present)
+    if (!manualSave && !instruction && files.length === 0) return;
     
     setLoading(true);
     try {
@@ -650,7 +650,8 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
           companyId, 
           instruction, 
           currentYaml: yamlContent,
-          filePaths // Pass uploaded file paths to backend
+          filePaths, // Pass uploaded file paths to backend
+          manualSave // Flag for direct saving without AI
         })
       });
       
@@ -658,8 +659,10 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
       if (data.guide) {
         setGuide(data.guide);
         setYamlContent(data.guide.content_yaml);
-        setInstruction('');
-        setFiles([]); // Clear files after successful update
+        if (!manualSave) {
+            setInstruction('');
+            setFiles([]); // Clear files only after AI generation
+        }
       }
     } catch (err) {
       console.error(err);
@@ -756,28 +759,21 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
         <div className="bg-[#1e1e1e] rounded-xl border border-white/10 overflow-hidden flex flex-col h-[500px]">
            <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
               <span className="text-xs font-mono text-white/50">guide.yaml</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Read Only</span>
+              <button 
+                onClick={() => handleUpdate(true)}
+                disabled={loading}
+                className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
+              </button>
            </div>
-           <pre className="flex-1 p-4 font-mono text-xs text-blue-100 overflow-auto whitespace-pre leading-relaxed">
-             {yamlContent ? (
-               yamlContent.split('\n').map((line, i) => (
-                 <div key={i} className="table-row">
-                   <span className="table-cell text-white/20 pr-4 select-none text-right w-8">{i + 1}</span>
-                   <span className="table-cell">
-                     {line.startsWith('#') ? <span className="text-green-400/70">{line}</span> : 
-                      line.includes(':') ? (
-                        <>
-                          <span className="text-purple-300">{line.split(':')[0]}:</span>
-                          <span className="text-orange-200">{line.split(':').slice(1).join(':')}</span>
-                        </>
-                      ) : line}
-                   </span>
-                 </div>
-               ))
-             ) : (
-               <span className="text-white/30 italic"># No guide configured yet.{'\n'}# Use the assistant to generate one.</span>
-             )}
-           </pre>
+           <textarea
+             value={yamlContent}
+             onChange={(e) => setYamlContent(e.target.value)}
+             className="flex-1 p-4 font-mono text-xs text-blue-100 bg-transparent outline-none resize-none leading-relaxed"
+             spellCheck={false}
+             placeholder={`# No guide configured yet.\n# Use the assistant to generate one or paste YAML here.`}
+           />
         </div>
 
         {/* Test Results */}
@@ -870,7 +866,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
 
         <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={handleUpdate}
+            onClick={() => handleUpdate(false)}
             disabled={loading || (!instruction && files.length === 0)}
             className="py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
           >
