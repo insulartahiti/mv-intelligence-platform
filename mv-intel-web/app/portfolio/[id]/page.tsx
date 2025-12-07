@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   Building2, 
@@ -16,7 +16,11 @@ import {
   Calendar,
   Shield, 
   Briefcase,
-  Loader2
+  Loader2,
+  Upload,
+  Check,
+  AlertCircle,
+  Download
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 
@@ -25,6 +29,7 @@ interface CompanyDetail {
   name: string;
   domain?: string;
   industry?: string;
+  brief_description?: string;
   description?: string;
   location_city?: string;
   location_country?: string;
@@ -52,14 +57,20 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
 
   useEffect(() => {
     if (company?.name) {
-      fetchNews(company.name);
+      fetchNews(company);
     }
   }, [company]);
 
-  const fetchNews = async (name: string) => {
+  const fetchNews = async (comp: CompanyDetail) => {
     setNewsLoading(true);
     try {
-      const res = await fetch(`/api/portfolio/news?companyName=${encodeURIComponent(name)}`);
+      const queryParams = new URLSearchParams({
+        companyName: comp.name,
+      });
+      if (comp.domain) queryParams.append('domain', comp.domain);
+      if (comp.industry) queryParams.append('industry', comp.industry);
+
+      const res = await fetch(`/api/portfolio/news?${queryParams.toString()}`);
       const data = await res.json();
       if (data.news && Array.isArray(data.news)) {
         setNews(data.news);
@@ -186,7 +197,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                 <section className="bg-white/5 rounded-xl p-6 border border-white/10">
                   <h3 className="text-lg font-semibold text-white mb-4">About</h3>
                   <p className="text-white/70 leading-relaxed">
-                    {company.description || "No description available."}
+                    {company.brief_description || company.description || "No description available."}
                   </p>
                 </section>
 
@@ -269,7 +280,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
           </Tabs.Content>
 
           <Tabs.Content value="guide">
-            <GuideEditor companyId={params.id} />
+            <GuideEditor companyId={params.id} companyName={company.name} />
           </Tabs.Content>
         </Tabs.Root>
       </div>
@@ -278,11 +289,17 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
 }
 
 // Sub-component for Guide Editing
-function GuideEditor({ companyId }: { companyId: string }) {
+function GuideEditor({ companyId, companyName }: { companyId: string, companyName: string }) {
   const [guide, setGuide] = useState<any>(null);
   const [yamlContent, setYamlContent] = useState('');
   const [instruction, setInstruction] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // File Upload State
+  const [files, setFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [testResults, setTestResults] = useState<any[]>([]);
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     fetchGuide();
@@ -319,12 +336,171 @@ function GuideEditor({ companyId }: { companyId: string }) {
     }
   };
 
+  // File Handling
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)]);
+    }
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.target.files && e.target.files.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(e.target.files)]);
+    }
+  };
+
+  const handleTestRun = async () => {
+    if (files.length === 0) return;
+    
+    setIsUploading(true);
+    setTestResults([]);
+
+    try {
+      const uploadedPaths: string[] = [];
+      
+      // 1. Upload files
+      for (const file of files) {
+        const urlRes = await fetch(
+          `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(companyName)}`
+        );
+        const urlData = await urlRes.json();
+        if (urlData.status !== 'success') throw new Error(urlData.error);
+        
+        const uploadRes = await fetch(urlData.signedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file
+        });
+        if (!uploadRes.ok) throw new Error('Upload failed');
+        uploadedPaths.push(urlData.path);
+      }
+
+      // 2. Trigger Dry Run
+      const res = await fetch('/api/ingest', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companySlug: companyName, // Ingest API does fuzzy matching
+          forceCompanyId: companyId, // Force specific ID
+          filePaths: uploadedPaths,
+          dryRun: true
+        })
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok && data.results) {
+        setTestResults(data.results);
+      } else {
+        throw new Error(data.error || 'Test run failed');
+      }
+    } catch (err: any) {
+      console.error('Dry run error:', err);
+      alert(`Test failed: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="space-y-4">
-        <div className="bg-slate-900 rounded-xl p-4 border border-white/10 font-mono text-xs overflow-auto h-[600px] whitespace-pre">
+        {/* YAML Editor */}
+        <div className="bg-slate-900 rounded-xl p-4 border border-white/10 font-mono text-xs overflow-auto h-[400px] whitespace-pre">
           {yamlContent || "# No guide configured yet.\n# Use the chat on the right to generate one."}
         </div>
+
+        {/* Test File Upload */}
+        <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Upload size={20} className="text-blue-400" />
+            Test Configuration
+          </h3>
+          
+          <div 
+            className={`
+              relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 mb-4
+              ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
+            `}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              type="file"
+              multiple
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={handleFileChange}
+            />
+            <div className="pointer-events-none">
+              <p className="text-sm font-medium text-white/70">Drop test files here (PDF/Excel)</p>
+            </div>
+          </div>
+
+          {files.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {files.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs bg-white/5 p-2 rounded">
+                  <span className="truncate text-white/70">{file.name}</span>
+                  <button onClick={() => setFiles(f => f.filter((_, i) => i !== idx))} className="text-white/40 hover:text-white">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={handleTestRun}
+            disabled={isUploading || files.length === 0}
+            className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
+          >
+            {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
+          </button>
+        </div>
+
+        {/* Test Results */}
+        {testResults.length > 0 && (
+           <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-4">
+             <h4 className="text-sm font-semibold text-white/70 uppercase tracking-wider">Extraction Results</h4>
+             {testResults.map((res, idx) => (
+               <div key={idx} className="text-xs space-y-2">
+                 <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                    <span className="font-medium text-white">{res.file}</span>
+                    <span className={`px-2 py-0.5 rounded ${res.status === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {res.status}
+                    </span>
+                 </div>
+                 {res.metrics_sample && (
+                   <div className="space-y-1 pl-2">
+                     <div className="text-white/50">Metrics Found: {res.metrics_computed}</div>
+                     {res.metrics_sample.map((m: any, i: number) => (
+                       <div key={i} className="flex justify-between text-white/70">
+                         <span>{m.metric_id}</span>
+                         <span>{typeof m.value === 'number' ? m.value.toLocaleString() : m.value}</span>
+                       </div>
+                     ))}
+                     {res.metrics_computed > 3 && <div className="text-white/30 italic">...and {res.metrics_computed - 3} more</div>}
+                   </div>
+                 )}
+                 {res.error && <div className="text-red-400">{res.error}</div>}
+               </div>
+             ))}
+           </div>
+        )}
       </div>
       
       <div className="bg-white/5 rounded-xl p-6 border border-white/10 h-fit">
@@ -361,4 +537,3 @@ function GuideEditor({ companyId }: { companyId: string }) {
     </div>
   );
 }
-

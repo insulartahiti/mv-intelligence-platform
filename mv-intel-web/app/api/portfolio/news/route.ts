@@ -7,6 +7,8 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const companyName = searchParams.get('companyName');
+    const domain = searchParams.get('domain');
+    const industry = searchParams.get('industry');
 
     if (!companyName) {
       return NextResponse.json({ error: 'Company name is required' }, { status: 400 });
@@ -24,9 +26,26 @@ export async function GET(req: NextRequest) {
       baseURL: 'https://api.perplexity.ai',
     });
 
-    const prompt = `Find the 3-5 most significant latest news updates for the company "${companyName}" from the last 12 months. 
-    Focus on funding rounds, product launches, acquisitions, or major partnerships.
-    Format the output as a valid JSON array of objects with these keys: "title", "date" (approximate is fine, e.g. "Oct 2024"), "source" (domain or publication name), "summary" (1-2 sentences).
+    let context = `Company: ${companyName}`;
+    if (domain) context += `\nDomain: ${domain}`;
+    if (industry) context += `\nIndustry: ${industry}`;
+
+    const prompt = `Find the 3-5 most significant latest news updates, reviews, or market signals for "${companyName}" (${domain || ''}) from the last 12 months.
+    
+    Context:
+    ${context}
+
+    Prioritize:
+    1. Funding rounds, M&A, and major partnerships.
+    2. Product launches or strategic pivots.
+    3. Significant employer reviews (e.g. Glassdoor trends), customer testimonials, or press coverage.
+    
+    Format the output as a valid JSON array of objects with these keys: 
+    - "title"
+    - "date" (approximate is fine, e.g. "Oct 2024")
+    - "source" (domain or publication name)
+    - "summary" (1-2 sentences)
+    
     Do not include any markdown formatting or explanations, just the JSON array.`;
 
     const response = await perplexity.chat.completions.create({
@@ -48,7 +67,6 @@ export async function GET(req: NextRequest) {
       news = JSON.parse(jsonString);
     } catch (e) {
       console.error('Failed to parse Perplexity response:', content);
-      // If parsing fails, we might want to return an empty array or try to fallback
     }
 
     return NextResponse.json({ news });
