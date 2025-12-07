@@ -461,30 +461,55 @@ export default function LegalAnalysisPage() {
   // State for company selection
   const [companySearch, setCompanySearch] = useState('');
   const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
-  const [companySuggestions, setCompanySuggestions] = useState<{ id: string; name: string }[]>([]);
+  const [portfolioCompanies, setPortfolioCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [filteredCompanies, setFilteredCompanies] = useState<{ id: string; name: string }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Company search handler
+  // Fetch all portfolio companies on mount
   useEffect(() => {
-    const searchCompanies = async () => {
-      if (companySearch.length < 2) {
-        setCompanySuggestions([]);
-        return;
-      }
+    const fetchPortfolioCompanies = async () => {
       try {
-        const res = await fetch(`/api/companies/search?q=${encodeURIComponent(companySearch)}`);
+        const res = await fetch('/api/portfolio/companies');
         const data = await res.json();
         if (data.companies) {
-          setCompanySuggestions(data.companies);
+          setPortfolioCompanies(data.companies);
         }
       } catch (err) {
-        console.error('Failed to search companies:', err);
+        console.error('Failed to fetch portfolio companies:', err);
       }
     };
+    fetchPortfolioCompanies();
+  }, []);
 
-    const timeoutId = setTimeout(searchCompanies, 300);
-    return () => clearTimeout(timeoutId);
-  }, [companySearch]);
+  // Filter companies based on search
+  useEffect(() => {
+    if (companySearch.length === 0) {
+      setFilteredCompanies(portfolioCompanies);
+      return;
+    }
+    const filtered = portfolioCompanies.filter(c => 
+      c.name.toLowerCase().includes(companySearch.toLowerCase())
+    );
+    setFilteredCompanies(filtered);
+  }, [companySearch, portfolioCompanies]);
+
+  // Auto-detect company from filename
+  useEffect(() => {
+    if (files.length > 0 && !selectedCompany && portfolioCompanies.length > 0) {
+      // Try to find a match in the first file's name
+      const filename = files[0].name.toLowerCase();
+      
+      // Sort companies by name length (descending) to match specific names first
+      // e.g. match "Nelly Solutions" before "Nelly"
+      const sortedCompanies = [...portfolioCompanies].sort((a, b) => b.name.length - a.name.length);
+      
+      const match = sortedCompanies.find(c => filename.includes(c.name.toLowerCase()));
+      
+      if (match) {
+        setSelectedCompany(match);
+      }
+    }
+  }, [files, portfolioCompanies, selectedCompany]);
 
   // Analysis handler using new pipeline API with SSE Streaming
   const handleAnalyze = async () => {
@@ -795,12 +820,13 @@ export default function LegalAnalysisPage() {
                       placeholder="Search companies..."
                       value={companySearch}
                       onChange={(e) => { setCompanySearch(e.target.value); setShowSuggestions(true); }}
+                      onFocus={() => setShowSuggestions(true)}
                       className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50 transition-colors"
                       disabled={isAnalyzing}
                     />
-                    {showSuggestions && companySuggestions.length > 0 && (
+                    {showSuggestions && filteredCompanies.length > 0 && (
                       <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-slate-900 border border-white/10 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                        {companySuggestions.map(company => (
+                        {filteredCompanies.map(company => (
                           <button
                             key={company.id}
                             onClick={() => {
