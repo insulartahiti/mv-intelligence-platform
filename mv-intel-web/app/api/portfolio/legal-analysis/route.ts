@@ -72,7 +72,8 @@ export async function POST(req: NextRequest) {
     if (!resolvedCompanyId && companySlug) {
       const supabase = getSupabase();
       const { data: entity } = await supabase
-        .from('graph.entities')
+        .schema('graph')
+        .from('entities')
         .select('id')
         .or(`slug.eq.${companySlug},name.ilike.%${companySlug}%`)
         .limit(1)
