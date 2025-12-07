@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit, Globe } from 'lucide-react';
+import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit, Globe, Plus, History, Copy, Download, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { ChatService } from '@/lib/chat/service';
 
 const PLACEHOLDERS = [
     "Search companies, people, or ask anything...",
@@ -68,9 +69,13 @@ export default function ChatInterface({
     const [internalLoading, setInternalLoading] = useState(false);
     const [input, setInput] = useState('');
     const [enableExternalSearch, setEnableExternalSearch] = useState(true);
+    const [showHistory, setShowHistory] = useState(false);
+    const [conversations, setConversations] = useState<any[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
+
+    const chatService = useRef(new ChatService());
 
     const conversationId = propConvId !== undefined ? propConvId : internalConvId;
     const setConversationId = propSetConvId || setInternalConvId;
@@ -80,6 +85,65 @@ export default function ChatInterface({
 
     const loading = propLoading !== undefined ? propLoading : internalLoading;
     const setLoading = propSetLoading || setInternalLoading;
+
+    // Load conversations on mount or when history opens
+    useEffect(() => {
+        if (showHistory && userEntity?.id) {
+            loadConversations();
+        }
+    }, [showHistory, userEntity]);
+
+    const loadConversations = async () => {
+        if (!userEntity?.id) return;
+        try {
+            const convs = await chatService.current.getUserConversations(userEntity.id);
+            setConversations(convs || []);
+        } catch (e) {
+            console.error("Failed to load conversations", e);
+        }
+    };
+
+    const handleNewChat = () => {
+        setConversationId(null);
+        setMessages([]);
+        setShowHistory(false);
+        if (onSearchStart) onSearchStart(); // Reset view if needed
+    };
+
+    const handleSelectConversation = async (id: string) => {
+        setLoading(true);
+        try {
+            const history = await chatService.current.getHistory(id);
+            setConversationId(id);
+            setMessages(history.map((m: any) => ({
+                id: m.id,
+                role: m.role,
+                content: m.content,
+                relevant_node_ids: m.relevant_node_ids
+            })));
+            setShowHistory(false);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text);
+    };
+
+    const handleDownload = (content: string, id: string) => {
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-response-${id.slice(0, 8)}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
 
     // Cycle placeholders for spotlight variant
     useEffect(() => {
@@ -328,11 +392,29 @@ export default function ChatInterface({
     return (
         <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur flex justify-between items-center">
-                <h2 className="font-semibold text-slate-200 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-blue-400" />
-                    Motive Intelligence
-                </h2>
+            <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur flex justify-between items-center relative z-20">
+                <div className="flex items-center gap-3">
+                    {userEntity && (
+                        <button 
+                            onClick={() => setShowHistory(!showHistory)}
+                            className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-slate-800 text-blue-400' : 'hover:bg-slate-800 text-slate-400'}`}
+                            title="History"
+                        >
+                            <History className="w-4 h-4" />
+                        </button>
+                    )}
+                    <button 
+                        onClick={handleNewChat}
+                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-blue-400 transition-colors"
+                        title="New Chat"
+                    >
+                        <Plus className="w-4 h-4" />
+                    </button>
+                    <h2 className="font-semibold text-slate-200 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-blue-400" />
+                        Motive Intelligence
+                    </h2>
+                </div>
                 
                 <button
                     onClick={() => setEnableExternalSearch(!enableExternalSearch)}
@@ -345,6 +427,26 @@ export default function ChatInterface({
                     <Globe className="w-3 h-3" />
                     {enableExternalSearch ? 'Web Search ON' : 'Web Search OFF'}
                 </button>
+            </div>
+
+            {/* History Sidebar */}
+            <div className={`absolute top-[60px] left-0 bottom-0 w-64 bg-slate-900/95 backdrop-blur border-r border-slate-800 z-50 transform transition-transform duration-300 ${showHistory ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                    <span className="font-medium text-slate-300">History</span>
+                    <button onClick={() => setShowHistory(false)}><X className="w-4 h-4 text-slate-500" /></button>
+                </div>
+                <div className="overflow-y-auto h-full p-2 space-y-1">
+                    {conversations.map(c => (
+                        <button
+                            key={c.id}
+                            onClick={() => handleSelectConversation(c.id)}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${c.id === conversationId ? 'bg-blue-900/20 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}
+                        >
+                            {c.title || 'New Conversation'}
+                        </button>
+                    ))}
+                    {conversations.length === 0 && <div className="p-4 text-xs text-slate-600 text-center">No history found</div>}
+                </div>
             </div>
 
             {/* Messages Area */}
@@ -373,7 +475,7 @@ export default function ChatInterface({
 
                             {/* Text Bubble (Only show if content exists or not thinking) */}
                             {(msg.content || !msg.isThinking) && (
-                                <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                <div className={`relative group/bubble rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                                     msg.role === 'user' 
                                         ? 'bg-blue-600 text-white rounded-br-none' 
                                         : 'bg-slate-800 text-slate-200 rounded-bl-none border border-slate-700'
@@ -406,6 +508,26 @@ export default function ChatInterface({
                                     >
                                         {msg.content}
                                     </ReactMarkdown>
+                                    
+                                    {/* Copy/Download Actions for Assistant */}
+                                    {msg.role === 'assistant' && !msg.isThinking && (
+                                        <div className="absolute -bottom-6 right-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-1">
+                                            <button 
+                                                onClick={() => handleCopy(msg.content)}
+                                                className="p-1 text-slate-500 hover:text-slate-300 rounded bg-slate-900/50 border border-slate-800"
+                                                title="Copy to Clipboard"
+                                            >
+                                                <Copy className="w-3 h-3" />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDownload(msg.content, msg.id)}
+                                                className="p-1 text-slate-500 hover:text-slate-300 rounded bg-slate-900/50 border border-slate-800"
+                                                title="Download as Markdown"
+                                            >
+                                                <Download className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

@@ -82,6 +82,22 @@ export class ChatService {
         return data;
     }
 
+    // 3.5 Get User Conversations
+    async getUserConversations(userId: string) {
+        if (!this.supabase) throw new Error("Supabase client not initialized");
+
+        const { data, error } = await this.supabase
+            .schema('graph')
+            .from('conversations')
+            .select('*')
+            .eq('user_id', userId)
+            .order('updated_at', { ascending: false })
+            .limit(50); // Fetch recent 50
+
+        if (error) throw error;
+        return data;
+    }
+
     // 4. Query Rewriting & Intent Analysis (The "Brain")
     async rewriteQuery(conversationId: string, userQuery: string): Promise<{
         rewrittenQuery: string;

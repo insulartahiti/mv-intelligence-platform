@@ -204,7 +204,7 @@ export default function Neo4jVisNetwork({
                         enabled: true,
                         stabilization: {
                             enabled: true,
-                            iterations: 1000,
+                            iterations: 2500, // Increased for stability
                             updateInterval: 50,
                             fit: true
                         },

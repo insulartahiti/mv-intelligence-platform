@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Neo4jGraphViewer from '@/app/components/Neo4jGraphViewer';
 import NodeDetailPanel from '@/app/components/NodeDetailPanel';
 import ChatInterface, { Message } from '@/app/components/ChatInterface';
 import SearchResultsList from '@/app/components/SearchResultsList';
+import { Maximize2, Minimize2, Network } from 'lucide-react';
 
 export default function KnowledgeGraphPageContent({ greeting, userEntity }: { greeting?: { text: string, name: string }, userEntity?: any }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -14,7 +15,8 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   
   // New State for Overhaul
   const [hasSearched, setHasSearched] = useState(false);
-  const [isResultsOpen, setIsResultsOpen] = useState(true);
+  const [isGraphExpanded, setIsGraphExpanded] = useState(false);
+  const [chatWidth, setChatWidth] = useState(400); // Default width in px when expanded
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // Lifted Chat State (Persist across layout changes)
@@ -22,13 +24,39 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Resizing Logic
+  const isResizing = useRef(false);
+
+  const startResizing = useCallback(() => {
+    isResizing.current = true;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', stopResizing);
+    document.body.style.cursor = 'col-resize';
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizing.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', stopResizing);
+    document.body.style.cursor = 'default';
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizing.current) {
+        setChatWidth(e.clientX);
+    }
+  }, []);
+
   // Callback when chat returns relevant nodes
   const handleGraphUpdate = useCallback((nodeIds: string[], subgraph?: any) => {
       console.log('Graph Update:', { count: nodeIds.length, hasSubgraph: !!subgraph });
       setHighlightedNodeIds(nodeIds);
       if (subgraph) {
           setSubgraphData(subgraph);
-          setIsResultsOpen(true); // Auto-expand results on new search
+          // Auto-expand graph if we have results? 
+          // User request: "agent takes up 2/3... collapsible results pane 1/3". 
+          // So initially we stay in 'List Mode' (Graph Minimized).
+          setIsGraphExpanded(false); 
       }
   }, []);
 
@@ -106,8 +134,11 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden text-slate-100 font-sans relative">
       
-      {/* COLUMN 1: Chat Interface (Left 1/3 ~ 30-33%) */}
-      <div className="w-[30%] lg:w-[350px] xl:w-[400px] flex-shrink-0 h-full border-r border-slate-800 relative z-30 flex flex-col transition-all duration-300">
+      {/* COLUMN 1: Chat Interface */}
+      <div 
+        style={{ width: isGraphExpanded ? `${chatWidth}px` : '65%' }}
+        className="flex-shrink-0 h-full border-r border-slate-800 relative z-30 flex flex-col transition-all duration-500 ease-in-out"
+      >
          <ChatInterface 
             onGraphUpdate={handleGraphUpdate} 
             onNodeSelect={handleNodeClick}
@@ -120,52 +151,68 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
             userEntity={userEntity}
          />
          
-         {/* Toggle Results Button (Centered on Right Edge) */}
-         {subgraphData?.nodes?.length > 0 && (
-             <button
-                onClick={() => setIsResultsOpen(!isResultsOpen)}
-                className="absolute top-1/2 -right-3 transform -translate-y-1/2 z-50 bg-slate-800 border border-slate-700 text-blue-400 rounded-full p-1 shadow-lg hover:bg-slate-700 transition-colors"
-                title={isResultsOpen ? "Collapse Results" : "Expand Results"}
-             >
-                 {isResultsOpen ? (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                 ) : (
-                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                 )}
-             </button>
+         {/* Resizer Handle (Only visible when graph is expanded) */}
+         {isGraphExpanded && (
+             <div 
+                onMouseDown={startResizing}
+                className="absolute right-0 top-0 bottom-0 w-1 bg-transparent hover:bg-blue-500/50 cursor-col-resize z-50 transition-colors"
+             />
          )}
       </div>
 
-      {/* COLUMN 2: Search Results List (Collapsible Middle Column) */}
-      <div className={`${isResultsOpen && subgraphData?.nodes?.length > 0 ? 'w-[25%] min-w-[250px] max-w-[400px]' : 'w-0 opacity-0'} transition-all duration-300 flex-shrink-0 h-full border-r border-slate-800 relative z-20 flex flex-col overflow-hidden`}>
-          <SearchResultsList 
-                nodes={subgraphData?.nodes || []} 
-                onSelectNode={handleNodeClick}
-                onHoverNode={setHoveredNodeId}
-                onClose={() => setIsResultsOpen(false)}
-          />
-      </div>
+      {/* COLUMN 2: Right Panel (Results List OR Graph) */}
+      <div className="flex-1 relative h-full flex flex-col min-w-0 bg-slate-950 overflow-hidden">
+          
+          {/* A. Results List (Visible when Graph Minimized) */}
+          <div className={`absolute inset-0 transition-opacity duration-500 ${!isGraphExpanded ? 'opacity-100 z-20 pointer-events-auto' : 'opacity-0 z-0 pointer-events-none'}`}>
+              <SearchResultsList 
+                    nodes={subgraphData?.nodes || []} 
+                    onSelectNode={handleNodeClick}
+                    onHoverNode={setHoveredNodeId}
+                    onClose={() => {}}
+              />
+              
+              {/* Floating Graph Toggle Button */}
+              <button
+                onClick={() => setIsGraphExpanded(true)}
+                className="absolute bottom-8 right-8 z-50 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center gap-2 group"
+                title="Expand Graph Visualization"
+              >
+                <Network className="w-6 h-6" />
+                <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap">View Graph</span>
+              </button>
+          </div>
 
-      {/* COLUMN 3: Graph Visualization (Fluid Right) */}
-      <div className="flex-1 relative h-full flex flex-col min-w-0 bg-slate-950">
-        <div className="flex-grow relative h-full">
-            <Neo4jGraphViewer 
-                onNodeClick={handleNodeClick} 
-                highlightedNodeIds={highlightedNodeIds} 
-                subgraphData={subgraphData}
-                hoveredNodeId={hoveredNodeId} // Pass hover state
-            />
-            
-            {/* Node Details Overlay */}
-            {selectedNodeId && (
-                <NodeDetailPanel
-                  nodeId={selectedNodeId}
-                  onClose={handleClosePanel}
-                  onSelectNode={handleNodeClick}
-                  onBack={nodeHistory.length > 0 ? handleBack : undefined}
+          {/* B. Graph Visualization (Always Mounted for Stability, but z-indexed) */}
+          <div className={`absolute inset-0 transition-opacity duration-500 ${isGraphExpanded ? 'opacity-100 z-20 pointer-events-auto' : 'opacity-0 z-0 pointer-events-none'}`}>
+            <div className="flex-grow relative h-full">
+                <Neo4jGraphViewer 
+                    onNodeClick={handleNodeClick} 
+                    highlightedNodeIds={highlightedNodeIds} 
+                    subgraphData={subgraphData}
+                    hoveredNodeId={hoveredNodeId}
                 />
-            )}
-        </div>
+                
+                {/* Minimize Graph Button */}
+                <button
+                    onClick={() => setIsGraphExpanded(false)}
+                    className="absolute top-4 right-4 z-50 bg-slate-800/80 backdrop-blur border border-slate-700 text-slate-300 p-2 rounded-lg hover:bg-slate-700 hover:text-white transition-colors shadow-lg"
+                    title="Minimize Graph"
+                >
+                    <Minimize2 className="w-5 h-5" />
+                </button>
+
+                {/* Node Details Overlay */}
+                {selectedNodeId && (
+                    <NodeDetailPanel
+                      nodeId={selectedNodeId}
+                      onClose={handleClosePanel}
+                      onSelectNode={handleNodeClick}
+                      onBack={nodeHistory.length > 0 ? handleBack : undefined}
+                    />
+                )}
+            </div>
+          </div>
       </div>
     </div>
   );
