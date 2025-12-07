@@ -255,7 +255,7 @@ interface NewsItem {
   summary: string;
 }
 
-export default function PortfolioCompanyPage({ params }: { params: { id: string } }) {
+export default function PortfolioCompanyPage({ params, searchParams }: { params: { id: string }, searchParams: { tab?: string } }) {
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -263,6 +263,15 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
   const [customNewsQuery, setCustomQuery] = useState('');
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
   
+  // Tab state controlled by URL or internal state
+  const [activeTab, setActiveTab] = useState(searchParams?.tab || 'overview');
+
+  useEffect(() => {
+    if (searchParams?.tab) {
+      setActiveTab(searchParams.tab);
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     fetchCompanyDetails();
   }, [params.id]);
@@ -383,7 +392,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <Tabs.Root defaultValue="overview">
+        <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
           <Tabs.List className="flex border-b border-white/10 mb-8">
             <Tabs.Trigger 
               value="overview"

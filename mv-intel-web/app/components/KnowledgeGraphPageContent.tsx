@@ -175,7 +175,7 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
               {/* Floating Graph Toggle Button */}
               <button
                 onClick={() => setIsGraphExpanded(true)}
-                className="absolute bottom-8 right-8 z-50 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center gap-2 group"
+                className="absolute bottom-24 right-6 z-50 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center gap-2 group"
                 title="Expand Graph Visualization"
               >
                 <Network className="w-6 h-6" />
@@ -193,10 +193,10 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
                     hoveredNodeId={hoveredNodeId}
                 />
                 
-                {/* Minimize Graph Button */}
+                {/* Minimize Graph Button (Stacked above Recenter) */}
                 <button
                     onClick={() => setIsGraphExpanded(false)}
-                    className="absolute top-4 right-4 z-50 bg-slate-800/80 backdrop-blur border border-slate-700 text-slate-300 p-2 rounded-lg hover:bg-slate-700 hover:text-white transition-colors shadow-lg"
+                    className="absolute bottom-36 right-6 z-50 bg-slate-800/80 backdrop-blur border border-slate-700 text-slate-300 p-2 rounded-lg hover:bg-slate-700 hover:text-white transition-colors shadow-lg"
                     title="Minimize Graph"
                 >
                     <Minimize2 className="w-5 h-5" />

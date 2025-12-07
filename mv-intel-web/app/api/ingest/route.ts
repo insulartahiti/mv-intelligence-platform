@@ -83,6 +83,16 @@ function extractPeriodDateFromFilename(filename: string): string | null {
       let year = parseInt(m[1]);
       if (year < 100) year += 2000;  // FY24 -> 2024
       return `${year}-01-01`;  // Fiscal year starts Jan 1 (simplified)
+    }},
+    // YYYYMMDD (e.g., 20250324) -> Treat as that specific date
+    { regex: /(\d{4})(\d{2})(\d{2})/i, handler: (m: RegExpMatchArray) => {
+        const year = parseInt(m[1]);
+        const month = parseInt(m[2]);
+        const day = parseInt(m[3]);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+        return null;
     }}
   ];
 
@@ -399,7 +409,7 @@ export async function POST(req: NextRequest) {
     const statusCode = overallStatus === 'error' ? 500 : (overallStatus === 'partial' || overallStatus === 'needs_review' ? 207 : 200);
 
     return NextResponse.json({
-      status: overallStatus, company: companySlug, dryRun: !!dryRun,
+      status: overallStatus, company: companySlug, companyId: companyId, dryRun: !!dryRun,
       summary: { total: results.length, success: successCount, needs_review: needsReviewCount, error: errorCount },
       results
     }, { status: statusCode });

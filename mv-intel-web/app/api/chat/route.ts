@@ -385,7 +385,7 @@ const webSearchTool = {
   type: "function",
   function: {
     name: "perform_web_search",
-    description: "Search the live web for real-time information, news, or companies NOT in the database. Use this when the user explicitly asks for external/web search or for recent events (2024-2025).",
+    description: "Search the live web for real-time information, news, or companies NOT in the database. Use this when the user asks for external search, 'latest' news, regulations, market trends, or events from 2024-2025.",
     parameters: {
       type: "object",
       properties: {
@@ -584,6 +584,7 @@ export async function POST(req: NextRequest) {
                             - If the user asks about COMPANIES or PORTFOLIO, use 'types': ['organization'] and 'isPortfolio': true if they ask for 'my' or 'our' portfolio.
                             - If the user asks specifically about THEIR OWN deals (e.g. 'my deals', 'my portfolio'), use the 'get_user_deals' tool.
                             - If the user asks about internal discussions, meetings, or history with a company, use 'search_notes'.
+                            - **WEB SEARCH TRIGGER**: If the user asks about "latest", "news", "regulation", "trends", or "market updates", YOU MUST USE 'perform_web_search' to get fresh data. Do not rely on internal knowledge for "latest" queries.
                             - If the user asks "Who do I know" or "Who can connect me", they mean **PEOPLE in their network**. This includes:
                                 1. **Founders/CEOs** of their portfolio companies (use 'get_user_deals' then look for connected people).
                                 2. **Colleagues/Partners** at their own firm (e.g. "Motive Partners") who might have the relationship.

@@ -349,7 +349,7 @@ export default function Neo4jVisNetwork({
 
        <button
         onClick={handleRecenter}
-        className="absolute bottom-6 right-6 z-20 bg-slate-800/80 backdrop-blur border border-slate-700 text-slate-300 p-2 rounded-lg hover:bg-slate-700 hover:text-white transition-colors shadow-lg"
+        className="absolute bottom-24 right-6 z-20 bg-slate-800/80 backdrop-blur border border-slate-700 text-slate-300 p-2 rounded-lg hover:bg-slate-700 hover:text-white transition-colors shadow-lg"
         title="Recenter Graph"
       >
         <Focus size={20} />
