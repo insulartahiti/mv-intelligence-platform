@@ -90,7 +90,7 @@ export default function FeedbackButton() {
             rows={3}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:ring-1 focus:ring-blue-500 outline-none resize-none"
             placeholder="Describe the bug or issue..."
           />
         </div>

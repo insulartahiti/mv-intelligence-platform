@@ -25,7 +25,7 @@ export async function submitIssue(
 
   // 1. Upload Screenshot if exists
   if (screenshotBase64) {
-    // Detect mime type (default to png if missing)
+    // Detect mime type (default to png if missing) from base64 header
     const matches = screenshotBase64.match(/^data:(image\/[a-z]+);base64,/);
     const mimeType = matches ? matches[1] : 'image/png';
     const extension = mimeType.split('/')[1];
