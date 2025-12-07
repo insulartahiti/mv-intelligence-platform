@@ -298,6 +298,9 @@ export default function LegalAnalysisPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<PipelineResult | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [isSearchingCompany, setIsSearchingCompany] = useState(false);
+  const [searchResults, setSearchResults] = useState<{id: string, name: string}[]>([]);
   const [phase1Results, setPhase1Results] = useState<Phase1DocResult[]>([]);
   const [phase2Results, setPhase2Results] = useState<Phase2CategoryResult[]>([]);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress>({
@@ -367,11 +370,14 @@ export default function LegalAnalysisPage() {
         });
       }));
 
-      // Call API
+      // Call API with companySlug if selected
       const response = await fetch('/api/portfolio/legal-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: filePayloads })
+        body: JSON.stringify({ 
+            files: filePayloads,
+            companySlug: selectedCompany || undefined
+        })
       });
 
       const data = await response.json();
@@ -462,6 +468,35 @@ export default function LegalAnalysisPage() {
           <Tabs.Content value="analysis" className="focus:outline-none">
             {!result ? (
               <div className="max-w-4xl mx-auto space-y-6">
+                
+                {/* Company Selection - Added similar to Import Page */}
+                <div className="bg-white/5 rounded-xl border border-white/10 p-6">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Select Portfolio Company (Optional)
+                  </label>
+                  <div className="flex gap-4">
+                     <select 
+                        value={selectedCompany}
+                        onChange={(e) => setSelectedCompany(e.target.value)}
+                        className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="">-- Auto-detect from document --</option>
+                        <option value="nelly">Nelly Solutions</option>
+                        <option value="acme-corp">Acme Corp</option>
+                        <option value="stark-industries">Stark Industries</option>
+                        {/* Ideally fetch from API, hardcoded for now to match ImportPage logic */}
+                      </select>
+                      {selectedCompany && (
+                          <div className="flex items-center text-emerald-400 text-sm">
+                              <CheckCircle size={16} className="mr-1"/> Selected
+                          </div>
+                      )}
+                  </div>
+                  <p className="text-xs text-white/40 mt-2">
+                    If not selected, the AI will attempt to identify the company from the document content.
+                  </p>
+                </div>
+
                 {/* Upload Area */}
                 <div
                   onDragEnter={handleDrag}

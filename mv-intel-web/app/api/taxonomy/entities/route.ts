@@ -14,20 +14,32 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
+  const search = searchParams.get('search') || '';
   const page = parseInt(searchParams.get('page') || '0');
   const limit = parseInt(searchParams.get('limit') || '1000'); // Default batch size, can be overridden but max 1000 per request from client
 
-  if (!code) {
-    return NextResponse.json({ success: false, message: 'Code is required' }, { status: 400 });
+  if (!code && !search) {
+    return NextResponse.json({ success: false, message: 'Code or Search query is required' }, { status: 400 });
   }
 
   try {
-    // Fetch entities that have this taxonomy code (prefix match for hierarchy)
-    const { data, count, error } = await supabase
+    let query = supabase
         .schema('graph')
         .from('entities')
-        .select('id, name, type, domain, industry, brief_description, taxonomy, pipeline_stage', { count: 'exact' })
-        .ilike('taxonomy', `${code}%`)
+        .select('id, name, type, domain, industry, brief_description, taxonomy, pipeline_stage', { count: 'exact' });
+
+    // Apply Taxonomy Filter (if provided)
+    if (code) {
+        query = query.ilike('taxonomy', `${code}%`);
+    }
+
+    // Apply Search Filter (if provided)
+    if (search) {
+        // Search in name, description, taxonomy code
+        query = query.or(`name.ilike.%${search}%,brief_description.ilike.%${search}%,taxonomy.ilike.%${search}%`);
+    }
+
+    const { data, count, error } = await query
         .order('name')
         .range(page * limit, (page + 1) * limit - 1);
 

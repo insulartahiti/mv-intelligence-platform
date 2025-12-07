@@ -44,13 +44,19 @@ export default function TaxonomyPage() {
   const [selectedPath, setSelectedPath] = useState<string>('IFT');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   
-  // Global entity state
-  const [allEntities, setAllEntities] = useState<Company[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Entity state (lazy loaded)
+  const [entities, setEntities] = useState<Company[]>([]);
+  const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
   
+  // Stats state
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchResults, setSearchResults] = useState<TaxonomySearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Pagination state
   const [page, setPage] = useState(0);
@@ -58,29 +64,48 @@ export default function TaxonomyPage() {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const BATCH_SIZE = 1000;
 
-  // Initial Fetch - Load First Batch
+  // Initial Fetch - Load Stats Once
   useEffect(() => {
-    // Reset state when mounting
-    setAllEntities([]);
-    setPage(0);
-    setHasMore(true);
-    fetchEntities(0, true);
+    const fetchStats = async () => {
+        try {
+            const res = await fetch('/api/taxonomy/stats');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    setStats(data.data);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch stats:', error);
+        } finally {
+            setIsStatsLoading(false);
+        }
+    };
+    fetchStats();
   }, []);
 
-  const fetchEntities = async (pageNum: number, isInitial: boolean = false) => {
-    if (isInitial) setIsLoading(true);
+  // Fetch entities when path changes
+  useEffect(() => {
+    setEntities([]);
+    setPage(0);
+    setHasMore(true);
+    fetchEntities(selectedPath, 0, true);
+  }, [selectedPath]);
+
+  const fetchEntities = async (path: string, pageNum: number, isInitial: boolean = false) => {
+    if (isInitial) setIsEntitiesLoading(true);
     else setIsFetchingMore(true);
 
     try {
-      // Fetch entities under IFT root with pagination
-      const res = await fetch(`/api/taxonomy/entities?code=IFT&page=${pageNum}&limit=${BATCH_SIZE}`);
+      // Fetch entities for specific path
+      const res = await fetch(`/api/taxonomy/entities?code=${path}&page=${pageNum}&limit=${BATCH_SIZE}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
           if (isInitial) {
-            setAllEntities(data.data);
+            setEntities(data.data);
           } else {
-            setAllEntities(prev => [...prev, ...data.data]);
+            setEntities(prev => [...prev, ...data.data]);
           }
           
           if (data.pagination) {
@@ -93,62 +118,77 @@ export default function TaxonomyPage() {
     } catch (err) {
       console.error('Failed to fetch taxonomy entities:', err);
     } finally {
-      if (isInitial) setIsLoading(false);
+      if (isInitial) setIsEntitiesLoading(false);
       else setIsFetchingMore(false);
     }
   };
 
   // Load More Handler
   const handleLoadMore = useCallback(() => {
-    if (!hasMore || isFetchingMore || isLoading) return;
+    if (!hasMore || isFetchingMore || isEntitiesLoading) return;
     const nextPage = page + 1;
     setPage(nextPage);
-    fetchEntities(nextPage);
-  }, [page, hasMore, isFetchingMore, isLoading]);
+    fetchEntities(selectedPath, nextPage);
+  }, [page, hasMore, isFetchingMore, isEntitiesLoading, selectedPath]);
   
-  // Search results - combines taxonomy codes and entities
-  const searchResults = useMemo<TaxonomySearchResult[]>(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) return [];
-    
-    const query = searchQuery.toLowerCase();
-    const results: TaxonomySearchResult[] = [];
-    
-    // Search taxonomy codes and labels
-    FLAT_TAXONOMY.forEach(t => {
-      const codeMatch = t.code.toLowerCase().includes(query);
-      const labelMatch = t.label.toLowerCase().includes(query);
-      const descMatch = t.description?.toLowerCase().includes(query);
-      
-      if (codeMatch || labelMatch || descMatch) {
-        results.push({
-          type: 'taxonomy',
-          code: t.code,
-          label: t.label,
-          description: t.description
-        });
+  // Server-side Search Logic
+  useEffect(() => {
+      if (!searchQuery.trim() || searchQuery.length < 2) {
+          setSearchResults([]);
+          return;
       }
-    });
-    
-    // Search entities (limit to 20 for performance)
-    const entityMatches = allEntities
-      .filter(e => e.name.toLowerCase().includes(query))
-      .slice(0, 20);
-    
-    entityMatches.forEach(e => {
-      results.push({
-        type: 'entity',
-        entity: e
-      });
-    });
-    
-    return results;
-  }, [searchQuery, allEntities]);
+
+      const timer = setTimeout(async () => {
+          setIsSearching(true);
+          try {
+            const query = searchQuery.toLowerCase();
+            const results: TaxonomySearchResult[] = [];
+
+            // 1. Client-side Taxonomy Search (fast)
+            FLAT_TAXONOMY.forEach(t => {
+                const codeMatch = t.code.toLowerCase().includes(query);
+                const labelMatch = t.label.toLowerCase().includes(query);
+                const descMatch = t.description?.toLowerCase().includes(query);
+                
+                if (codeMatch || labelMatch || descMatch) {
+                    results.push({
+                    type: 'taxonomy',
+                    code: t.code,
+                    label: t.label,
+                    description: t.description
+                    });
+                }
+            });
+
+            // 2. Server-side Entity Search
+            const res = await fetch(`/api/taxonomy/entities?search=${encodeURIComponent(searchQuery)}&limit=20`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    data.data.forEach((e: Company) => {
+                        results.push({
+                            type: 'entity',
+                            entity: e
+                        });
+                    });
+                }
+            }
+
+            setSearchResults(results);
+          } catch (error) {
+              console.error('Search error:', error);
+          } finally {
+              setIsSearching(false);
+          }
+      }, 300); // Debounce
+
+      return () => clearTimeout(timer);
+  }, [searchQuery]);
   
   const handleSearchSelect = useCallback((result: TaxonomySearchResult) => {
     if (result.type === 'taxonomy' && result.code) {
       setSelectedPath(result.code);
     } else if (result.type === 'entity' && result.entity) {
-      // Navigate to the entity's taxonomy and open detail panel
       if (result.entity.taxonomy) {
         setSelectedPath(result.entity.taxonomy);
       }
@@ -157,33 +197,11 @@ export default function TaxonomyPage() {
     setSearchQuery('');
     setIsSearchFocused(false);
   }, []);
-  const currentNodeData = useMemo(() => {
-    const parts = selectedPath.split('.');
-    let current: any = TAXONOMY_DATA;
-    let label = '';
-    let description = '';
 
-    // Handle root IFT specially or traverse
-    for (const part of parts) {
-        if (current[part]) {
-            label = current[part].label;
-            description = current[part].description;
-            current = current[part].children || {};
-        } else {
-            // Traverse children if we are past root
-            // This traversal is a bit simplistic, assumes TAXONOMY_DATA structure matches path exactly
-            // For IFT.PAY.COM -> IFT -> children.PAY -> children.COM
-            // Let's rewrite robustly
-            return { label, description, children: current };
-        }
-    }
-    return { label, description, children: current };
-  }, [selectedPath]);
-
-  // Robust Node Finder - returns null for invalid paths (strict taxonomy policy)
+  // Robust Node Finder
   const getNodeByPath = (path: string) => {
       const parts = path.split('.');
-      if (parts[0] !== 'IFT') return null; // Root must be IFT
+      if (parts[0] !== 'IFT') return null; 
 
       let current: any = TAXONOMY_DATA['IFT'];
       if (path === 'IFT') return { ...current, key: 'IFT' };
@@ -192,7 +210,6 @@ export default function TaxonomyPage() {
           if (current.children && current.children[parts[i]]) {
               current = current.children[parts[i]];
           } else {
-              // Invalid path - not in canonical schema
               return null;
           }
       }
@@ -222,18 +239,19 @@ export default function TaxonomyPage() {
 
       {/* RIGHT MAIN AREA: Dashboard */}
       <div className="flex-1 flex flex-col pt-16 h-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black">
-          {isLoading ? (
+          {isStatsLoading ? (
               <div className="flex items-center justify-center h-full">
                   <div className="flex flex-col items-center gap-4">
                       <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                      <p className="text-slate-400 text-sm">Loading Taxonomy Data...</p>
+                      <p className="text-slate-400 text-sm">Loading Taxonomy Structure...</p>
                   </div>
               </div>
           ) : (
               <TaxonomyDashboard 
                  path={selectedPath} 
                  node={activeNode} 
-                 allEntities={allEntities}
+                 entities={entities}
+                 stats={stats}
                  onNavigate={setSelectedPath}
                  onCompanyClick={setSelectedNodeId}
                  searchQuery={searchQuery}
@@ -245,6 +263,8 @@ export default function TaxonomyPage() {
                  hasMore={hasMore}
                  onLoadMore={handleLoadMore}
                  isFetchingMore={isFetchingMore}
+                 isEntitiesLoading={isEntitiesLoading}
+                 isSearching={isSearching}
               />
           )}
       </div>
@@ -265,9 +285,8 @@ export default function TaxonomyPage() {
 // ----------------------------------------------------------------------------
 
 function TaxonomySidebarTree({ data, path, selectedPath, onSelect }: { data: any, path: string, selectedPath: string, onSelect: (p: string) => void }) {
-    const [isExpanded, setIsExpanded] = useState(true); // Default expand root
+    const [isExpanded, setIsExpanded] = useState(true); 
     
-    // Auto-expand if child is selected
     useEffect(() => {
         if (selectedPath.startsWith(path) && selectedPath !== path) {
             setIsExpanded(true);
@@ -328,7 +347,8 @@ function TaxonomySidebarTree({ data, path, selectedPath, onSelect }: { data: any
 interface DashboardProps {
     path: string;
     node: any;
-    allEntities: Company[];
+    entities: Company[];
+    stats: Record<string, number>;
     onNavigate: (p: string) => void;
     onCompanyClick: (id: string) => void;
     searchQuery: string;
@@ -340,47 +360,29 @@ interface DashboardProps {
     hasMore: boolean;
     onLoadMore: () => void;
     isFetchingMore: boolean;
+    isEntitiesLoading: boolean;
+    isSearching: boolean;
 }
 
 function TaxonomyDashboard({ 
-    path, node, allEntities, onNavigate, onCompanyClick,
+    path, node, entities, stats, onNavigate, onCompanyClick,
     searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchResults, handleSearchSelect,
-    hasMore, onLoadMore, isFetchingMore
+    hasMore, onLoadMore, isFetchingMore, isEntitiesLoading, isSearching
 }: DashboardProps) {
-    // Use local filtered state derived from global 'allEntities'
     
-    // Separate into Direct Matches vs Subcategories
-    const { directMatches, subCategories, totalBranchCount } = useMemo(() => {
-        if (!allEntities) return { directMatches: [], subCategories: {}, totalBranchCount: 0 };
-
-        const direct: Company[] = [];
-        const subs: Record<string, number> = {}; // key -> count
-        let total = 0;
-
-        // Initialize known subcategories with 0
-        if (node?.children) {
-            Object.keys(node.children).forEach(key => subs[key] = 0);
-        }
-
-        allEntities.forEach(c => {
-            if (c.taxonomy === path) {
-                direct.push(c);
-                total++;
-            } else if (c.taxonomy?.startsWith(path + '.')) {
-                total++;
-                // Determine which subcategory bucket
-                const suffix = c.taxonomy.substring(path.length + 1);
-                const nextSegment = suffix.split('.')[0];
-                
-                // Use centralized blocklist for invalid taxonomy segments
-                if (nextSegment && !hasInvalidSegment(nextSegment)) {
-                    subs[nextSegment] = (subs[nextSegment] || 0) + 1;
-                }
-            }
+    // Get stats directly from the stats map
+    const totalBranchCount = stats[path] || 0;
+    
+    // Calculate subcategory stats from the stats map
+    const subCategories = useMemo(() => {
+        if (!node?.children) return {};
+        const subs: Record<string, number> = {};
+        Object.keys(node.children).forEach(key => {
+            const subPath = `${path}.${key}`;
+            subs[key] = stats[subPath] || 0;
         });
-
-        return { directMatches: direct, subCategories: subs, totalBranchCount: total };
-    }, [allEntities, path, node]);
+        return subs;
+    }, [node, path, stats]);
 
     if (!node) {
         return (
@@ -457,6 +459,11 @@ function TaxonomyDashboard({
                             onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
                             className="w-full pl-11 pr-10 py-3 bg-slate-900/60 border border-slate-700/50 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 focus:bg-slate-900 transition-all"
                         />
+                        {isSearching && (
+                             <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                                <div className="w-4 h-4 border-2 border-slate-500 border-t-slate-300 rounded-full animate-spin" />
+                            </div>
+                        )}
                         {searchQuery && (
                             <button 
                                 onClick={() => setSearchQuery('')}
@@ -507,7 +514,7 @@ function TaxonomyDashboard({
                     )}
                     
                     {/* No Results */}
-                    {isSearchFocused && searchQuery.length >= 2 && searchResults.length === 0 && (
+                    {isSearchFocused && searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-6 text-center">
                             <Search size={24} className="text-slate-600 mx-auto mb-2" />
                             <p className="text-sm text-slate-500">No results found for "{searchQuery}"</p>
@@ -561,65 +568,69 @@ function TaxonomyDashboard({
                     </section>
                 )}
 
-                {/* 2. Direct Companies Grid (Only if NOT at root 'IFT' - reduces noise) */}
-                {path !== 'IFT' && (
-                    <section>
-                        <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
-                            <Building2 size={18} className="text-blue-400" />
-                            Classified Companies
-                            <span className="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">
-                                {directMatches.length}
-                            </span>
-                        </h3>
-                        
-                        {directMatches.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {directMatches.map(company => (
-                                    <div 
-                                        key={company.id}
-                                        onClick={() => onCompanyClick(company.id)}
-                                        className="group relative p-5 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 rounded-xl cursor-pointer transition-all hover:-translate-y-1 shadow-sm hover:shadow-xl hover:shadow-blue-900/10"
-                                    >
-                                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Zap size={16} className="text-yellow-400 fill-yellow-400/20" />
-                                        </div>
-
-                                        <div className="w-10 h-10 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-slate-400 font-bold text-lg mb-4 border border-slate-700 group-hover:border-blue-500/30 group-hover:text-blue-400 transition-colors">
-                                            {company.name.charAt(0)}
-                                        </div>
-                                        
-                                        <h4 className="font-bold text-slate-200 mb-2 truncate pr-6">{company.name}</h4>
-                                        
-                                        <p className="text-sm text-slate-500 line-clamp-2 min-h-[40px] mb-4">
-                                            {company.brief_description || 'No description available'}
-                                        </p>
-
-                                        <div className="flex items-center justify-between pt-4 border-t border-slate-800/50 group-hover:border-slate-700">
-                                            {company.domain ? (
-                                                <span className="text-xs text-slate-500 font-mono truncate max-w-[120px]">
-                                                    {company.domain}
-                                                </span>
-                                            ) : (
-                                                <span className="text-xs text-slate-600">No Domain</span>
-                                            )}
-                                            <span className="text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                                View <ArrowRight size={10} />
-                                            </span>
-                                        </div>
+                {/* 2. Direct Companies Grid */}
+                <section>
+                    <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
+                        <Building2 size={18} className="text-blue-400" />
+                        Classified Companies
+                        <span className="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">
+                            {/* We don't have exact direct count from stats easily unless we separate it, 
+                               but we can use entities.length if loaded, or just show 'Displaying X' */}
+                             {entities.length} loaded
+                        </span>
+                    </h3>
+                    
+                    {isEntitiesLoading && entities.length === 0 ? (
+                        <div className="flex justify-center p-12">
+                             <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                        </div>
+                    ) : entities.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {entities.map(company => (
+                                <div 
+                                    key={company.id}
+                                    onClick={() => onCompanyClick(company.id)}
+                                    className="group relative p-5 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 rounded-xl cursor-pointer transition-all hover:-translate-y-1 shadow-sm hover:shadow-xl hover:shadow-blue-900/10"
+                                >
+                                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Zap size={16} className="text-yellow-400 fill-yellow-400/20" />
                                     </div>
-                                ))}
+
+                                    <div className="w-10 h-10 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-slate-400 font-bold text-lg mb-4 border border-slate-700 group-hover:border-blue-500/30 group-hover:text-blue-400 transition-colors">
+                                        {company.name.charAt(0)}
+                                    </div>
+                                    
+                                    <h4 className="font-bold text-slate-200 mb-2 truncate pr-6">{company.name}</h4>
+                                    
+                                    <p className="text-sm text-slate-500 line-clamp-2 min-h-[40px] mb-4">
+                                        {company.brief_description || 'No description available'}
+                                    </p>
+
+                                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/50 group-hover:border-slate-700">
+                                        {company.domain ? (
+                                            <span className="text-xs text-slate-500 font-mono truncate max-w-[120px]">
+                                                {company.domain}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs text-slate-600">No Domain</span>
+                                        )}
+                                        <span className="text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                            View <ArrowRight size={10} />
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                            <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center">
+                            <p className="text-slate-500">No companies directly classified in this category.</p>
+                            <p className="text-xs text-slate-600 mt-1">Check subcategories above.</p>
                             </div>
-                        ) : (
-                             <div className="p-8 border border-dashed border-slate-800 rounded-xl text-center">
-                                <p className="text-slate-500">No companies directly classified in this category.</p>
-                                <p className="text-xs text-slate-600 mt-1">Check subcategories above.</p>
-                             </div>
-                        )}
-                    </section>
-                )}
+                    )}
+                </section>
                 
                 {/* Load More Trigger */}
-                {hasMore && (
+                {hasMore && entities.length > 0 && (
                     <div className="flex justify-center pt-8">
                         <button 
                             onClick={onLoadMore}
