@@ -477,6 +477,14 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Community**: **Live**. Suggestions page and Issue Reporting system.
 *   **Deployment**: **Production**. Live at https://motivepartners.ai.
 
+### Recent Updates (Dec 07, 2025)
+*   **External Search Toggle**: Added a "Web Search" toggle to the Chat Agent.
+    *   Integrates **Perplexity (`sonar-pro`)** as an optional tool for the agent.
+    *   Enables real-time web search for queries about recent events, valuations, or companies not in the Knowledge Graph.
+    *   **Virtual Nodes**: External results are rendered as "Virtual Nodes" (Amber colored) in the graph results list, distinct from internal nodes (Blue/Purple).
+    *   **Direct Linking**: Clicking external results opens the source URL directly.
+    *   **Hybrid Intelligence**: The agent can now synthesize internal proprietary data with external market intelligence in a single conversation.
+
 ### Known Risks & Limitations
 *   **Taxonomy Limits**: The `/api/taxonomy/entities` endpoint hits Supabase's 1000-row limit.
 *   **Latency**: Initial graph load can be heavy (~2s).
