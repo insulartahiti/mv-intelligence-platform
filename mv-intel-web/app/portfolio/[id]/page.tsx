@@ -20,7 +20,9 @@ import {
   Upload,
   Check,
   AlertCircle,
-  Download
+  Download,
+  Search,
+  Tag
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 
@@ -36,6 +38,7 @@ interface CompanyDetail {
   investment_amount?: number;
   fund?: string;
   status?: string;
+  taxonomy?: string;
 }
 
 interface NewsItem {
@@ -50,6 +53,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
+  const [customNewsQuery, setCustomQuery] = useState('');
   
   useEffect(() => {
     fetchCompanyDetails();
@@ -61,7 +65,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
     }
   }, [company]);
 
-  const fetchNews = async (comp: CompanyDetail) => {
+  const fetchNews = async (comp: CompanyDetail, queryOverride?: string) => {
     setNewsLoading(true);
     try {
       const queryParams = new URLSearchParams({
@@ -69,6 +73,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
       });
       if (comp.domain) queryParams.append('domain', comp.domain);
       if (comp.industry) queryParams.append('industry', comp.industry);
+      if (queryOverride) queryParams.append('query', queryOverride);
 
       const res = await fetch(`/api/portfolio/news?${queryParams.toString()}`);
       const data = await res.json();
@@ -82,14 +87,15 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
     }
   };
 
+  const handleNewsSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!company) return;
+    fetchNews(company, customNewsQuery);
+  };
+
   const fetchCompanyDetails = async () => {
     try {
-      // Re-use the existing fetch logic or create a dedicated endpoint
       const res = await fetch(`/api/portfolio/companies?q=&companyId=${params.id}`); 
-      // Note: The list endpoint returns array, we might need a dedicated single fetch or filter client side for now if API not ready
-      // For MVP, we'll fetch list and find. Ideally /api/portfolio/companies/[id]
-      
-      // Temporary: fetching list and filtering (inefficient but works with existing API)
       const data = await res.json();
       const found = data.companies.find((c: any) => c.id === params.id);
       if (found) setCompany(found);
@@ -201,6 +207,30 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                   </p>
                 </section>
 
+                {/* Classification / Taxonomy */}
+                <section className="bg-white/5 rounded-xl p-6 border border-white/10">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Tag size={20} className="text-purple-400" />
+                    Classification
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-sm text-white/40 mb-1">Taxonomy Code</div>
+                      {company.taxonomy ? (
+                        <div className="inline-flex items-center px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-sm font-mono">
+                          {company.taxonomy}
+                        </div>
+                      ) : (
+                        <div className="text-white/30 italic text-sm">Not classified</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-sm text-white/40 mb-1">Industry</div>
+                      <div className="text-white/80">{company.industry || 'Unknown'}</div>
+                    </div>
+                  </div>
+                </section>
+
                 {/* Key Updates (Placeholder) */}
                 <section className="bg-white/5 rounded-xl p-6 border border-white/10">
                   <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -212,7 +242,6 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                       <div className="text-sm text-white/40 mb-1">Oct 2024 • Board Meeting</div>
                       <p className="text-white/80">Strong Q3 performance with 15% QoQ growth. Launched new Enterprise tier.</p>
                     </div>
-                    {/* Add more derived updates here */}
                   </div>
                 </section>
               </div>
@@ -221,10 +250,26 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
               <div className="space-y-8">
                 {/* News Feed */}
                 <section className="bg-white/5 rounded-xl p-6 border border-white/10">
-                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <Newspaper size={20} className="text-blue-400" />
-                    Latest News
-                  </h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Newspaper size={20} className="text-blue-400" />
+                      Latest News
+                    </h3>
+                  </div>
+                  
+                  <form onSubmit={handleNewsSearch} className="mb-4 relative">
+                    <input
+                      type="text"
+                      placeholder="Search news..."
+                      value={customNewsQuery}
+                      onChange={(e) => setCustomQuery(e.target.value)}
+                      className="w-full bg-black/20 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                    />
+                    <button type="submit" className="absolute right-2 top-2 text-white/40 hover:text-white">
+                      <Search size={12} />
+                    </button>
+                  </form>
+
                   <div className="space-y-4">
                     {newsLoading ? (
                        <div className="text-sm text-white/40 italic flex items-center gap-2">
@@ -424,57 +469,9 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
           {yamlContent || "# No guide configured yet.\n# Use the chat on the right to generate one."}
         </div>
 
-        {/* Test File Upload */}
-        <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Upload size={20} className="text-blue-400" />
-            Test Configuration
-          </h3>
-          
-          <div 
-            className={`
-              relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 mb-4
-              ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
-            `}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            <input
-              type="file"
-              multiple
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              onChange={handleFileChange}
-            />
-            <div className="pointer-events-none">
-              <p className="text-sm font-medium text-white/70">Drop test files here (PDF/Excel)</p>
-            </div>
-          </div>
-
-          {files.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {files.map((file, idx) => (
-                <div key={idx} className="flex items-center justify-between text-xs bg-white/5 p-2 rounded">
-                  <span className="truncate text-white/70">{file.name}</span>
-                  <button onClick={() => setFiles(f => f.filter((_, i) => i !== idx))} className="text-white/40 hover:text-white">×</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            onClick={handleTestRun}
-            disabled={isUploading || files.length === 0}
-            className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
-          >
-            {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
-          </button>
-        </div>
-
         {/* Test Results */}
         {testResults.length > 0 && (
-           <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-4">
+           <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-4 max-h-[300px] overflow-y-auto">
              <h4 className="text-sm font-semibold text-white/70 uppercase tracking-wider">Extraction Results</h4>
              {testResults.map((res, idx) => (
                <div key={idx} className="text-xs space-y-2">
@@ -513,7 +510,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
         </p>
         
         <textarea
-          className="w-full bg-black/20 border border-white/10 rounded-lg p-4 text-white text-sm focus:outline-none focus:border-emerald-500/50 min-h-[120px]"
+          className="w-full bg-black/20 border border-white/10 rounded-lg p-4 text-white text-sm focus:outline-none focus:border-emerald-500/50 min-h-[120px] mb-4"
           placeholder="e.g. 'Add a new metric for Net Revenue Retention mapped to 'NRR' column' or 'Change the fiscal year end to March'"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
@@ -522,7 +519,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
         <button
           onClick={handleUpdate}
           disabled={loading || !instruction}
-          className="mt-4 w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2"
+          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 mb-8"
         >
           {loading ? (
             <>Processing...</>
@@ -532,6 +529,51 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
               <ArrowLeft size={16} className="rotate-180" />
             </>
           )}
+        </button>
+
+        {/* Integrated Test File Upload */}
+        <h4 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-3 border-t border-white/10 pt-6">
+          Test Configuration
+        </h4>
+        
+        <div 
+          className={`
+            relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 mb-4
+            ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
+          `}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
+          <input
+            type="file"
+            multiple
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            onChange={handleFileChange}
+          />
+          <div className="pointer-events-none">
+            <p className="text-sm font-medium text-white/70">Drop test files here (PDF/Excel)</p>
+          </div>
+        </div>
+
+        {files.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {files.map((file, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs bg-white/5 p-2 rounded">
+                <span className="truncate text-white/70">{file.name}</span>
+                <button onClick={() => setFiles(f => f.filter((_, i) => i !== idx))} className="text-white/40 hover:text-white">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={handleTestRun}
+          disabled={isUploading || files.length === 0}
+          className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
+        >
+          {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
         </button>
       </div>
     </div>

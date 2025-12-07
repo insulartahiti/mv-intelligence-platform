@@ -974,6 +974,11 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **Frontend Integration**: Replaced placeholder in `/portfolio/[id]` with dynamic news feed displaying title, date, source, and summary.
     *   **Contextual Queries**: Prompts Perplexity specifically for funding, product, and M&A news for the target company.
 
+*   **Portfolio Page Enhancements**:
+    *   **Taxonomy Display**: Added "Classification" section to the Overview tab showing taxonomy code and industry.
+    *   **News Search**: Added a search bar to the News section for custom Perplexity queries.
+    *   **Integrated Config Testing**: Moved the "Test Configuration" file upload directly into the Config Guide editor panel for a streamlined workflow.
+
 ### Features Added
 
 *   **Legal Document Analysis System v1.0**: AI-powered analysis of investor documentation.

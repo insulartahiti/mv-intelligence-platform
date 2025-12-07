@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
           pipeline_stage,
           type,
           is_portfolio,
+          taxonomy,
           enrichment_data,
           business_analysis,
           ai_summary
@@ -93,6 +94,7 @@ export async function GET(req: NextRequest) {
             location_country: entity.location_country || enrichment.location?.country || analysis.location?.country,
             investment_amount: entity.investment_amount,
             brief_description: entity.brief_description || entity.ai_summary || analysis.core_business || enrichment.description,
+            taxonomy: entity.taxonomy,
             logo_url: entity.linkedin_url || enrichment.logo_url || enrichment.linkedin_url, // Map linkedin_url to logo_url for frontend
             status: entity.pipeline_stage
         };
