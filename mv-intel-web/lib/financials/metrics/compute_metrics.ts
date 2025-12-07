@@ -103,15 +103,30 @@ export async function saveMetricsToDb(
     created_at: new Date().toISOString()
   }));
 
-  const { error } = await supabaseClient
-    .from('fact_metrics')
-    // Use the explicit constraint name from migration 20251202000002_add_metrics_unique_constraint.sql
-    .upsert(rows, { onConflict: 'fact_metrics_company_period_metric_key' });
+  // 1. Delete existing metrics for this company/period/metric set
+  // This avoids unique constraint errors if the constraint is missing or named differently
+  const periods = [...new Set(results.map(r => r.period))];
+  const metricIds = [...new Set(results.map(r => r.metric_id))];
 
-  if (error) {
-    console.error('Error saving metrics to DB:', error);
-    throw error;
+  const { error: deleteError } = await supabaseClient
+    .from('fact_metrics')
+    .delete()
+    .eq('company_id', companyId)
+    .in('period', periods)
+    .in('metric_id', metricIds);
+
+  if (deleteError) {
+    console.error('Error clearing old metrics:', deleteError);
+    throw deleteError;
+  }
+
+  // 2. Insert new metrics
+  const { error: insertError } = await supabaseClient
+    .from('fact_metrics')
+    .insert(rows);
+
+  if (insertError) {
+    console.error('Error saving metrics to DB:', insertError);
+    throw insertError;
   }
 }
-
-
