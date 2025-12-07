@@ -39,6 +39,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `dim_line_item` | Standard chart of accounts |
 | `dim_source_files` | Ingested file metadata |
 | `portfolio_guides` | Dynamic YAML configurations for financial ingestion (replaces static files) |
+| `portfolio_news_cache` | Caches Perplexity news feed results (12h TTL) |
 | `company_insights` | Qualitative insights from documents |
 | `legal_analyses` | Structured legal document analysis results |
 | `legal_term_sources` | Source attribution for extracted legal terms |
@@ -974,11 +975,13 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
     *   **New API Route**: `/api/portfolio/news` fetches latest company updates using Perplexity's `sonar-pro` model.
     *   **Frontend Integration**: Replaced placeholder in `/portfolio/[id]` with dynamic news feed displaying title, date, source, and summary.
     *   **Contextual Queries**: Prompts Perplexity specifically for funding, product, and M&A news for the target company.
+    *   **Caching**: Implemented `portfolio_news_cache` table to cache Perplexity results for 12 hours (default view). Added refresh button to force update.
 
 *   **Portfolio Page Enhancements**:
     *   **Taxonomy Display**: Added "Classification" section to the Overview tab showing taxonomy code and industry.
     *   **News Search**: Added a search bar to the News section for custom Perplexity queries.
     *   **Integrated Config Testing**: Merged file upload into the Config Guide assistant panel. Users can drag & drop files directly onto the assistant to trigger a dry-run extraction test.
+    *   **Config Guide UI**: Improved YAML readability with styled output and clearer validation messaging.
 
 ### Features Added
 

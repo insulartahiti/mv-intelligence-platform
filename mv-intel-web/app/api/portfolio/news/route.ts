@@ -1,23 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const companyName = searchParams.get('companyName');
+    const companyId = searchParams.get('companyId');
     const domain = searchParams.get('domain');
     const industry = searchParams.get('industry');
+    const queryOverride = searchParams.get('query');
+    const forceRefresh = searchParams.get('forceRefresh') === 'true';
 
     if (!companyName) {
       return NextResponse.json({ error: 'Company name is required' }, { status: 400 });
     }
 
+    // Caching Logic
+    let cachedData = null;
+    const queryHash = crypto.createHash('md5').update(queryOverride || 'default').digest('hex');
+    const supabase = getSupabaseClient();
+
+    if (companyId && !forceRefresh) {
+      try {
+        const { data, error } = await supabase
+          .from('portfolio_news_cache')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('query_hash', queryHash)
+          .single();
+
+        if (data && !error) {
+          const lastUpdated = new Date(data.updated_at).getTime();
+          const now = new Date().getTime();
+          const hoursDiff = (now - lastUpdated) / (1000 * 60 * 60);
+
+          if (hoursDiff < 12) {
+            return NextResponse.json({ 
+              news: data.news_data, 
+              cached: true, 
+              lastRefreshed: data.updated_at 
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Cache check failed:', err);
+      }
+    }
+
     const apiKey = process.env.PERPLEXITY_API_KEY;
     if (!apiKey) {
       console.warn('PERPLEXITY_API_KEY is not set');
-      // Return empty news instead of error to not break UI
       return NextResponse.json({ news: [] });
     }
 
@@ -34,6 +77,7 @@ export async function GET(req: NextRequest) {
     
     Context:
     ${context}
+    ${queryOverride ? `\nUser's specific interest: ${queryOverride}\n` : ''}
 
     Prioritize:
     1. Funding rounds, M&A, and major partnerships.
@@ -58,8 +102,6 @@ export async function GET(req: NextRequest) {
     });
 
     const content = response.choices[0]?.message?.content || '[]';
-    
-    // Clean up markdown code blocks if present (e.g. ```json ... ```)
     const jsonString = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     
     let news = [];
@@ -69,7 +111,26 @@ export async function GET(req: NextRequest) {
       console.error('Failed to parse Perplexity response:', content);
     }
 
-    return NextResponse.json({ news });
+    // Update Cache
+    if (companyId && news.length > 0) {
+      try {
+        await supabase.from('portfolio_news_cache').upsert({
+          company_id: companyId,
+          query_hash: queryHash,
+          news_data: news,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'company_id, query_hash' });
+      } catch (err) {
+        console.error('Cache update failed:', err);
+      }
+    }
+
+    return NextResponse.json({ 
+      news, 
+      cached: false, 
+      lastRefreshed: new Date().toISOString() 
+    });
+
   } catch (error) {
     console.error('Error fetching news:', error);
     return NextResponse.json({ error: 'Failed to fetch news' }, { status: 500 });

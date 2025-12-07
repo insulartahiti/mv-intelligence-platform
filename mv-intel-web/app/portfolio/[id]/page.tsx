@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -27,7 +26,8 @@ import {
   FileText as FileIcon,
   FolderOpen,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 
@@ -257,6 +257,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [customNewsQuery, setCustomQuery] = useState('');
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
   
   useEffect(() => {
     fetchCompanyDetails();
@@ -268,20 +269,23 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
     }
   }, [company]);
 
-  const fetchNews = async (comp: CompanyDetail, queryOverride?: string) => {
+  const fetchNews = async (comp: CompanyDetail, queryOverride?: string, forceRefresh = false) => {
     setNewsLoading(true);
     try {
       const queryParams = new URLSearchParams({
         companyName: comp.name,
+        companyId: comp.id,
       });
       if (comp.domain) queryParams.append('domain', comp.domain);
       if (comp.industry) queryParams.append('industry', comp.industry);
       if (queryOverride) queryParams.append('query', queryOverride);
+      if (forceRefresh) queryParams.append('forceRefresh', 'true');
 
       const res = await fetch(`/api/portfolio/news?${queryParams.toString()}`);
       const data = await res.json();
       if (data.news && Array.isArray(data.news)) {
         setNews(data.news);
+        if (data.lastRefreshed) setLastRefreshed(data.lastRefreshed);
       }
     } catch (err) {
       console.error('Error fetching news:', err);
@@ -293,7 +297,12 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
   const handleNewsSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!company) return;
-    fetchNews(company, customNewsQuery);
+    fetchNews(company, customNewsQuery, true); // Search implies fresh results
+  };
+
+  const handleRefreshNews = () => {
+    if (!company) return;
+    fetchNews(company, customNewsQuery, true);
   };
 
   const fetchCompanyDetails = async () => {
@@ -458,6 +467,21 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                       <Newspaper size={20} className="text-blue-400" />
                       Latest News
                     </h3>
+                    <div className="flex items-center gap-2">
+                      {lastRefreshed && (
+                        <span className="text-[10px] text-white/30">
+                          Updated {new Date(lastRefreshed).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
+                      )}
+                      <button 
+                        onClick={handleRefreshNews} 
+                        disabled={newsLoading}
+                        className="text-white/40 hover:text-white transition-colors"
+                        title="Force Refresh"
+                      >
+                        <RefreshCw size={14} className={newsLoading ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
                   </div>
                   
                   <form onSubmit={handleNewsSearch} className="mb-4 relative">
@@ -660,9 +684,32 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="space-y-4">
-        {/* YAML Editor */}
-        <div className="bg-slate-900 rounded-xl p-4 border border-white/10 font-mono text-xs overflow-auto h-[400px] whitespace-pre">
-          {yamlContent || "# No guide configured yet.\n# Use the chat on the right to generate one."}
+        {/* YAML Editor - Improved UI */}
+        <div className="bg-[#1e1e1e] rounded-xl border border-white/10 overflow-hidden flex flex-col h-[500px]">
+           <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
+              <span className="text-xs font-mono text-white/50">guide.yaml</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Read Only</span>
+           </div>
+           <pre className="flex-1 p-4 font-mono text-xs text-blue-100 overflow-auto whitespace-pre leading-relaxed">
+             {yamlContent ? (
+               yamlContent.split('\n').map((line, i) => (
+                 <div key={i} className="table-row">
+                   <span className="table-cell text-white/20 pr-4 select-none text-right w-8">{i + 1}</span>
+                   <span className="table-cell">
+                     {line.startsWith('#') ? <span className="text-green-400/70">{line}</span> : 
+                      line.includes(':') ? (
+                        <>
+                          <span className="text-purple-300">{line.split(':')[0]}:</span>
+                          <span className="text-orange-200">{line.split(':').slice(1).join(':')}</span>
+                        </>
+                      ) : line}
+                   </span>
+                 </div>
+               ))
+             ) : (
+               <span className="text-white/30 italic"># No guide configured yet.{'\n'}# Use the assistant to generate one.</span>
+             )}
+           </pre>
         </div>
 
         {/* Test Results */}
@@ -741,7 +788,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
           <div className="mt-6 pt-6 border-t border-white/10 animate-in fade-in slide-in-from-top-2">
             <h4 className="text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
               <Upload size={14} className="text-blue-400" />
-              Test Files ({files.length})
+              Files for Validation ({files.length})
             </h4>
             <div className="space-y-2 mb-4">
               {files.map((file, idx) => (
@@ -756,14 +803,15 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
               disabled={isUploading}
               className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 font-medium rounded-lg disabled:opacity-50 transition-colors flex justify-center items-center gap-2 text-sm"
             >
-              {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
+              {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Validate Extraction (Dry Run)'}
             </button>
           </div>
         ) : (
-          <div className="mt-4 text-center">
+          <div className="mt-4 text-center border-t border-white/5 pt-6">
+             <p className="text-xs text-white/40 font-medium mb-2">VALIDATE CONFIGURATION</p>
              <p className="text-xs text-white/30 flex items-center justify-center gap-2 pointer-events-none">
                <Upload size={12} />
-               Drag & drop PDF/Excel files here to test
+               Drag & drop financial files here to test extraction logic
              </p>
              <input
                 type="file"
