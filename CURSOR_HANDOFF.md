@@ -980,7 +980,8 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **Portfolio Page Enhancements**:
     *   **Taxonomy Display**: Added "Classification" section to the Overview tab showing taxonomy code and industry.
     *   **News Search**: Added a search bar to the News section for custom Perplexity queries.
-    *   **Integrated Config Testing**: Merged file upload into the Config Guide assistant panel. Users can drag & drop files directly onto the assistant to trigger a dry-run extraction test.
+    *   **Integrated Config Testing**: Merged file upload into the Config Guide assistant panel. Users can drag & drop files directly onto the assistant to trigger a dry-run extraction test or generate a guide.
+    *   **Guide Generation**: Drag-and-drop files now enables "Analyze & Generate Guide", which uses the file content to automatically create the configuration YAML.
     *   **Config Guide UI**: Improved YAML readability with styled output and clearer validation messaging.
 
 ### Features Added

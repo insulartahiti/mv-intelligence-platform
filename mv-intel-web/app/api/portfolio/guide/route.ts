@@ -1,7 +1,7 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+import * as XLSX from 'xlsx';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,6 +11,53 @@ function getSupabaseClient() {
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials');
   return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper to extract text context from files
+async function extractFileContext(filePaths: string[], supabase: any): Promise<string> {
+  let context = "";
+  
+  for (const path of filePaths) {
+    try {
+      // Download file from storage
+      const { data, error } = await supabase.storage
+        .from('financial-docs')
+        .download(path);
+        
+      if (error || !data) {
+        console.warn(`Failed to download ${path}:`, error);
+        continue;
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      if (path.endsWith('.xlsx') || path.endsWith('.xls')) {
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        context += `\n\n--- FILE: ${path} (Excel) ---\n`;
+        
+        // Read first 2 sheets or sheets named 'P&L', 'Revenue'
+        const sheetsToRead = workbook.SheetNames.slice(0, 2);
+        
+        for (const sheetName of sheetsToRead) {
+          const sheet = workbook.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+          
+          // Take first 20 rows as sample structure
+          const rows = json.slice(0, 20).map((row: any) => row.join(' | ')).join('\n');
+          context += `SHEET: ${sheetName}\n${rows}\n...\n`;
+        }
+      } else {
+        // For PDF/other, just mention availability (text extraction requires more deps)
+        // Or if we have text extraction logic available, use it.
+        // For now, just passing the filename is better than nothing.
+        context += `\n\n--- FILE: ${path} (Binary) ---\n[Content analysis not fully supported in this simplified view]\n`;
+      }
+    } catch (err) {
+      console.warn(`Error processing ${path}:`, err);
+    }
+  }
+  return context;
 }
 
 export async function GET(req: NextRequest) {
@@ -49,16 +96,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, instruction, currentYaml } = await req.json();
+    const { companyId, instruction, currentYaml, filePaths } = await req.json();
     
-    if (!companyId || !instruction) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!companyId) {
+      return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
+    }
+
+    const supabase = getSupabaseClient();
+    let fileContext = "";
+    
+    if (filePaths && Array.isArray(filePaths) && filePaths.length > 0) {
+      fileContext = await extractFileContext(filePaths, supabase);
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
     const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
-    Your goal is to modify a YAML configuration file based on the user's request.
+    Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
     
     The YAML schema structure is:
     company:
@@ -73,6 +127,7 @@ export async function POST(req: NextRequest) {
     1. Only return the valid YAML. No markdown blocks.
     2. Preserve existing keys unless asked to remove.
     3. Ensure valid YAML syntax.
+    4. If file content is provided, use it to infer metric labels (e.g. if file has "Total Revenue", map 'revenue' to labels: ["Total Revenue"]).
     `;
 
     const userPrompt = `
@@ -80,7 +135,9 @@ export async function POST(req: NextRequest) {
     ${currentYaml || 'No existing guide.'}
     
     User Instruction:
-    ${instruction}
+    ${instruction || (fileContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
+    
+    ${fileContext ? `\nFile Content Samples:\n${fileContext}` : ''}
     
     Return the updated YAML.
     `;
@@ -101,8 +158,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Upsert into DB
-    const supabase = getSupabaseClient();
-    
     const { data, error } = await supabase
       .from('portfolio_guides')
       .upsert({
@@ -122,4 +177,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

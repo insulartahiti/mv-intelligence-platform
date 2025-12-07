@@ -580,22 +580,52 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
   };
 
   const handleUpdate = async () => {
-    if (!instruction) return;
+    // We allow update if there is an instruction OR if there are files to analyze
+    if (!instruction && files.length === 0) return;
+    
     setLoading(true);
     try {
+      // If files are present, upload them first
+      let filePaths: string[] = [];
+      if (files.length > 0) {
+        for (const file of files) {
+          const urlRes = await fetch(
+            `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(companyName)}`
+          );
+          const urlData = await urlRes.json();
+          if (urlData.status !== 'success') throw new Error(urlData.error);
+          
+          const uploadRes = await fetch(urlData.signedUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            body: file
+          });
+          if (!uploadRes.ok) throw new Error('Upload failed');
+          filePaths.push(urlData.path);
+        }
+      }
+
       const res = await fetch('/api/portfolio/guide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, instruction, currentYaml: yamlContent })
+        body: JSON.stringify({ 
+          companyId, 
+          instruction, 
+          currentYaml: yamlContent,
+          filePaths // Pass uploaded file paths to backend
+        })
       });
+      
       const data = await res.json();
       if (data.guide) {
         setGuide(data.guide);
         setYamlContent(data.guide.content_yaml);
         setInstruction('');
+        setFiles([]); // Clear files after successful update
       }
     } catch (err) {
       console.error(err);
+      alert('Failed to update guide');
     } finally {
       setLoading(false);
     }
@@ -758,39 +788,24 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
           Configuration Assistant
         </h3>
         <p className="text-sm text-white/60 mb-6">
-          Describe changes to the financial mapping guide in natural language. The AI will update the YAML configuration for you.
+          Upload board decks or financial reports to automatically generate the extraction guide.
         </p>
         
         <textarea
-          className="w-full bg-black/20 border border-white/10 rounded-lg p-4 text-white text-sm focus:outline-none focus:border-emerald-500/50 min-h-[120px] mb-4"
-          placeholder="e.g. 'Add a new metric for Net Revenue Retention mapped to 'NRR' column' or 'Change the fiscal year end to March'"
+          className="w-full bg-black/20 border border-white/10 rounded-lg p-4 text-white text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px] mb-4"
+          placeholder="Optional: Add specific instructions (e.g. 'Use EBITDA from the summary page')"
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
         />
         
-        <button
-          onClick={handleUpdate}
-          disabled={loading || !instruction}
-          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 mb-4"
-        >
-          {loading ? (
-            <>Processing...</>
-          ) : (
-            <>
-              Update Configuration
-              <ArrowLeft size={16} className="rotate-180" />
-            </>
-          )}
-        </button>
-
         {/* Integrated File Upload State */}
         {files.length > 0 ? (
-          <div className="mt-6 pt-6 border-t border-white/10 animate-in fade-in slide-in-from-top-2">
-            <h4 className="text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
-              <Upload size={14} className="text-blue-400" />
-              Files for Validation ({files.length})
-            </h4>
-            <div className="space-y-2 mb-4">
+          <div className="mb-4 space-y-3">
+            <div className="flex items-center justify-between text-sm text-white/80">
+               <span className="flex items-center gap-2"><Upload size={14} className="text-blue-400"/> {files.length} Reference Files</span>
+               <button onClick={() => setFiles([])} className="text-xs text-white/40 hover:text-white">Clear All</button>
+            </div>
+            <div className="space-y-2">
               {files.map((file, idx) => (
                 <div key={idx} className="flex items-center justify-between text-xs bg-black/20 p-2 rounded border border-white/5">
                   <span className="truncate text-white/70 flex-1">{file.name}</span>
@@ -798,20 +813,12 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
                 </div>
               ))}
             </div>
-            <button
-              onClick={handleTestRun}
-              disabled={isUploading}
-              className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 font-medium rounded-lg disabled:opacity-50 transition-colors flex justify-center items-center gap-2 text-sm"
-            >
-              {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Validate Extraction (Dry Run)'}
-            </button>
           </div>
         ) : (
-          <div className="mt-4 text-center border-t border-white/5 pt-6">
-             <p className="text-xs text-white/40 font-medium mb-2">VALIDATE CONFIGURATION</p>
+          <div className="mb-4 border-2 border-dashed border-white/10 rounded-lg p-6 text-center hover:border-white/20 hover:bg-white/5 transition-colors cursor-pointer relative">
              <p className="text-xs text-white/30 flex items-center justify-center gap-2 pointer-events-none">
                <Upload size={12} />
-               Drag & drop financial files here to test extraction logic
+               Drag & drop reference files here
              </p>
              <input
                 type="file"
@@ -822,6 +829,30 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
               />
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleUpdate}
+            disabled={loading || (!instruction && files.length === 0)}
+            className="py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
+          >
+            {loading ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <>
+                {files.length > 0 ? 'Analyze & Generate Guide' : 'Update Guide'}
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleTestRun}
+            disabled={isUploading || files.length === 0}
+            className="py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 font-medium rounded-lg disabled:opacity-50 transition-colors flex justify-center items-center gap-2 text-sm"
+          >
+            {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Validate Extraction (Dry Run)'}
+          </button>
+        </div>
       </div>
     </div>
   );
