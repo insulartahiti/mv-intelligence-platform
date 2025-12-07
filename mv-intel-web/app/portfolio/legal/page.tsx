@@ -836,6 +836,23 @@ export default function LegalAnalysisPage() {
             </div>
           </div>
         )}
+          </Tabs.Content>
+
+          <Tabs.Content value="config" className="focus:outline-none">
+            <LegalConfigEditor />
+          </Tabs.Content>
+
+          <Tabs.Content value="history" className="focus:outline-none">
+             <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-xl border border-white/10">
+               <History size={48} className="text-white/20 mb-4" />
+               <h3 className="text-xl font-medium text-white mb-2">Analysis History</h3>
+               <p className="text-white/50 mb-6">View and manage past legal document analyses.</p>
+               <Link href="/portfolio/legal/history" className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-white transition-colors">
+                 Go to History Page
+               </Link>
+             </div>
+          </Tabs.Content>
+        </Tabs.Root>
       </div>
     </div>
   );

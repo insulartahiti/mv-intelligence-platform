@@ -150,11 +150,6 @@ async function runPipeline() {
 
     log('✅ Parallel Processing Block Completed.');
 
-    // 3. Neo4j Sync (Initial)
-    // Sync existing edges (like Affinity data) to Neo4j so person enrichment can use graph context
-    // This is CRITICAL for correctly identifying investors (Owner/Deal Team edges)
-    await runScript('migrate-to-neo4j.ts'); // Neo4j sync doesn't support limit easily, runs fast anyway
-
     // 4. Person Enrichment
     // Enrich people (using company context from Neo4j/Postgres edges)
     // Runs after Org enrichment to ensure we have company descriptions/sectors

@@ -133,10 +133,6 @@ async function runEnrichmentPipeline() {
 
     log('✅ Parallel Processing Block Completed.');
 
-    // 3. Neo4j Sync (Initial)
-    // Sync existing edges + new enriched data to Neo4j
-    await runScript('migrate-to-neo4j.ts'); 
-
     // 4. Person Enrichment
     // Enrich people (using company context from Neo4j/Postgres edges)
     await runScript('../enhanced_person_embedding_generator.js', ['--incremental', ...limitArg]);

@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
+  const page = parseInt(searchParams.get('page') || '0');
+  const limit = parseInt(searchParams.get('limit') || '1000'); // Default batch size, can be overridden but max 1000 per request from client
 
   if (!code) {
     return NextResponse.json({ success: false, message: 'Code is required' }, { status: 400 });
@@ -21,49 +23,31 @@ export async function GET(request: NextRequest) {
 
   try {
     // Fetch entities that have this taxonomy code (prefix match for hierarchy)
-    // We fetch in batches to bypass the default 1000 row limit of Supabase API
-    const BATCH_SIZE = 1000;
-    let allData: any[] = [];
-    let hasMore = true;
-    let page = 0;
+    const { data, count, error } = await supabase
+        .schema('graph')
+        .from('entities')
+        .select('id, name, type, domain, industry, brief_description, taxonomy, pipeline_stage', { count: 'exact' })
+        .ilike('taxonomy', `${code}%`)
+        .order('name')
+        .range(page * limit, (page + 1) * limit - 1);
 
-    while (hasMore) {
-        const { data, error } = await supabase
-            .schema('graph')
-            .from('entities')
-            .select('id, name, type, domain, industry, brief_description, taxonomy, pipeline_stage')
-            .ilike('taxonomy', `${code}%`)
-            .order('name')
-            .range(page * BATCH_SIZE, (page + 1) * BATCH_SIZE - 1);
-
-        if (error) {
-            console.error('Error fetching taxonomy entities:', error);
-            // If we have partial data, we could return it, but safer to fail or break
-            if (allData.length === 0) {
-                 return NextResponse.json({ success: false, message: 'Database error' }, { status: 500 });
-            }
-            break; 
-        }
-
-        if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            if (data.length < BATCH_SIZE) {
-                hasMore = false;
-            } else {
-                page++;
-            }
-        } else {
-            hasMore = false;
-        }
-        
-        // Safety break to prevent infinite loops if DB is huge (cap at 10k for now)
-        if (allData.length > 10000) break; 
+    if (error) {
+        console.error('Error fetching taxonomy entities:', error);
+        return NextResponse.json({ success: false, message: 'Database error' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: allData });
+    return NextResponse.json({ 
+        success: true, 
+        data: data || [], 
+        pagination: {
+            total: count || 0,
+            page: page,
+            limit: limit,
+            hasMore: (count || 0) > (page + 1) * limit
+        }
+    });
   } catch (error) {
     console.error('Server error:', error);
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
   }
 }
-
