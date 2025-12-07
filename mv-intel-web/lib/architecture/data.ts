@@ -1,8 +1,8 @@
 import { ArchitectureData } from './types';
 
 export const architectureData: ArchitectureData = {
-  "lastUpdated": "2025-12-07T06:23:52.293Z",
-  "version": "1.2.0",
+  "lastUpdated": "2025-12-07T13:08:45.946Z",
+  "version": "4.6.0",
   "views": {
     "overview": {
       "id": "overview",

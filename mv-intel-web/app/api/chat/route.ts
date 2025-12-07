@@ -919,10 +919,33 @@ View full analysis at: /portfolio/legal/analysis?id=${a.id}`;
 
                                         const data = await perplexityRes.json();
                                         const answer = data.choices?.[0]?.message?.content || "No results found.";
-                                        const citations = data.citations || [];
+                                        
+                                        // --- ENHANCED DATA INGESTION (Dec 2025) ---
+                                        // Prioritize structured 'search_results' from Sonar Pro if available.
+                                        // Fallback to raw 'citations' array if not.
+                                        let richResults: any[] = data.search_results || [];
+                                        
+                                        if (richResults.length === 0 && data.citations && data.citations.length > 0) {
+                                            // Fallback: Map plain citations to basic objects
+                                            richResults = data.citations.map((url: string) => {
+                                                let domain = url;
+                                                try {
+                                                    domain = new URL(url).hostname.replace('www.', '');
+                                                } catch (e) { /* ignore */ }
+                                                return { 
+                                                    url, 
+                                                    title: domain, // Best guess for title is domain
+                                                    snippet: `Source URL: ${url}`,
+                                                    date: null
+                                                };
+                                            });
+                                        }
 
-                                        // Create Virtual Nodes from Citations
-                                        const newVirtualNodes = citations.map((url: string) => {
+                                        const citations = data.citations || []; // Keep raw array for text display if needed
+
+                                        // Create Virtual Nodes from Rich Results
+                                        const newVirtualNodes = richResults.map((result: any) => {
+                                            const url = result.url;
                                             let domain = url;
                                             try {
                                                 domain = new URL(url).hostname.replace('www.', '');
@@ -930,20 +953,22 @@ View full analysis at: /portfolio/legal/analysis?id=${a.id}`;
                                             
                                             return {
                                                 id: `ext-${crypto.randomUUID()}`, // Virtual ID
-                                                label: domain,
+                                                label: result.title || domain, // Use actual title if available
                                                 group: 'external', // SPECIAL GROUP
                                                 properties: {
-                                                    description: `Source for: ${args.query}`,
+                                                    description: result.snippet || `Source for: ${args.query}`,
                                                     url: url,
-                                                    ai_summary: `External Source: ${url}`,
-                                                    is_portfolio: false
+                                                    date: result.date || null, // "published_date" or similar
+                                                    ai_summary: `External Source: ${result.title || domain}`,
+                                                    is_portfolio: false,
+                                                    source_domain: domain
                                                 }
                                             };
                                         });
 
                                         finalExternalNodes.push(...newVirtualNodes);
                                         
-                                        contextText = `WEB SEARCH RESULTS:\n${answer}\n\nSOURCES:\n${citations.join('\n')}`;
+                                        contextText = `WEB SEARCH RESULTS:\n${answer}\n\nSOURCES:\n${richResults.map((r: any) => `- [${r.title}](${r.url})`).join('\n')}`;
                                         return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
                                     } catch (e: any) {
                                         console.error("Web Search Error:", e);

@@ -308,9 +308,9 @@ export default function ImportPage() {
                                         )}
                                     </div>
                                 </div>
-                                {job.status === 'success' && job.result?.companyId && (
+                                {(job.status === 'success' || job.status === 'partial') && (job.result?.companyId || job.companyId) && (
                                     <a 
-                                        href={`/portfolio/${job.result.companyId}?tab=financials`}
+                                        href={`/portfolio/${job.result?.companyId || job.companyId}?tab=financials`}
                                         className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white transition-colors flex items-center gap-2"
                                     >
                                         View Dashboard 
