@@ -414,9 +414,12 @@ export async function POST(req: NextRequest) {
       results
     }, { status: statusCode });
 
-  } catch (error) {
+  } catch (error: any) {
       console.error('Ingestion error:', error);
-      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      return NextResponse.json({ 
+        error: error.message || 'Internal Server Error',
+        details: error.cause || error.stack 
+      }, { status: 500 });
   }
 }
 

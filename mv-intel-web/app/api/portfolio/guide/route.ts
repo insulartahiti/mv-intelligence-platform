@@ -18,7 +18,10 @@ function getSupabaseClient() {
 async function extractFileContext(filePaths: string[], supabase: any): Promise<string> {
   let context = "";
   
-  for (const path of filePaths) {
+  for (const rawPath of filePaths) {
+    // Strip bucket prefix if present
+    const path = rawPath.replace(/^financial-docs\//, '');
+    
     try {
       // Download file from storage
       const { data, error } = await supabase.storage
@@ -139,6 +142,8 @@ export async function POST(req: NextRequest) {
     // Helper to run completion with retries/fallback
     const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
       try {
+         if (!process.env.OPENAI_API_KEY) throw new Error("OpenAI API Key missing");
+
          const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
     Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
     

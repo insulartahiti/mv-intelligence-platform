@@ -573,11 +573,7 @@ export default function PortfolioCompanyPage({ params, searchParams }: { params:
               </div>
             </div>
           </Tabs.Content>
-
-import { FinancialsDashboard } from '@/app/portfolio/components/FinancialsDashboard';
-
-// ...
-
+          
           <Tabs.Content value="financials">
              <FinancialsDashboard companyId={params.id} />
           </Tabs.Content>
