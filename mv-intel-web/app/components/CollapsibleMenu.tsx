@@ -35,7 +35,7 @@ export default function CollapsibleMenu() {
   if (!user) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col items-end font-sans">
+    <div className="fixed top-4 right-4 z-[100] flex flex-col items-end font-sans">
       <div className="flex items-center bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-full shadow-lg ring-offset-2 focus-within:ring-2 ring-blue-500/50">
         <button
           onClick={() => window.location.href = '/'}
