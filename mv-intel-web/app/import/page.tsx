@@ -23,6 +23,14 @@ export default function ImportPage() {
   const [guideUsed, setGuideUsed] = useState<any>(null);
   const [extractedCompany, setExtractedCompany] = useState<string>('');
   
+  // Progress State
+  const [progressState, setProgressState] = useState<{
+    stage: 'uploading' | 'processing' | 'complete' | 'idle';
+    currentFile: number;
+    totalFiles: number;
+    fileName?: string;
+  }>({ stage: 'idle', currentFile: 0, totalFiles: 0 });
+  
   // Local mode state
   const [localMode, setLocalMode] = useState(true); // Default to local for development
   const [useCache, setUseCache] = useState(true);
@@ -136,6 +144,7 @@ export default function ImportPage() {
       
       setIsUploading(true);
       setUploadStatus('idle');
+      setProgressState({ stage: 'uploading', currentFile: 0, totalFiles: files.length, fileName: 'Initializing...' });
       setStatusMessage(`Running ${localMode ? 'LOCAL' : 'dry'} run with ${testCompany} guide...`);
       setDryRunResults([]); // Clear previous results
 
@@ -144,6 +153,12 @@ export default function ImportPage() {
           const uploadedPaths: string[] = [];
           for (let i = 0; i < files.length; i++) {
               const file = files[i];
+              setProgressState({ 
+                  stage: 'uploading', 
+                  currentFile: i + 1, 
+                  totalFiles: files.length, 
+                  fileName: file.name 
+              });
               setStatusMessage(`Uploading test file ${i + 1}...`);
               const urlRes = await fetch(
                   `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(testCompany)}`
@@ -160,6 +175,7 @@ export default function ImportPage() {
               uploadedPaths.push(urlData.path);
           }
 
+          setProgressState({ stage: 'processing', currentFile: files.length, totalFiles: files.length });
           setStatusMessage(localMode ? 'Processing locally (checking cache)...' : 'Processing test run...');
           
           // Use local endpoint if local mode is enabled
@@ -188,6 +204,7 @@ export default function ImportPage() {
               setGuideUsed(data.guide_used || null);
               setExtractedCompany(data.company || selectedCompany);
               setUploadStatus('success');
+              setProgressState({ stage: 'complete', currentFile: files.length, totalFiles: files.length });
               const cacheInfo = localMode && data.summary?.cached > 0 
                   ? ` (${data.summary.cached} from cache)` 
                   : '';
@@ -227,6 +244,7 @@ export default function ImportPage() {
 
     setIsUploading(true);
     setUploadStatus('idle');
+    setProgressState({ stage: 'uploading', currentFile: 0, totalFiles: files.length });
     setStatusMessage('Uploading files...');
 
     try {
@@ -236,6 +254,12 @@ export default function ImportPage() {
         if (files.length > 0) {
             for (let i = 0; i < files.length; i++) {
             const file = files[i];
+            setProgressState({ 
+                stage: 'uploading', 
+                currentFile: i + 1, 
+                totalFiles: files.length, 
+                fileName: file.name 
+            });
             setStatusMessage(`Uploading file ${i + 1} of ${files.length}...`);
             
             // Step 1: Get signed upload URL from our API
@@ -268,6 +292,7 @@ export default function ImportPage() {
         }
     }
 
+    setProgressState({ stage: 'processing', currentFile: files.length, totalFiles: files.length });
     setStatusMessage('Processing...');
 
         // 2. Trigger Ingestion API with paths
@@ -301,10 +326,12 @@ export default function ImportPage() {
         // API returns: 'success' (all files), 'partial' (some failed), 'error' (all failed)
         if (data.status === 'success') {
             setUploadStatus('success');
+            setProgressState({ stage: 'complete', currentFile: files.length, totalFiles: files.length });
             setStatusMessage(`Ingestion Complete: ${data.summary?.success || 0} files processed`);
             setShowResolutionModal(false);
             setTimeout(() => {
                 setUploadStatus('idle');
+                setProgressState({ stage: 'idle', currentFile: 0, totalFiles: 0 });
                 setFiles([]);
                 setTextInput('');
                 setSelectedCompany('');
@@ -1379,6 +1406,80 @@ export default function ImportPage() {
           </Tabs.Content>
         </Tabs.Root>
 
+        {/* Progress Overlay */}
+        {isUploading && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-lg bg-gray-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                <div className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <Loader2 size={24} className="animate-spin" />
+                    </div>
+                    <div>
+                    <h3 className="text-lg font-semibold text-white">Ingesting Financial Data</h3>
+                    <p className="text-white/60 text-sm">Processing {files.length} document{files.length !== 1 ? 's' : ''} with AI...</p>
+                    </div>
+                </div>
+                
+                <div className="space-y-4">
+                    {/* Phase 1: Upload */}
+                    <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors ${
+                        progressState.stage === 'uploading' || progressState.stage === 'processing' || progressState.stage === 'complete'
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-white/10 text-white/40'
+                    }`}>1</div>
+                    <div className="flex-1">
+                        <div className="flex justify-between text-sm mb-1">
+                        <span className="text-white/80">Uploading Documents</span>
+                        <span className="text-white/40">
+                            {progressState.stage === 'uploading' 
+                                ? `${progressState.currentFile}/${progressState.totalFiles}` 
+                                : progressState.stage === 'idle' ? 'Pending' : 'Complete'}
+                        </span>
+                        </div>
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-emerald-500 transition-all duration-500"
+                            style={{ width: `${progressState.stage === 'uploading' ? (progressState.currentFile / Math.max(progressState.totalFiles, 1)) * 100 : (progressState.stage === 'idle' ? 0 : 100)}%` }}
+                        />
+                        </div>
+                        {progressState.stage === 'uploading' && progressState.fileName && (
+                            <p className="text-xs text-white/40 mt-1 truncate">Uploading: {progressState.fileName}</p>
+                        )}
+                    </div>
+                    </div>
+                    
+                    {/* Phase 2: Processing */}
+                    <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors ${
+                        progressState.stage === 'processing' || progressState.stage === 'complete'
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-white/10 text-white/40'
+                    }`}>2</div>
+                    <div className="flex-1">
+                        <div className="flex justify-between text-sm mb-1">
+                        <span className="text-white/80">AI Extraction & Reconciliation</span>
+                        <span className="text-white/40">
+                            {progressState.stage === 'processing' ? 'In Progress...' : (progressState.stage === 'complete' ? 'Complete' : 'Pending')}
+                        </span>
+                        </div>
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden relative">
+                        {progressState.stage === 'processing' && (
+                            <div className="absolute inset-0 bg-emerald-500/20 animate-pulse" />
+                        )}
+                        <div 
+                            className="h-full bg-emerald-500 transition-all duration-500"
+                            style={{ width: `${progressState.stage === 'complete' ? 100 : (progressState.stage === 'processing' ? 60 : 0)}%` }}
+                        />
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+            </div>
+        )}
       </div>
     </div>
   );

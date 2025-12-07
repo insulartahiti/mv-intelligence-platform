@@ -140,20 +140,17 @@ async function runPipeline() {
     // - embed_interactions: Updates `interactions` table (embeddings)
     // - summarize_interactions: Updates `entity_notes_rollup` table
     // - enhanced_embedding_generator: Updates `entities` table (org enrichment)
+    // - enhanced_person_embedding_generator: Updates `entities` table (person enrichment)
     // These tasks touch disjoint data/tables and can run safely in parallel.
     
     await Promise.all([
         runScript('embed_interactions.ts', limitArg),
         runScript('summarize_interactions.ts', limitArg),
-        runScript('../enhanced_embedding_generator.js', ['--incremental', ...limitArg])
+        runScript('../enhanced_embedding_generator.js', ['--incremental', ...limitArg]),
+        runScript('../enhanced_person_embedding_generator.js', ['--incremental', ...limitArg])
     ]);
 
     log('✅ Parallel Processing Block Completed.');
-
-    // 4. Person Enrichment
-    // Enrich people (using company context from Neo4j/Postgres edges)
-    // Runs after Org enrichment to ensure we have company descriptions/sectors
-    await runScript('../enhanced_person_embedding_generator.js', ['--incremental', ...limitArg]);
 
     // 5. Relationship Extraction
     // Infer NEW edges from the newly enriched data

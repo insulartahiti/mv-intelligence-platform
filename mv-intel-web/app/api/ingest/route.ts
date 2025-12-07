@@ -5,7 +5,7 @@
  * Accepts: { companySlug: string, filePaths: string[], notes?: string }
  * Returns: { status, company, summary, results }
  * 
- * @version 3.1.0 - Unified extraction pipeline (GPT-5.1 + Perplexity + Visual Audit)
+ * @version 3.2.0 - Parallelized extraction pipeline
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
@@ -100,6 +100,43 @@ function extractPeriodDateFromFilename(filename: string): string | null {
   return null;
 }
 
+// Simple concurrency limiter
+async function pLimit<T>(concurrency: number, tasks: (() => Promise<T>)[]): Promise<PromiseSettledResult<T>[]> {
+    const results: PromiseSettledResult<T>[] = [];
+    const executing: Promise<void>[] = [];
+    
+    // Wrapper to handle individual task execution and result tracking
+    const runTask = async (task: () => Promise<T>, index: number) => {
+        try {
+            const value = await task();
+            results[index] = { status: 'fulfilled', value };
+        } catch (reason) {
+            results[index] = { status: 'rejected', reason };
+        }
+    };
+
+    // Pre-allocate results array to maintain order
+    for (let i = 0; i < tasks.length; i++) {
+        results.push({ status: 'rejected', reason: 'Not executed' }); // Placeholder
+    }
+
+    for (let i = 0; i < tasks.length; i++) {
+        const p = runTask(tasks[i], i).then(() => {
+            // Remove self from executing list
+            executing.splice(executing.indexOf(p), 1);
+        });
+        
+        executing.push(p);
+        
+        if (executing.length >= concurrency) {
+            await Promise.race(executing);
+        }
+    }
+    
+    await Promise.all(executing);
+    return results;
+}
+
 // Process files from Storage - POST handler for financial data ingestion
 // Accepts: { companySlug: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
@@ -124,8 +161,6 @@ export async function POST(req: NextRequest) {
         status: 'error'
       }, { status: 400 });
     }
-
-    const results = [];
     
     // Prepare items to process (Storage files + Text input)
     const itemsToProcess = [
@@ -133,10 +168,11 @@ export async function POST(req: NextRequest) {
         ...(notes && notes.trim().length > 0 ? [{ type: 'text', content: notes }] : [])
     ];
 
-    for (const item of itemsToProcess) {
+    console.log(`[Ingest] Starting parallel processing for ${itemsToProcess.length} items for ${companySlug}`);
+
+    // Define the async task for processing a single item
+    const processItemTask = async (item: any) => {
         const itemLabel = item.type === 'storage' ? item.path : 'Text Input';
-        // Define filePath for compatibility with existing code references
-        // For text input, use a placeholder that won't be used for storage operations
         const filePath = (item.type === 'storage' ? item.path : 'text_input') as string;
         
         console.log(`[Ingest] Processing ${itemLabel} for ${companySlug} (Dry Run: ${!!dryRun})...`);
@@ -159,507 +195,218 @@ export async function POST(req: NextRequest) {
             
             // 2. Load Guide
             const guide = loadPortcoGuide(companySlug);
-            
-            // Validate guide structure
             const companyName = guide.company_metadata?.name || (guide as any).company?.name;
-            if (!companyName) {
-                 throw new Error(`Invalid guide structure for ${companySlug}: Missing company name`);
-            }
+            if (!companyName) throw new Error(`Invalid guide structure for ${companySlug}: Missing company name`);
 
-            // 2b. Resolve Company ID from Knowledge Graph (graph.entities)
+            // 2b. Resolve Company ID (Can be cached or parallelized - done per file for safety/retries)
+            // ... (keeping resolution logic inside task for robustness, though slightly redundant)
             let companyId: string | null = null;
-
-            // If dry run, we can skip strict company resolution or mock it if it fails
-            // This allows testing parsing logic even if DB sync is broken
             try {
-                // If forced ID is provided (manual override), verify it exists and use it
                 if (forceCompanyId) {
                     const { data: forcedMatch, error: forcedError } = await supabase
-                        .schema('graph')
-                        .from('entities')
-                        .select('id, name')
-                        .eq('id', forceCompanyId)
-                        .single();
-                    
+                        .schema('graph').from('entities').select('id, name').eq('id', forceCompanyId).single();
                     if (forcedError || !forcedMatch) {
-                        if (!dryRun) throw new Error(`Forced company ID ${forceCompanyId} not found in Knowledge Graph.`);
-                        console.warn(`[Dry Run] Forced company ID ${forceCompanyId} not found, proceeding with mock ID.`);
-                        companyId = '00000000-0000-0000-0000-000000000000';
-                    } else {
-                        companyId = forcedMatch.id;
-                        console.log(`[Ingest] Using forced company ID: ${companyId} (${forcedMatch.name})`);
-                    }
+                        if (!dryRun) throw new Error(`Forced company ID ${forceCompanyId} not found.`);
+                         companyId = '00000000-0000-0000-0000-000000000000';
+                    } else companyId = forcedMatch.id;
                 } else {
-                    // Strategy: Try exact match first, then fuzzy match (ILIKE) as fallback
-                    // ... (existing resolution logic) ...
-                    
-                    // Step 1: Try exact match
-                    const { data: exactMatch, error: exactError } = await supabase
-                        .schema('graph')
-                        .from('entities')
-                        .select('id, name')
-                        .eq('type', 'organization')
-                        .eq('name', companyName)
-                        .maybeSingle();
-                    
-                    if (exactMatch) {
-                        companyId = exactMatch.id;
-                        console.log(`[Ingest] Found exact company match: ${exactMatch.name}`);
-                    } else {
-                        // Step 2: Try fuzzy match
-                        const coreName = companyName
-                            .replace(/\s+(GmbH|Inc\.?|LLC|Ltd\.?|Corp\.?|AG|SE|SA|SAS|BV|NV)$/i, '')
-                            .trim();
-                        
+                     // Step 1: Try exact match
+                     const { data: exactMatch } = await supabase
+                        .schema('graph').from('entities').select('id, name').eq('type', 'organization').eq('name', companyName).maybeSingle();
+                    if (exactMatch) companyId = exactMatch.id;
+                    else {
+                        // Step 2: Fuzzy match
+                        const coreName = companyName.replace(/\s+(GmbH|Inc\.?|LLC|Ltd\.?|Corp\.?|AG|SE|SA|SAS|BV|NV)$/i, '').trim();
                         const firstWord = coreName.split(' ')[0];
-                        
-                        console.log(`[Ingest] No exact match for '${companyName}', trying fuzzy match with '${coreName}'...`);
-                        
                         let candidates: any[] = [];
-                        
                         if (firstWord.length > 2) {
-                            const { data, error } = await supabase
-                                .schema('graph')
-                                .from('entities')
-                                .select('id, name')
-                                .eq('type', 'organization')
-                                .ilike('name', `${firstWord}%`)
-                                .limit(10);
-                                
-                            if (!error && data) {
-                                candidates = data;
-                            }
+                            const { data } = await supabase.schema('graph').from('entities').select('id, name').eq('type', 'organization').ilike('name', `${firstWord}%`).limit(10);
+                            if (data) candidates = data;
                         }
-                        
-                        const matches = candidates.filter(c => {
-                            const dbName = c.name.toLowerCase();
-                            const guideNameLower = companyName.toLowerCase();
-                            const coreNameLower = coreName.toLowerCase();
-                            if (guideNameLower.includes(dbName)) return true;
-                            if (dbName.includes(coreNameLower)) return true;
-                            return false;
-                        });
-                        
-                        if (matches.length === 1) {
-                            companyId = matches[0].id;
-                            console.log(`[Ingest] Found fuzzy company match: '${matches[0].name}'`);
-                        } else if (matches.length > 1) {
-                            if (dryRun) {
-                                console.warn(`[Dry Run] Ambiguous company match, proceeding with mock ID.`);
-                                companyId = '00000000-0000-0000-0000-000000000000';
-                            } else {
-                                results.push({
-                                    file: filePath,
-                                    status: 'company_not_found',
-                                    error: `Multiple companies match '${companyName}'`,
-                                    candidates: matches
-                                });
-                                continue;
-                            }
-                        } else {
-                            if (dryRun) {
-                                console.warn(`[Dry Run] Company not found, proceeding with mock ID.`);
-                                companyId = '00000000-0000-0000-0000-000000000000';
-                            } else {
-                                results.push({
-                                    file: filePath,
-                                    status: 'company_not_found',
-                                    error: `Company '${companyName}' not found in Knowledge Graph`,
-                                    candidates: candidates 
-                                });
-                                continue;
-                            }
-                        }
+                        const matches = candidates.filter(c => c.name.toLowerCase().includes(coreName.toLowerCase()) || companyName.toLowerCase().includes(c.name.toLowerCase()));
+                        if (matches.length === 1) companyId = matches[0].id;
+                        else if (!dryRun) {
+                            return { file: filePath, status: 'company_not_found', error: matches.length > 1 ? `Multiple matches for '${companyName}'` : `Company '${companyName}' not found` };
+                        } else companyId = '00000000-0000-0000-0000-000000000000';
                     }
                 }
-            } catch (resError) {
-                if (dryRun) {
-                    console.warn(`[Dry Run] Resolution error ignored:`, resError);
-                    companyId = '00000000-0000-0000-0000-000000000000';
-                } else {
-                    throw resError;
-                }
+            } catch (err: any) {
+                if (!dryRun) throw err;
+                companyId = '00000000-0000-0000-0000-000000000000';
             }
-            
-            // 3. Parse & Map
-            // ... (existing parse logic) ...
-            
-            // Register source file in DB (SKIP IF DRY RUN)
+
+            // Register source file
             let sourceFileId = null;
             if (!dryRun) {
-                const { data: sourceFile, error: sourceFileError } = await supabase
-                    .from('dim_source_files')
-                    .insert({
-                        company_id: companyId,
-                        filename: fileMeta.filename,
-                        storage_path: filePath,
-                        file_type: fileMeta.filename.split('.').pop()?.toLowerCase() || 'unknown'
-                    })
-                    .select()
-                    .single();
-
-                if (sourceFileError) {
-                    console.error('Error creating source file record:', sourceFileError);
-                } else {
-                    sourceFileId = sourceFile.id;
-                }
-            } else {
-                console.log(`[Dry Run] Skipping dim_source_files insert`);
+                const { data: sourceFile } = await supabase.from('dim_source_files').insert({
+                    company_id: companyId, filename: fileMeta.filename, storage_path: filePath, file_type: fileMeta.filename.split('.').pop()?.toLowerCase() || 'unknown'
+                }).select().single();
+                if (sourceFile) sourceFileId = sourceFile.id;
             }
 
-            // 3. Unified Extraction (GPT-5.1 Vision + Perplexity) - pass guide for context
+            // 3. Unified Extraction (Parallel Bottleneck)
             console.log(`[Ingest] Starting unified extraction for ${fileMeta.filename}`);
             const extractedData: UnifiedExtractionResult = await extractFinancialDocument(fileMeta, guide);
-            const fileType = extractedData.fileType;
             
-            console.log(`[Ingest] Extraction complete: ${extractedData.pageCount} pages, ${Object.keys(extractedData.financial_summary?.key_metrics || {}).length} metrics`);
-            if (extractedData.benchmarks) {
-                console.log(`[Ingest] Perplexity benchmarks: ${Object.keys(extractedData.benchmarks.industry_benchmarks || {}).length} comparisons`);
-            }
-
-            // 4. Extract period date
-            // Priority: 1) GPT-5.1 financial_summary (from document content)
-            //           2) Filename patterns (fallback)
+            // 4. Period Extraction
             const summary = extractedData.financial_summary;
-            let periodDate: string | null = null;
-            let periodType = summary?.period_type || 'month';
+            let periodDate = summary?.period ? extractPeriodDateFromFilename(summary.period) : null;
+            if (!periodDate) periodDate = extractPeriodDateFromFilename(fileMeta.filename);
             
-            // Try GPT-5.1 extracted period first (from document content)
-            if (summary?.period) {
-                periodDate = extractPeriodDateFromFilename(summary.period);
-                if (periodDate) {
-                    console.log(`[Ingest] Period from document: ${summary.period} → ${periodDate} (${periodType})`);
-                }
-            }
+            if (!periodDate) throw new Error(`Could not determine reporting period for file '${fileMeta.filename}'`);
             
-            // Fallback to filename
-            if (!periodDate) {
-                periodDate = extractPeriodDateFromFilename(fileMeta.filename);
-                if (periodDate) {
-                    console.log(`[Ingest] Period from filename: ${periodDate}`);
-                }
-            }
+            const lineItems = await mapDataToSchema(extractedData.fileType, extractedData, guide, fileMeta.filename, periodDate);
             
-            if (!periodDate) {
-                console.error(`[Ingest] CRITICAL: Could not determine reporting period for ${fileMeta.filename}`);
-                throw new Error(
-                    `Could not determine reporting period for file '${fileMeta.filename}'. ` +
-                    `Ensure the document or filename contains a date (e.g., "Q3 2025", "September 2025").`
-                );
-            }
-            
-            const lineItems = await mapDataToSchema(fileType, extractedData, guide, fileMeta.filename, periodDate);
-            
-            // 4b. Generate Audit Snippets & Prepare New Fact Records
-            const processedPages = new Set<string>(); 
-            const snippetUrls: Record<string, string> = {}; // Cache page -> URL mapping
+            // 4b. Snippets & Fact Construction
             const newFactRecords: LocalFactRecord[] = [];
             const uniqueLineItems = new Map<string, { name: string, category: string }>();
 
-            // Collect unique line items
-            for (const item of lineItems) {
+             for (const item of lineItems) {
                 if (!uniqueLineItems.has(item.line_item_id)) {
                     const commonMetric = getMetricById(item.line_item_id);
-                    let name = item.line_item_id;
-                    let category = 'Uncategorized';
+                    let name = commonMetric?.name || item.line_item_id.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    let category = commonMetric?.category || 'Uncategorized';
+                    
+                    const guideLineItem = guide.mapping_rules?.line_items?.[item.line_item_id];
+                    const guideMetric = (guide as any).metrics_mapping?.[item.line_item_id];
+                    if (guideMetric?.labels?.length) { name = guideMetric.labels[0]; category = 'Reported Metric'; }
+                    else if (guideLineItem?.label_match) { name = guideLineItem.label_match; category = 'Line Item'; }
 
-                    if (commonMetric) {
-                        name = commonMetric.name;
-                        category = commonMetric.category;
-                    } else {
-                        const guideLineItem = guide.mapping_rules?.line_items?.[item.line_item_id];
-                        const guideMetric = (guide as any).metrics_mapping?.[item.line_item_id];
-
-                        if (guideMetric && guideMetric.labels && guideMetric.labels.length > 0) {
-                            name = guideMetric.labels[0];
-                            category = 'Reported Metric';
-                        } else if (guideLineItem && guideLineItem.label_match) {
-                            name = guideLineItem.label_match;
-                            category = 'Line Item';
-                        } else {
-                            name = item.line_item_id
-                                .split('_')
-                                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                                .join(' ');
-                        }
-                    }
                     uniqueLineItems.set(item.line_item_id, { name, category });
                 }
             }
 
-            // Upsert Dimensions (SKIP IF DRY RUN)
+            // Upsert Dimensions (Sequential per file is fine, mostly reads)
             if (!dryRun && uniqueLineItems.size > 0) {
-                const dimRows = Array.from(uniqueLineItems.entries()).map(([id, meta]) => ({
-                    id,
-                    name: meta.name,
-                    category: meta.category
-                }));
-
-                const { error: dimError } = await supabase
-                    .from('dim_line_item')
-                    .upsert(dimRows, { onConflict: 'id' });
-
-                if (dimError) {
-                    console.error('Error upserting dim_line_item:', dimError);
-                }
-            } else if (dryRun) {
-                console.log(`[Dry Run] Skipping dim_line_item upsert (${uniqueLineItems.size} items)`);
+                 await supabase.from('dim_line_item').upsert(
+                    Array.from(uniqueLineItems.entries()).map(([id, meta]) => ({ id, name: meta.name, category: meta.category })), 
+                    { onConflict: 'id' }
+                );
             }
+
+            const processedPages = new Set<string>();
+            const snippetUrls: Record<string, string> = {};
 
             for (const item of lineItems) {
                 let snippetUrl = undefined;
-
-                // Generate audit snippets for PDFs with visual highlighting (both live and dry run)
-                if (fileType === 'pdf' && item.source_location.page) {
-                    const pageNum = item.source_location.page;
-                    const snippetKey = `${filePath}_page_${pageNum}`;
-                    
-                    // Check cache first
-                    if (snippetUrls[snippetKey]) {
-                        snippetUrl = snippetUrls[snippetKey];
-                    } else if (!processedPages.has(snippetKey)) {
-                        console.log(`[Ingest] Generating audit snippet for ${fileMeta.filename} page ${pageNum}...`);
-                        try {
-                            // Collect all annotations for this page (metrics with bboxes)
-                            const pageAnnotations: SourceAnnotation[] = lineItems
-                                .filter(li => li.source_location.page === pageNum && li.source_location.bbox)
-                                .map(li => ({
-                                    label: li.line_item_id.replace(/_/g, ' ').toUpperCase(),
-                                    value: li.amount.toLocaleString(),
-                                    bbox: li.source_location.bbox
-                                }));
+                if (extractedData.fileType === 'pdf' && item.source_location.page) {
+                     const pageNum = item.source_location.page;
+                     const snippetKey = `${filePath}_page_${pageNum}`;
+                     
+                     if (snippetUrls[snippetKey]) snippetUrl = snippetUrls[snippetKey];
+                     else if (!processedPages.has(snippetKey)) {
+                         try {
+                            const pageAnnotations = lineItems.filter(li => li.source_location.page === pageNum && li.source_location.bbox)
+                                .map(li => ({ label: li.line_item_id.replace(/_/g, ' ').toUpperCase(), value: li.amount.toLocaleString(), bbox: li.source_location.bbox }));
                             
-                            console.log(`[Ingest] Adding ${pageAnnotations.length} highlight annotations to page ${pageNum}`);
-                            
-                            // Generate snippet with visual highlights
-                            const snippetBuffer = await extractPageSnippet(
-                                fileMeta.buffer, 
-                                pageNum,
-                                pageAnnotations.length > 0 ? pageAnnotations : undefined
-                            );
-                            
+                            const snippetBuffer = await extractPageSnippet(fileMeta.buffer, pageNum, pageAnnotations.length > 0 ? pageAnnotations : undefined);
                             const safeFilename = fileMeta.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
-                            // Use temp prefix for dry runs to distinguish from production snippets
                             const prefix = dryRun ? `_dry_run/${companySlug}` : companySlug;
                             const snippetPath = `${prefix}/${Date.now()}_${safeFilename}_page_${pageNum}.pdf`;
                             
-                            const { error: uploadError } = await supabase.storage
-                                .from('financial-snippets')
-                                .upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
-                                
-                            if (uploadError) {
-                                console.error('Failed to upload snippet:', uploadError);
-                            } else {
-                                // Generate signed URL for viewing (1 hour validity)
-                                const { data: signedData } = await supabase.storage
-                                    .from('financial-snippets')
-                                    .createSignedUrl(snippetPath, 3600);
-                                    
-                                if (signedData?.signedUrl) {
-                                    snippetUrls[snippetKey] = signedData.signedUrl;
-                                    snippetUrl = signedData.signedUrl;
-                                }
-                            }
-                        } catch (err) {
-                            console.error(`Failed to generate/upload snippet for page ${pageNum}`, err);
-                        } finally {
-                            processedPages.add(snippetKey);
-                        }
-                    }
+                            await supabase.storage.from('financial-snippets').upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
+                            const { data: signed } = await supabase.storage.from('financial-snippets').createSignedUrl(snippetPath, 3600);
+                            if (signed?.signedUrl) { snippetUrl = signed.signedUrl; snippetUrls[snippetKey] = snippetUrl; }
+                         } catch (e) { console.error('Snippet gen failed', e); }
+                         processedPages.add(snippetKey);
+                     }
                 }
                 
-                // Construct LocalFactRecord for reconciliation
                 newFactRecords.push({
-                  line_item_id: item.line_item_id,
-                  amount: item.amount,
-                  scenario: (item.scenario || 'actual').toLowerCase(),
-                  date: item.date || periodDate, // Ensure extraction has date
-                  source_file: fileMeta.filename,
-                  source_location: item.source_location,
-                  snippet_url: snippetUrl
+                  line_item_id: item.line_item_id, amount: item.amount, scenario: (item.scenario || 'actual').toLowerCase(),
+                  date: item.date || periodDate, source_file: fileMeta.filename, source_location: item.source_location, snippet_url: snippetUrl
                 });
             }
 
-            // 4c. Reconcile with Existing Facts (SKIP IF DRY RUN)
+            // 4c. Reconcile & Persist
             let finalFacts = newFactRecords;
-            const filenameToId: Record<string, string> = { [fileMeta.filename]: sourceFileId || '' };
-
+            let metrics: any[] = [];
+            
             if (!dryRun && companyId) {
-                // Fetch existing facts to reconcile against
-                // Identify all dates involved to scope the query
+                // Fetch existing facts
                 const datesOfInterest = Array.from(new Set(newFactRecords.map(f => f.date)));
+                const { data: existingData } = await supabase.from('fact_financials').select('*, dim_source_files(id, filename)').eq('company_id', companyId).in('date', datesOfInterest);
                 
-                const { data: existingFactsData, error: existingFactsError } = await supabase
-                    .from('fact_financials')
-                    .select('*, dim_source_files(id, filename)')
-                    .eq('company_id', companyId)
-                    .in('date', datesOfInterest);
-                
-                if (existingFactsError) {
-                   console.error('Error fetching existing facts:', existingFactsError);
-                }
-
-                const existingFacts: LocalFactRecord[] = (existingFactsData || []).map((f: any) => {
-                    // Cache source file ID mapping
-                    if (f.dim_source_files?.filename && f.dim_source_files?.id) {
-                        filenameToId[f.dim_source_files.filename] = f.dim_source_files.id;
-                    }
-                    return {
-                        line_item_id: f.line_item_id,
-                        amount: f.amount,
-                        scenario: f.scenario,
-                        date: f.date,
-                        source_file: f.dim_source_files?.filename || 'unknown',
-                        source_location: f.source_location,
-                        priority: f.priority,
-                        explanation: f.explanation,
-                        changelog: f.changelog,
-                        snippet_url: f.snippet_url
-                    };
-                });
-
-                // Get variance explanations from extraction result
-                const varianceExplanations: VarianceExplanation[] = 
-                    extractedData.financial_summary?.variance_explanations || [];
-                
-                // Run Reconciliation
-                const reconciliationResult: ReconciliationResult = reconcileFacts(
-                    newFactRecords,
-                    existingFacts,
-                    varianceExplanations
-                );
-                
-                console.log(`[Ingest] Reconciliation: ${reconciliationResult.summary.inserted} inserted, ${reconciliationResult.summary.updated} updated, ${reconciliationResult.summary.ignored} ignored, ${reconciliationResult.summary.conflicts} conflicts`);
-                
-                finalFacts = reconciliationResult.finalFacts;
-                
-                // TODO: Save conflicts to a separate table if needed (currently we just return them in response or rely on flags)
-            }
-
-            // 4d. Persist Reconciled Facts (SKIP IF DRY RUN)
-            if (!dryRun && finalFacts.length > 0) {
-                const factRows = finalFacts.map(fact => ({
-                    company_id: companyId,
-                    date: fact.date,
-                    line_item_id: fact.line_item_id,
-                    amount: fact.amount,
-                    currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'EUR',
-                    scenario: fact.scenario,
-                    source_file_id: filenameToId[fact.source_file] || sourceFileId, // Resolve ID from map
-                    source_location: fact.source_location,
-                    priority: fact.priority,
-                    explanation: fact.explanation,
-                    changelog: fact.changelog,
-                    snippet_url: fact.snippet_url
+                const existingFacts: LocalFactRecord[] = (existingData || []).map((f: any) => ({
+                    line_item_id: f.line_item_id, amount: f.amount, scenario: f.scenario, date: f.date,
+                    source_file: f.dim_source_files?.filename || 'unknown', source_location: f.source_location, priority: f.priority,
+                    explanation: f.explanation, changelog: f.changelog, snippet_url: f.snippet_url
                 }));
 
-                // Use UPSERT with the unique constraint
-                const { error: factsError } = await supabase
-                    .from('fact_financials')
-                    .upsert(factRows, { 
-                        onConflict: 'company_id,date,scenario,line_item_id',
-                        ignoreDuplicates: false 
-                    });
-                
-                if (factsError) {
-                    console.error('Error persisting fact_financials:', factsError);
-                    throw new Error('Failed to save financial data to database');
+                const reconciliation = reconcileFacts(newFactRecords, existingFacts, extractedData.financial_summary?.variance_explanations || []);
+                finalFacts = reconciliation.finalFacts;
+
+                if (finalFacts.length > 0) {
+                     await supabase.from('fact_financials').upsert(finalFacts.map(fact => ({
+                        company_id: companyId, date: fact.date, line_item_id: fact.line_item_id, amount: fact.amount,
+                        currency: guide.company_metadata?.currency || 'EUR', scenario: fact.scenario,
+                        source_file_id: sourceFileId, source_location: fact.source_location, priority: fact.priority,
+                        explanation: fact.explanation, changelog: fact.changelog, snippet_url: fact.snippet_url
+                    })), { onConflict: 'company_id,date,scenario,line_item_id' });
                 }
+
+                // Compute Metrics
+                const factsMap: Record<string, number> = {};
+                finalFacts.forEach(item => { if (item.scenario?.toLowerCase() === 'actual') factsMap[item.line_item_id] = item.amount; });
+                metrics = computeMetricsForPeriod(companyId, periodDate, factsMap);
+                if (metrics.length > 0) await saveMetricsToDb(metrics, companyId, supabase);
             } else if (dryRun) {
-                console.log(`[Dry Run] Skipping fact_financials insert (${finalFacts.length} rows)`);
+                 // For dry run, just compute metrics from new facts
+                 const factsMap: Record<string, number> = {};
+                 newFactRecords.forEach(item => { if (item.scenario?.toLowerCase() === 'actual') factsMap[item.line_item_id] = item.amount; });
+                 metrics = computeMetricsForPeriod(companyId || 'mock', periodDate, factsMap);
             }
 
-            // 5. Compute Metrics (only from Actuals, not Budget)
-            // Compute from FINAL reconciled facts to ensure consistency
-            const facts: Record<string, number> = {};
-            
-            finalFacts.forEach(item => {
-                // Only include Actuals in metric computation
-                if (item.scenario && item.scenario.toLowerCase() !== 'actual') {
-                    return; 
-                }
-                
-                // Deduplicate: use latest value (reconciliation has already resolved conflicts)
-                facts[item.line_item_id] = item.amount;
-            });
-            
-            // Use mock ID for metrics computation if company not resolved (dry run)
-            const metricsCompanyId = companyId || '00000000-0000-0000-0000-000000000000';
-            const metrics = computeMetricsForPeriod(metricsCompanyId, periodDate, facts);
-            
-            // 5b. Persist Metrics (SKIP IF DRY RUN)
-            if (!dryRun && metrics.length > 0 && companyId) {
-                await saveMetricsToDb(metrics, companyId, supabase);
-            } else if (dryRun) {
-                console.log(`[Dry Run] Skipping fact_metrics insert (${metrics.length} rows)`);
-            }
-
-            const extractionStatus = lineItems.length > 0 ? 'success' : 'needs_review';
-            
-            results.push({
-                file: fileMeta.filename,
-                line_items_found: lineItems.length,
-                metrics_computed: metrics.length,
-                metrics_sample: metrics.slice(0, 3),
-                // Return full data in dry run for preview
-                extracted_data: dryRun ? finalFacts : undefined,
-                computed_metrics: dryRun ? metrics : undefined,
-                status: extractionStatus,
-                ...(extractionStatus === 'needs_review' && {
-                    warning: 'File parsed successfully but extracted 0 line items. Check guide mapping rules.'
-                })
-            });
-
-            // 6. Cleanup
-            if (!dryRun && lineItems.length > 0 && item.type === 'storage') {
-                console.log(`[Ingest] Deleting ${filePath} from storage (successful extraction)...`);
+            // Cleanup
+             if (!dryRun && lineItems.length > 0 && item.type === 'storage') {
                 await deleteFile(filePath);
-            } else {
-                console.log(`[Ingest] Retaining ${filePath} (Dry Run, Issue, or Text Input)`);
             }
 
-        } catch (fileError: any) {
-            // ... (error handling) ...
-            console.error(`Error processing file ${filePath}:`, fileError);
-            const errorMessage = fileError?.message || (typeof fileError === 'string' ? fileError : JSON.stringify(fileError));
-            results.push({
-                file: filePath,
-                status: 'error',
-                error: errorMessage
-            });
+            const status = lineItems.length > 0 ? 'success' : 'needs_review';
+            return {
+                file: fileMeta.filename, status,
+                line_items_found: lineItems.length, metrics_computed: metrics.length, metrics_sample: metrics.slice(0, 3),
+                extracted_data: dryRun ? finalFacts : undefined, computed_metrics: dryRun ? metrics : undefined,
+                ...(status === 'needs_review' && { warning: 'File parsed successfully but extracted 0 line items.' })
+            };
+
+        } catch (err: any) {
+            console.error(`Error processing ${filePath}:`, err);
+            return { file: filePath, status: 'error', error: err.message || JSON.stringify(err) };
         }
-    }
+    };
+
+    // EXECUTE IN PARALLEL with limit 5
+    // Map items to task functions
+    const tasks = itemsToProcess.map(item => () => processItemTask(item));
+    const rawResults = await pLimit(5, tasks);
     
-    // ... (status calculation) ...
+    // Unwrap SettledResults
+    const results = rawResults.map((r, i) => {
+        if (r.status === 'fulfilled') return r.value;
+        const item = itemsToProcess[i];
+        const path = item.type === 'storage' ? item.path : 'Input';
+        return { file: path, status: 'error', error: `Task Rejected: ${r.reason}` };
+    });
+
     const successCount = results.filter(r => r.status === 'success').length;
     const needsReviewCount = results.filter(r => r.status === 'needs_review').length;
-    const errorCount = results.filter(r => r.status === 'error' || r.status === 'company_not_found').length; // Treat company_not_found as error in summary
+    const errorCount = results.filter(r => r.status === 'error' || r.status === 'company_not_found').length;
 
-    let overallStatus: string;
+    let overallStatus = 'partial';
     if (errorCount === results.length) overallStatus = 'error';
     else if (successCount === results.length) overallStatus = 'success';
     else if (needsReviewCount === results.length) overallStatus = 'needs_review';
-    else overallStatus = 'partial';
 
-    let statusCode = 200;
-    if (overallStatus === 'error') statusCode = 500;
-    else if (overallStatus === 'partial' || overallStatus === 'needs_review') statusCode = 207;
+    const statusCode = overallStatus === 'error' ? 500 : (overallStatus === 'partial' || overallStatus === 'needs_review' ? 207 : 200);
 
     return NextResponse.json({
-      status: overallStatus,
-      company: companySlug,
-      dryRun: !!dryRun,
-      summary: {
-        total: results.length,
-        success: successCount,
-        needs_review: needsReviewCount,
-        error: errorCount
-      },
+      status: overallStatus, company: companySlug, dryRun: !!dryRun,
+      summary: { total: results.length, success: successCount, needs_review: needsReviewCount, error: errorCount },
       results
     }, { status: statusCode });
 
   } catch (error) {
-      // ...
       console.error('Ingestion error:', error);
       return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
@@ -676,5 +423,3 @@ export async function OPTIONS() {
     },
   });
 }
-
-// Note: Company detection has been moved to /api/detect-company for cleaner separation of concerns

@@ -97,7 +97,10 @@ Identify its purpose, key obligations, termination clauses, and any unusual term
 export function LegalConfigEditor() {
   const [selectedKey, setSelectedKey] = useState<ConfigKey>('legal_analysis_system_prompt');
   const [content, setContent] = useState('');
-  // ... existing state ...
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     fetchConfig(selectedKey);
