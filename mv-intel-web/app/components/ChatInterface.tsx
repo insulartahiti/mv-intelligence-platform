@@ -67,7 +67,7 @@ export default function ChatInterface({
     const [internalMessages, setInternalMessages] = useState<Message[]>([]);
     const [internalLoading, setInternalLoading] = useState(false);
     const [input, setInput] = useState('');
-    const [enableExternalSearch, setEnableExternalSearch] = useState(false);
+    const [enableExternalSearch, setEnableExternalSearch] = useState(true);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
     const [placeholderIndex, setPlaceholderIndex] = useState(0);

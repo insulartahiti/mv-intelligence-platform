@@ -2,25 +2,24 @@ import { ArchitectureData } from './types';
 
 export const architectureData: ArchitectureData = {
   lastUpdated: new Date().toISOString(),
-  version: "1.0.0",
+  version: "1.2.0",
   views: {
     overview: {
       id: "overview",
       label: "System Overview",
-      description: "High-level architecture of the Motive Intelligence Platform",
+      description: "The Motive Intelligence Platform aggregates proprietary CRM data, external enrichment signals, and AI-derived insights into a unified Conversational Knowledge Graph.",
       nodes: [
         {
           id: 'frontend',
           label: 'Frontend App',
           type: 'frontend',
           iconName: 'Layout',
-          description: 'Next.js 14 App Router application with Tailwind CSS and React.',
+          description: 'A modern React application built on Next.js 14 (App Router), serving as the primary interface for portfolio management, graph exploration, and data ingestion.',
           details: [
-            'App Router Architecture',
-            'Tailwind CSS Styling',
-            'Radix UI Primitives',
-            'Vis.js & React Sigma Graph Viz',
-            'Vercel Hosting'
+            'Next.js 14 App Router',
+            'Tailwind CSS & Radix UI',
+            'Vis.js & React Sigma (Graph Viz)',
+            'Hosted on Vercel (Edge Network)'
           ],
           x: 10,
           y: 50
@@ -30,12 +29,12 @@ export const architectureData: ArchitectureData = {
           label: 'API Layer',
           type: 'backend',
           iconName: 'Server',
-          description: 'Next.js API Routes and Supabase Edge Functions.',
+          description: 'Serverless API routes and Edge Functions that orchestrate data flow between the frontend, databases, and AI services.',
           details: [
-            '/api/chat - AI Agent',
-            '/api/ingest - File Processing',
-            '/api/universal-search - Hybrid Search',
-            'Edge Functions for Long-running Tasks'
+            '/api/chat (AI Agent & Tool Calling)',
+            '/api/ingest (Parallel File Processing)',
+            '/api/universal-search (Hybrid Retrieval)',
+            'Supabase Edge Functions (Long-running tasks)'
           ],
           x: 35,
           y: 50
@@ -45,13 +44,12 @@ export const architectureData: ArchitectureData = {
           label: 'Supabase (Postgres)',
           type: 'database',
           iconName: 'Database',
-          description: 'Primary relational database and vector store.',
+          description: 'The primary relational source of truth, storing structured entity data, vector embeddings, financial facts, and interaction logs.',
           details: [
-            'Structured Entity Data',
-            'pgvector Embeddings',
-            'Interaction Logs',
+            'pgvector (1536d embeddings)',
             'Row Level Security (RLS)',
-            'Financial Data Facts'
+            'Real-time Subscriptions',
+            'Financial & Legal Fact Tables'
           ],
           x: 60,
           y: 30
@@ -61,12 +59,12 @@ export const architectureData: ArchitectureData = {
           label: 'Neo4j (Graph)',
           type: 'database',
           iconName: 'Share2',
-          description: 'Graph database for relationship traversal and visualization.',
+          description: 'A high-performance graph database optimized for traversing complex relationship networks and visualizing connections.',
           details: [
-            'Entity Nodes & Edges',
-            'Graph Algorithms',
-            'Network Visualization Source',
-            'Synced from Postgres'
+            'AuraDB Managed Instance',
+            'Cypher Query Language',
+            'Entity Resolution & Deduping',
+            'Synced from Postgres via Pipeline'
           ],
           x: 60,
           y: 70
@@ -76,12 +74,12 @@ export const architectureData: ArchitectureData = {
           label: 'AI Services',
           type: 'ai',
           iconName: 'Brain',
-          description: 'External AI models for reasoning and enrichment.',
+          description: 'A suite of external LLMs and cognitive services providing reasoning, enrichment, and vision capabilities.',
           details: [
-            'OpenAI GPT-5.1 (Reasoning)',
-            'Perplexity Sonar Pro (Enrichment)',
-            'Embedding Models (text-embedding-3)',
-            'Vision API (PDF/Image Analysis)'
+            'GPT-5.1 (Reasoning & Extraction)',
+            'GPT-4o (Vision & Analysis)',
+            'Perplexity Sonar Pro (Live Enrichment)',
+            'OpenAI Embeddings (text-embedding-3)'
           ],
           x: 85,
           y: 50
@@ -95,67 +93,148 @@ export const architectureData: ArchitectureData = {
         { from: 'supabase', to: 'neo4j', label: 'Sync Pipeline' }
       ]
     },
+    agent: {
+      id: "agent",
+      label: "AI Agent Logic",
+      description: "The architecture of the conversational agent, showing how user queries are routed, processed, and synthesized into intelligent responses.",
+      nodes: [
+        {
+          id: 'user_query',
+          label: 'User Query',
+          type: 'external',
+          iconName: 'MessageSquare',
+          description: 'Incoming natural language question from the chat interface.',
+          details: ['"How is Nelly performing?"', '"Draft an email to John"', '"Show me SaaS companies in London"'],
+          x: 10,
+          y: 50
+        },
+        {
+          id: 'router',
+          label: 'Intent Classifier',
+          type: 'ai',
+          iconName: 'GitBranch',
+          description: 'GPT-5.1 based router that analyzes the query to determine the most appropriate tool or retrieval strategy.',
+          details: [
+            'lib/search/intentClassifier.ts',
+            'Detects: Financials, Legal, Graph, or General',
+            'Extracts filters (Time, Entity)'
+          ],
+          x: 30,
+          y: 50
+        },
+        {
+          id: 'tools',
+          label: 'Agent Tools',
+          type: 'backend',
+          iconName: 'Wrench',
+          description: 'Specialized functions the agent can call to retrieve data or perform actions.',
+          details: [
+            'search_knowledge_graph (Hybrid)',
+            'get_financial_metrics (SQL)',
+            'get_legal_analysis (SQL)',
+            'draft_email (Template)'
+          ],
+          x: 55,
+          y: 50
+        },
+        {
+          id: 'context',
+          label: 'Context Window',
+          type: 'database',
+          iconName: 'Maximize',
+          description: 'Assembly of conversation history, retrieved data, and system instructions.',
+          details: [
+            'Retrieved Documents (RAG)',
+            'Previous Messages',
+            'System Prompt (Persona)'
+          ],
+          x: 75,
+          y: 30
+        },
+        {
+          id: 'synthesis',
+          label: 'Response Synthesis',
+          type: 'ai',
+          iconName: 'Sparkles',
+          description: 'Final LLM pass to generate a natural language response based on the gathered context.',
+          details: [
+            'GPT-5.1',
+            'Citation Linking',
+            'Formatting (Markdown/Tables)'
+          ],
+          x: 85,
+          y: 60
+        }
+      ],
+      connections: [
+        { from: 'user_query', to: 'router', label: 'Analyze' },
+        { from: 'router', to: 'tools', label: 'Route' },
+        { from: 'tools', to: 'context', label: 'Hydrate' },
+        { from: 'context', to: 'synthesis', label: 'Prompt' },
+        { from: 'synthesis', to: 'user_query', label: 'Response' }
+      ]
+    },
     pipeline: {
       id: "pipeline",
       label: "Data Pipeline",
-      description: "Data ingestion and enrichment flow",
+      description: "An automated, self-healing ETL pipeline that synchronizes CRM data, enriches it with AI, and maintains graph consistency.",
       nodes: [
         {
           id: 'affinity',
           label: 'Affinity CRM',
           type: 'external',
           iconName: 'Users',
-          description: 'Source of truth for relationship data.',
+          description: 'The authoritative source for relationship data, providing raw organization and person records via API v1.',
           details: [
-            'People & Organizations',
-            'Interaction History',
-            'Notes & Files',
-            'API v1 Sync'
+            'Incremental Sync Strategy',
+            'Organizations & People',
+            'Interaction History (Email/Cal)',
+            'Note & File Attachments'
           ],
           x: 10,
           y: 50
         },
         {
           id: 'sync',
-          label: 'Ingestion Script',
+          label: 'Ingestion Orchestrator',
           type: 'backend',
           iconName: 'Zap',
-          description: 'Raw data fetching and normalization.',
+          description: 'A set of resilient Node.js scripts that fetch raw data, handle rate limits, and normalize inputs before processing.',
           details: [
             'run_affinity_sync.ts',
-            'Incremental Fetching',
-            'Raw Data Storage',
-            'No AI Processing (Speed)'
+            'Fault-tolerant Batching',
+            'Raw Data Staging (No AI)',
+            'Orphan Detection & Cleanup'
           ],
           x: 30,
           y: 50
         },
         {
           id: 'enrichment',
-          label: 'Parallel Enrichment',
+          label: 'Parallel AI Enrichment',
           type: 'ai',
           iconName: 'Cpu',
-          description: 'Concurrent AI processing block.',
+          description: 'A concurrent processing block that enhances raw entities with embeddings, summaries, and external intelligence.',
           details: [
-            'Embed Interactions (Vector)',
-            'Summarize History (GPT-4o)',
-            'Enrich Entities (Perplexity)',
-            'Taxonomy Classification'
+            'Vectorization (embed_interactions.ts)',
+            'Summarization (GPT-4o-mini)',
+            'Entity Enrichment (Perplexity)',
+            'Taxonomy Classification (GPT-5.1)'
           ],
           x: 55,
           y: 50
         },
         {
           id: 'graph_sync',
-          label: 'Graph Sync',
+          label: 'Graph Synchronization',
           type: 'database',
           iconName: 'Share2',
-          description: 'Migration to Graph Database.',
+          description: 'The final pipeline stage that pushes enriched, deduplicated entities and relationships into the Neo4j graph.',
           details: [
             'migrate-to-neo4j.ts',
-            'Deduplication',
-            'Edge Creation',
-            'Relationship Inference'
+            'Relationship Inference',
+            'Edge Creation (Invested, Advisor)',
+            'Stale Data Pruning'
           ],
           x: 80,
           y: 50
@@ -163,36 +242,56 @@ export const architectureData: ArchitectureData = {
       ],
       connections: [
         { from: 'affinity', to: 'sync', label: 'API Sync' },
-        { from: 'sync', to: 'enrichment', label: 'Raw Data' },
-        { from: 'enrichment', to: 'graph_sync', label: 'Enriched Data' }
+        { from: 'sync', to: 'enrichment', label: 'Raw Data Stream' },
+        { from: 'enrichment', to: 'graph_sync', label: 'Enriched Entities' }
       ]
     },
     ingestion: {
       id: "ingestion",
       label: "Financial Ingestion",
-      description: "Unified PDF & Excel extraction pipeline",
+      description: "A specialized pipeline for extracting structured financial data from unstructured PDF and Excel documents with 100% auditability.",
       nodes: [
         {
           id: 'files',
-          label: 'PDF / Excel',
+          label: 'Source Documents',
           type: 'external',
           iconName: 'FileText',
-          description: 'Source financial documents.',
-          details: ['Board Decks', 'P&Ls', 'Budget Files'],
-          x: 15,
+          description: 'Financial reporting documents uploaded by portfolio companies, often in varying formats.',
+          details: [
+            'Board Decks (PDF)',
+            'Monthly Reporting Packages (Excel)',
+            'Financial Models',
+            'Budget Files'
+          ],
+          x: 10,
           y: 50
         },
         {
+          id: 'guide',
+          label: 'Portfolio Guide',
+          type: 'database',
+          iconName: 'BookOpen',
+          description: 'Company-specific YAML configuration that defines how to map the unique layout of a company\'s reports to standard metrics.',
+          details: [
+            'Stored in portfolio_guides table',
+            'Row/Cell Mappings',
+            'Dynamic Updates via AI',
+            'Defines "Revenue" vs "Total Income"'
+          ],
+          x: 25,
+          y: 20
+        },
+        {
           id: 'extractor',
-          label: 'Unified Extractor',
+          label: 'Unified Extraction Engine',
           type: 'ai',
           iconName: 'Brain',
-          description: 'Multi-model extraction engine.',
+          description: 'A multi-model system combining vision capabilities with deterministic parsing to extract accurate financial time-series.',
           details: [
             'GPT-5.1 (Vision + Reasoning)',
-            'XLSX Parser (Deterministic)',
-            'Perplexity (Benchmarks)',
-            'Reconciliation Engine'
+            'XLSX Deterministic Parser',
+            'Coordinate-First Row Labeling',
+            'Cross-File Reconciliation'
           ],
           x: 45,
           y: 50
@@ -202,89 +301,125 @@ export const architectureData: ArchitectureData = {
           label: 'Fact Financials',
           type: 'database',
           iconName: 'Box',
-          description: 'Normalized financial line items.',
-          details: ['Line Item ID', 'Amount', 'Date', 'Source Snippet'],
+          description: 'A normalized storage layer for raw line-items, maintaining full lineage to the source file and page.',
+          details: [
+            'fact_financials table',
+            'Audit Snippets (Pixel-perfect)',
+            'Scenario Management (Actual/Budget)',
+            'Currency Normalization'
+          ],
           x: 75,
           y: 35
         },
         {
           id: 'fact_metrics',
-          label: 'Fact Metrics',
+          label: 'Computed Metrics',
           type: 'database',
-          iconName: 'Box',
-          description: 'Computed KPIs and metrics.',
-          details: ['Metric ID', 'Value', 'Unit', 'Period'],
+          iconName: 'TrendingUp',
+          description: 'Derived KPIs calculated from raw facts, serving as the "Answer Key" for the AI Agent.',
+          details: [
+            'Standardized KPIs (ARR, Burn)',
+            'Period-over-Period Growth',
+            'Variance Analysis',
+            'Agent-Accessible Tooling'
+          ],
           x: 75,
           y: 65
         }
       ],
       connections: [
-        { from: 'files', to: 'extractor', label: 'Upload' },
-        { from: 'extractor', to: 'fact_financials', label: 'Extracted Data' },
-        { from: 'extractor', to: 'fact_metrics', label: 'Computed KPIs' }
+        { from: 'files', to: 'extractor', label: 'Secure Upload' },
+        { from: 'guide', to: 'extractor', label: 'Mapping Rules' },
+        { from: 'extractor', to: 'fact_financials', label: 'Raw Extraction' },
+        { from: 'extractor', to: 'fact_metrics', label: 'Compute & Normalize' }
       ]
     },
     legal: {
       id: "legal",
       label: "Legal Analysis",
-      description: "Investor document analysis pipeline",
+      description: "An intelligent pipeline for analyzing investor agreements, extracting terms, and flagging risks across complex deal structures.",
       nodes: [
         {
           id: 'legal_docs',
-          label: 'Legal Docs',
+          label: 'Legal Deal Room',
           type: 'external',
           iconName: 'FileText',
-          description: 'Investment agreements.',
-          details: ['Term Sheets', 'SPAs', 'SHAs', 'SAFEs'],
+          description: 'Sets of investment documents uploaded for analysis, often containing multiple related agreements.',
+          details: [
+            'Term Sheets & SPAs',
+            'Shareholders Agreements (SHA)',
+            'Convertible Notes / SAFEs',
+            'Side Letters'
+          ],
           x: 15,
           y: 50
         },
         {
           id: 'phase1',
-          label: 'Phase 1',
+          label: 'Phase 1: Extraction',
           type: 'ai',
           iconName: 'Zap',
-          description: 'Individual Extraction',
-          details: ['Parallel processing', 'Term extraction'],
+          description: 'High-speed parallel processing of individual documents to extract raw terms and clauses.',
+          details: [
+            'Parallel GPT-4o-mini Calls',
+            'OCR & Text Extraction',
+            'Key Term Identification',
+            'Jurisdiction Detection'
+          ],
           x: 35,
           y: 50
         },
         {
           id: 'phase2',
-          label: 'Phase 2',
+          label: 'Phase 2: Categorization',
           type: 'ai',
           iconName: 'Layers',
-          description: 'Category Analysis',
-          details: ['Economics', 'Control', 'Governance'],
+          description: 'Deep analysis of specific risk vectors using specialized legal reasoning prompts.',
+          details: [
+            'Economics & Liquidation',
+            'Control & Governance',
+            'Investor Rights',
+            'Visual Snippet Generation'
+          ],
           x: 55,
           y: 50
         },
         {
           id: 'phase3',
-          label: 'Phase 3',
+          label: 'Phase 3: Synthesis',
           type: 'ai',
           iconName: 'Brain',
-          description: 'Deal Synthesis',
-          details: ['Cross-document checks', 'Risk flagging'],
+          description: 'Cross-document reasoning to detect conflicts and generate a unified deal summary.',
+          details: [
+            'Deal Package Synthesis',
+            'Conflict Detection',
+            'Risk Flagging (Red/Amber/Green)',
+            'Executive Summary Generation'
+          ],
           x: 75,
           y: 50
         },
         {
           id: 'db',
-          label: 'Legal DB',
+          label: 'Legal Knowledge Base',
           type: 'database',
           iconName: 'ShieldCheck',
-          description: 'Structured analysis storage.',
-          details: ['legal_analyses', 'legal_term_sources', 'Audit Snippets'],
+          description: 'Structured storage for legal intelligence, enabling semantic search and agent retrieval.',
+          details: [
+            'legal_analyses table',
+            'Clause-level Attribution',
+            'Dynamic Configuration',
+            'Agent Tool Integration'
+          ],
           x: 95,
           y: 50
         }
       ],
       connections: [
-        { from: 'legal_docs', to: 'phase1', label: 'Upload' },
+        { from: 'legal_docs', to: 'phase1', label: 'Batch Upload' },
         { from: 'phase1', to: 'phase2', label: 'Extracted Terms' },
-        { from: 'phase2', to: 'phase3', label: 'Categorized Data' },
-        { from: 'phase3', to: 'db', label: 'Final Analysis' }
+        { from: 'phase2', to: 'phase3', label: 'Risk Vectors' },
+        { from: 'phase3', to: 'db', label: 'Persist Analysis' }
       ]
     }
   }

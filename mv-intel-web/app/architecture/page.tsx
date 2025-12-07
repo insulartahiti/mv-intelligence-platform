@@ -50,7 +50,13 @@ export default function ArchitecturePage() {
                   key={key} 
                   value={key} 
                   label={view.label} 
-                  iconName={key === 'legal' ? 'ShieldCheck' : key === 'ingestion' ? 'FileSpreadsheet' : key === 'pipeline' ? 'Layers' : 'Globe'} 
+                  iconName={
+                    key === 'legal' ? 'ShieldCheck' : 
+                    key === 'ingestion' ? 'FileSpreadsheet' : 
+                    key === 'pipeline' ? 'Layers' : 
+                    key === 'agent' ? 'Bot' :
+                    'Globe'
+                  } 
                 />
               ))}
             </Tabs.List>
