@@ -292,15 +292,26 @@ function CollapsibleSection({
 // MAIN PAGE
 // =============================================================================
 
+// Portfolio Company interface for dropdown
+interface PortfolioCompany {
+  id: string;
+  name: string;
+  domain?: string;
+}
+
 export default function LegalAnalysisPage() {
   const [activeTab, setActiveTab] = useState('analysis');
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<PipelineResult | null>(null);
-  const [selectedCompany, setSelectedCompany] = useState('');
-  const [isSearchingCompany, setIsSearchingCompany] = useState(false);
-  const [searchResults, setSearchResults] = useState<{id: string, name: string}[]>([]);
+  
+  // Company selection state - aligned with financials import page
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [selectedCompanyName, setSelectedCompanyName] = useState('');
+  const [portfolioCompanies, setPortfolioCompanies] = useState<PortfolioCompany[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
+  
   const [phase1Results, setPhase1Results] = useState<Phase1DocResult[]>([]);
   const [phase2Results, setPhase2Results] = useState<Phase2CategoryResult[]>([]);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress>({
@@ -309,6 +320,24 @@ export default function LegalAnalysisPage() {
     phase3: { started: false, completed: false },
     snippets: { count: 0, total: 0, started: false }
   });
+
+  // Load portfolio companies on mount - same as financials import page
+  useEffect(() => {
+    const loadPortfolioCompanies = async () => {
+      try {
+        const res = await fetch('/api/portfolio/companies?limit=100');
+        if (res.ok) {
+          const data = await res.json();
+          setPortfolioCompanies(data.companies || []);
+        }
+      } catch (err) {
+        console.error('Failed to load portfolio companies:', err);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+    loadPortfolioCompanies();
+  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -331,8 +360,9 @@ export default function LegalAnalysisPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (e.target.files && e.target.files.length > 0) {
-      setFiles(prev => [...prev, ...Array.from(e.target.files)]);
+    const fileList = e.target.files;
+    if (fileList && fileList.length > 0) {
+      setFiles(prev => [...prev, ...Array.from(fileList)]);
     }
   };
 
@@ -370,13 +400,14 @@ export default function LegalAnalysisPage() {
         });
       }));
 
-      // Call API with companySlug if selected
+      // Call API with companyId if selected
       const response = await fetch('/api/portfolio/legal-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             files: filePayloads,
-            companySlug: selectedCompany || undefined
+            companyId: selectedCompanyId || undefined,
+            companySlug: selectedCompanyName || undefined // Keep for backwards compatibility
         })
       });
 
@@ -469,24 +500,37 @@ export default function LegalAnalysisPage() {
             {!result ? (
               <div className="max-w-4xl mx-auto space-y-6">
                 
-                {/* Company Selection - Added similar to Import Page */}
+                {/* Company Selection - Aligned with Financials Import Page */}
                 <div className="bg-white/5 rounded-xl border border-white/10 p-6">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Select Portfolio Company (Optional)
                   </label>
                   <div className="flex gap-4">
                      <select 
-                        value={selectedCompany}
-                        onChange={(e) => setSelectedCompany(e.target.value)}
+                        value={selectedCompanyId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedCompanyId(id);
+                          const company = portfolioCompanies.find(c => c.id === id);
+                          setSelectedCompanyName(company?.name || '');
+                        }}
                         className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        disabled={loadingCompanies}
                       >
-                        <option value="">-- Auto-detect from document --</option>
-                        <option value="nelly">Nelly Solutions</option>
-                        <option value="acme-corp">Acme Corp</option>
-                        <option value="stark-industries">Stark Industries</option>
-                        {/* Ideally fetch from API, hardcoded for now to match ImportPage logic */}
+                        <option value="">
+                          {loadingCompanies ? 'Loading companies...' : '-- Auto-detect from document --'}
+                        </option>
+                        {portfolioCompanies.map(company => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
                       </select>
-                      {selectedCompany && (
+                      {loadingCompanies ? (
+                          <div className="flex items-center text-gray-400 text-sm">
+                              <Loader2 size={16} className="mr-1 animate-spin"/> Loading...
+                          </div>
+                      ) : selectedCompanyId && (
                           <div className="flex items-center text-emerald-400 text-sm">
                               <CheckCircle size={16} className="mr-1"/> Selected
                           </div>
