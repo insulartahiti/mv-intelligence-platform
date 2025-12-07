@@ -188,7 +188,7 @@ async function summarizeInteractions() {
 
             // 4. Generate Overall Summary with GPT-5.1
             const completion = await openai.chat.completions.create({
-                    model: "gpt-5.1", // Ensure this model name is correct/available to your key
+                    model: "gpt-4o-mini", // Optimized for cost
                 messages: [
                     { 
                         role: "system", 

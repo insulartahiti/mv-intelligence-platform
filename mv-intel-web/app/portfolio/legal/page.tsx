@@ -380,24 +380,7 @@ import { LegalConfigEditor } from './components/LegalConfigEditor';
 // ... (keep existing imports and types)
 
 // Move existing page content into a sub-component
-function LegalAnalysisUploadView({ 
-  onHistoryClick 
-}: { 
-  onHistoryClick: () => void 
-}) {
-  const [dragActive, setDragActive] = useState(false);
-  // ... (paste all existing state and logic from LegalAnalysisPage here)
-  // ...
-  // Replace the Link to history with a callback or keep as Link
-  // ...
-  // Return the JSX for upload/analysis view
-  return (
-    // ... existing JSX ...
-  );
-}
-
-// But since extracting 1000 lines of code into a sub-component via search_replace is risky and hard,
-// I will instead wrap the existing return statement.
+// (Refactoring deferred to avoid large diffs)
 
 export default function LegalAnalysisPage() {
   const [activeTab, setActiveTab] = useState('analysis');

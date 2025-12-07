@@ -181,9 +181,12 @@ export async function POST(req: NextRequest) {
         
         return completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
       } catch (error: any) {
-        // If it fails (e.g. context length) and we haven't retried yet, try with truncated context
-        if (retryCount === 0 && promptContext.length > 50000) {
-           console.warn("First guide generation attempt failed, retrying with truncated context...");
+        // If it fails due to context length and we haven't retried yet, try with truncated context
+        const isContextError = error.code === 'context_length_exceeded' || 
+                               (error.message && error.message.toLowerCase().includes('maximum context length'));
+                               
+        if (retryCount === 0 && isContextError && promptContext.length > 50000) {
+           console.warn("First guide generation attempt failed (context length), retrying with truncated context...");
            // Truncate to first 50k chars (approx 12-15k tokens) as a fallback
            return generateGuide(promptContext.substring(0, 50000) + "\n...[TRUNCATED]...", 1);
         }

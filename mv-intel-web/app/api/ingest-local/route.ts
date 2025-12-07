@@ -326,7 +326,7 @@ export async function POST(req: NextRequest) {
         // 7. Compute metrics (only from Actuals)
         const facts: Record<string, number> = {};
         lineItems.forEach(item => {
-          if (item.scenario && item.scenario !== 'actual') return;
+          if (item.scenario && item.scenario.toLowerCase() !== 'actual') return;
           facts[item.line_item_id] = item.amount;
         });
         
@@ -343,7 +343,7 @@ export async function POST(req: NextRequest) {
         const newFactRecords: LocalFactRecord[] = lineItems.map(item => ({
           line_item_id: item.line_item_id,
           amount: item.amount,
-          scenario: item.scenario || 'actual',
+          scenario: (item.scenario || 'actual').toLowerCase(),
           date: item.date || periodDate,
           source_file: fileMeta.filename,
           source_location: item.source_location,
