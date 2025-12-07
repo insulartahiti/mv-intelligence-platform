@@ -1,15 +1,21 @@
 import neo4j from 'neo4j-driver';
 
 // Neo4j connection configuration
-const NEO4J_URI = process.env.NEO4J_URI;
-const NEO4J_USER = process.env.NEO4J_USER;
-const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
-const NEO4J_DATABASE = process.env.NEO4J_DATABASE || 'neo4j';
+let NEO4J_URI = process.env.NEO4J_URI;
+let NEO4J_USER = process.env.NEO4J_USER;
+let NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
+let NEO4J_DATABASE = process.env.NEO4J_DATABASE || 'neo4j';
 
 let driver: any = null;
 
 function getDriver() {
   if (driver) return driver;
+  
+  // Refresh env vars in case they were loaded late
+  NEO4J_URI = process.env.NEO4J_URI;
+  NEO4J_USER = process.env.NEO4J_USER;
+  NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
+  NEO4J_DATABASE = process.env.NEO4J_DATABASE || 'neo4j';
 
   if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
     // Only throw in development or if actually needed, don't crash build

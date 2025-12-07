@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 04, 2025 (v4.1 - Systematic Row Label Extraction)
+**Last Updated:** Dec 07, 2025 (v4.2 - Portfolio API & Ingestion Fixes)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -953,7 +953,16 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ---
 
-## Appendix A: Changelog (Dec 04, 2025)
+## Appendix A: Changelog (Dec 07, 2025)
+
+### Bug Fixes
+
+*   **Portfolio API & Ingestion (Dec 07)**:
+    *   **Fixed Ingestion Status Codes**: `/api/ingest` now correctly returns **207 Multi-Status** for partial success or `needs_review` outcomes, instead of misleading 200 OK.
+    *   **Fixed Portfolio Company Listing**: Refactored `/api/portfolio/companies` to use Supabase (`graph.entities`) as the source of truth instead of Neo4j driver directly (which had timeout/connection issues).
+    *   **Agent-Style Enrichment**: Portfolio listing now applies intelligent fallback logic to fill missing fields (`industry`, `location`, `logo_url`) from JSONB `enrichment_data` and `business_analysis` columns, mimicking the robust logic used by the Chat Agent.
+    *   **Strict Portfolio Filtering**: Added explicit filters `.eq('is_portfolio', true)` and `.eq('type', 'organization')` to prevent pipeline artifacts or person entities from appearing in the portfolio dashboard.
+    *   **Neo4j Driver Resilience**: Improved `lib/neo4j.ts` initialization to handle late-loaded environment variables during runtime.
 
 ### Features Added
 

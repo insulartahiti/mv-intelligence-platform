@@ -540,6 +540,10 @@ export async function POST(req: NextRequest) {
     else if (needsReviewCount === results.length) overallStatus = 'needs_review';
     else overallStatus = 'partial';
 
+    let statusCode = 200;
+    if (overallStatus === 'error') statusCode = 500;
+    else if (overallStatus === 'partial' || overallStatus === 'needs_review') statusCode = 207;
+
     return NextResponse.json({
       status: overallStatus,
       company: companySlug,
@@ -551,7 +555,7 @@ export async function POST(req: NextRequest) {
         error: errorCount
       },
       results
-    }, { status: overallStatus === 'error' ? 500 : 200 }); // 200 for dry run usually
+    }, { status: statusCode });
 
   } catch (error) {
       // ...
