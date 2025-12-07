@@ -69,14 +69,16 @@ export function LegalConfigEditor() {
   const fetchConfig = async (key: ConfigKey) => {
     setLoading(true);
     setStatus('idle');
+    setContent(''); // Reset content while loading to show placeholder correctly if we used a loader overlay, but here we want to keep old content or clear it? 
+    // Better to clear it so we don't show old config for a new key briefly.
+    
     try {
       const res = await fetch(`/api/portfolio/legal-config?key=${key}`);
       const data = await res.json();
       if (data.content) {
         setContent(data.content);
       } else {
-        // Handle case where config is not in DB yet (it might be in code defaults)
-        // Ideally the API handles fallback, but for now we just show empty or placeholder
+        // Content is empty/null
         setContent(''); 
       }
     } catch (err) {
@@ -206,7 +208,7 @@ export function LegalConfigEditor() {
               onChange={(e) => setContent(e.target.value)}
               className="w-full h-full bg-slate-950 p-6 text-sm font-mono text-white/80 focus:outline-none resize-none leading-relaxed"
               spellCheck={false}
-              placeholder={content ? "" : "// Loading configuration..."}
+              placeholder={loading ? "// Loading..." : "// No configuration set. Enter custom prompt instructions here..."}
             />
           )}
         </div>

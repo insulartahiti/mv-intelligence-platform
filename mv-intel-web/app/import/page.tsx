@@ -401,8 +401,8 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-white p-8">
+      <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Resolution Modal */}
         {showResolutionModal && (
@@ -577,21 +577,21 @@ export default function ImportPage() {
           <Tabs.List className="flex border-b border-white/10 mb-8">
             <Tabs.Trigger 
               value="import"
-              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-blue-400 data-[state=active]:border-b-2 data-[state=active]:border-blue-400 transition-colors flex items-center gap-2"
+              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-emerald-400 data-[state=active]:border-b-2 data-[state=active]:border-emerald-400 transition-colors flex items-center gap-2"
             >
               <FileText size={16} />
               Import Data
             </Tabs.Trigger>
             <Tabs.Trigger 
               value="history"
-              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-blue-400 data-[state=active]:border-b-2 data-[state=active]:border-blue-400 transition-colors flex items-center gap-2"
+              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-emerald-400 data-[state=active]:border-b-2 data-[state=active]:border-emerald-400 transition-colors flex items-center gap-2"
             >
               <History size={16} />
               History
             </Tabs.Trigger>
             <Tabs.Trigger 
               value="config"
-              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-blue-400 data-[state=active]:border-b-2 data-[state=active]:border-blue-400 transition-colors flex items-center gap-2"
+              className="px-6 py-3 text-sm font-medium text-white/50 hover:text-white data-[state=active]:text-emerald-400 data-[state=active]:border-b-2 data-[state=active]:border-emerald-400 transition-colors flex items-center gap-2"
             >
               <Settings size={16} />
               Guide Configuration
@@ -600,15 +600,15 @@ export default function ImportPage() {
 
           <Tabs.Content value="import" className="focus:outline-none space-y-8">
             {/* Company Selector */}
-            <div className="glass-panel p-6 rounded-xl border border-white/10 bg-white/5">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6">
+              <label className="block text-sm font-medium text-slate-400 mb-2">
                 Select Portfolio Company
               </label>
               <div className="flex gap-4">
                  <select 
                     value={selectedCompany}
                     onChange={(e) => setSelectedCompany(e.target.value)}
-                    className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
                   >
                     <option value="" disabled>-- Select Company --</option>
                     <option value="nelly">Nelly Solutions</option>
@@ -616,28 +616,29 @@ export default function ImportPage() {
                     <option value="stark-industries">Stark Industries</option>
                   </select>
                   {selectedCompany && (
-                      <div className="flex items-center text-green-400 text-sm">
-                          <Check size={16} className="mr-1"/> Detected
+                      <div className="flex items-center text-emerald-400 text-sm bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
+                          <Check size={16} className="mr-2"/> 
+                          Ready
                       </div>
                   )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
               {/* File Upload Section */}
-              <div className="space-y-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Upload size={20} className="text-blue-400" />
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
+                  <Upload size={20} className="text-emerald-400" />
                   Source Documents
                 </h2>
                 
                 <div 
                   className={`
-                    relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200
+                    relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 flex-1 flex flex-col justify-center items-center
                     ${dragActive 
-                      ? 'border-blue-500 bg-blue-500/10' 
-                      : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
+                      ? 'border-emerald-500 bg-emerald-500/10 scale-[1.02]' 
+                      : 'border-white/10 hover:border-emerald-500/30 hover:bg-white/5'}
                   `}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
@@ -652,9 +653,11 @@ export default function ImportPage() {
                   />
                   
                   <div className="pointer-events-none">
-                    <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <p className="text-lg font-medium">Drop files here</p>
-                    <p className="text-sm text-gray-500 mt-2">
+                    <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400">
+                      <Upload size={24} />
+                    </div>
+                    <p className="text-lg font-medium text-white">Drop files here</p>
+                    <p className="text-sm text-white/40 mt-2">
                       PDF (Board Decks), XLSX (Financials), CSV
                     </p>
                   </div>
@@ -664,19 +667,19 @@ export default function ImportPage() {
                 {files.length > 0 && (
                   <div className="space-y-2 mt-4">
                     {files.map((file, idx) => (
-                      <div key={idx} className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-white/10">
+                      <div key={idx} className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
                         <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="p-2 bg-blue-500/20 rounded-lg">
-                            <FileText size={16} className="text-blue-400" />
+                          <div className="p-2 bg-emerald-500/20 rounded-lg">
+                            <FileText size={16} className="text-emerald-400" />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{file.name}</p>
-                            <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                            <p className="text-sm font-medium text-white truncate">{file.name}</p>
+                            <p className="text-xs text-white/40">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                           </div>
                         </div>
                         <button 
                           onClick={() => removeFile(idx)}
-                          className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                          className="p-1.5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition-colors"
                         >
                           <span className="sr-only">Remove</span>
                           ×
@@ -688,17 +691,17 @@ export default function ImportPage() {
               </div>
 
               {/* Text Input Section */}
-              <div className="space-y-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <FileText size={20} className="text-purple-400" />
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
+                  <FileText size={20} className="text-blue-400" />
                   Direct Input
                 </h2>
-                <div className="h-full">
+                <div className="flex-1">
                   <textarea
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
                     placeholder="Paste text from board emails, memos, or key highlights here..."
-                    className="w-full h-[300px] bg-black/20 border border-white/10 rounded-xl p-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                    className="w-full h-full min-h-[300px] bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none placeholder:text-white/20"
                   />
                 </div>
               </div>

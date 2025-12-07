@@ -91,14 +91,14 @@ export default function PortfolioDashboard() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] p-6 md:p-8">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
         
         {/* Header & Tools */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">Portfolio Companies</h1>
-            <p className="text-white/60">Overview of all investments categorized by fund.</p>
+            <p className="text-slate-400">Overview of all investments categorized by fund.</p>
           </div>
 
           <div className="flex gap-3">
@@ -121,12 +121,12 @@ export default function PortfolioDashboard() {
 
         {/* Search Bar */}
         <div className="relative mb-8">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-white/40" />
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-slate-500" />
           </div>
           <input
             type="text"
-            className="block w-full pl-10 pr-3 py-3 border border-white/10 rounded-xl leading-5 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 sm:text-sm transition-all"
+            className="block w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-slate-800 rounded-xl leading-5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 sm:text-sm transition-all"
             placeholder="Search companies, industries, or funds..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -139,21 +139,21 @@ export default function PortfolioDashboard() {
             <Loader2 className="h-8 w-8 text-emerald-500 animate-spin" />
           </div>
         ) : Object.keys(groupedCompanies).length === 0 ? (
-          <div className="text-center py-12 bg-white/5 rounded-2xl border border-white/10">
-            <Building2 className="h-12 w-12 text-white/20 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white mb-1">No companies found</h3>
-            <p className="text-white/40">Try adjusting your search query.</p>
+          <div className="text-center py-12 bg-slate-900/40 rounded-2xl border border-slate-800 border-dashed">
+            <Building2 className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-300 mb-1">No companies found</h3>
+            <p className="text-slate-500">Try adjusting your search query.</p>
           </div>
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-12">
             {Object.entries(groupedCompanies).map(([fund, fundCompanies]) => (
               <div key={fund}>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="h-px flex-1 bg-white/10"></div>
-                  <h2 className="text-xl font-semibold text-emerald-400 uppercase tracking-wider text-sm px-2 border border-emerald-500/20 rounded-full bg-emerald-950/30 py-1">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="h-px flex-1 bg-slate-800"></div>
+                  <h2 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider px-3 py-1 border border-emerald-500/20 rounded-full bg-emerald-950/30">
                     {fund}
                   </h2>
-                  <div className="h-px flex-1 bg-white/10"></div>
+                  <div className="h-px flex-1 bg-slate-800"></div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -161,16 +161,16 @@ export default function PortfolioDashboard() {
                     <Link 
                       href={`/portfolio/${company.id}`}
                       key={company.id}
-                      className="group bg-white/5 hover:bg-white/[0.07] border border-white/10 hover:border-emerald-500/30 rounded-xl p-5 transition-all duration-300 flex flex-col h-full cursor-pointer"
+                      className="group bg-slate-900/40 hover:bg-slate-800/60 border border-slate-800 hover:border-emerald-500/30 rounded-xl p-6 transition-all duration-300 flex flex-col h-full cursor-pointer hover:-translate-y-1 shadow-sm hover:shadow-xl hover:shadow-emerald-900/10"
                     >
                       <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-lg overflow-hidden group-hover:border-emerald-500/30 group-hover:text-emerald-400 transition-colors">
                              {/* Fallback logo logic */}
                              {company.name.charAt(0)}
                           </div>
                           <div>
-                            <h3 className="text-white font-semibold truncate max-w-[180px]" title={company.name}>
+                            <h3 className="text-white font-semibold truncate max-w-[180px] group-hover:text-emerald-400 transition-colors" title={company.name}>
                               {company.name}
                             </h3>
                             {company.domain && (
@@ -178,7 +178,7 @@ export default function PortfolioDashboard() {
                                 href={`https://${company.domain}`} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
-                                className="text-xs text-emerald-400 hover:underline flex items-center gap-1"
+                                className="text-xs text-slate-500 hover:text-emerald-400 flex items-center gap-1 mt-0.5"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {company.domain}
@@ -188,35 +188,35 @@ export default function PortfolioDashboard() {
                           </div>
                         </div>
                         {company.status && (
-                           <span className="px-2 py-1 rounded text-xs font-medium bg-white/10 text-white/60 capitalize">
+                           <span className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-slate-800 text-slate-400 capitalize border border-slate-700">
                              {company.status}
                            </span>
                         )}
                       </div>
                       
                       {company.brief_description && (
-                        <p className="text-sm text-white/50 mb-4 line-clamp-2 flex-grow">
+                        <p className="text-sm text-slate-400 mb-5 line-clamp-2 flex-grow leading-relaxed">
                           {company.brief_description}
                         </p>
                       )}
                       
-                      <div className="grid grid-cols-2 gap-y-2 text-xs text-white/60 mt-auto pt-4 border-t border-white/5">
-                        <div className="flex items-center gap-1.5">
-                          <Briefcase size={12} className="text-emerald-500/70" />
+                      <div className="grid grid-cols-2 gap-y-3 text-xs text-slate-500 mt-auto pt-4 border-t border-slate-800/50">
+                        <div className="flex items-center gap-2">
+                          <Briefcase size={12} className="text-slate-600" />
                           <span className="truncate" title={company.industry || 'N/A'}>
                             {company.industry || 'Unknown Industry'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <MapPin size={12} className="text-emerald-500/70" />
+                        <div className="flex items-center gap-2">
+                          <MapPin size={12} className="text-slate-600" />
                           <span className="truncate">
                             {company.location_city ? `${company.location_city}, ` : ''}{company.location_country || 'Unknown'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 col-span-2">
-                           <DollarSign size={12} className="text-emerald-500/70" />
+                        <div className="flex items-center gap-2 col-span-2">
+                           <DollarSign size={12} className="text-slate-600" />
                            <span>
-                             Inv: <span className="text-white">{formatCurrency(company.investment_amount)}</span>
+                             Total Inv: <span className="text-slate-300 font-medium">{formatCurrency(company.investment_amount)}</span>
                            </span>
                         </div>
                       </div>
