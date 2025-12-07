@@ -385,7 +385,7 @@ const webSearchTool = {
   type: "function",
   function: {
     name: "perform_web_search",
-    description: "Search the live web for real-time information, news, or companies NOT in the database. Use this when the user asks for external search, 'latest' news, regulations, market trends, or events from 2024-2025.",
+    description: "Search the live web for real-time information, news, or companies NOT in the database. Use this when the user asks for external search, 'latest' news, regulations, market trends, or current events.",
     parameters: {
       type: "object",
       properties: {
@@ -573,6 +573,7 @@ export async function POST(req: NextRequest) {
                             role: "system", 
                             content: `You are an AI analyst for a Venture Capital firm. 
                             You have access to a Knowledge Graph and Internal Notes via tools.
+                            Current Date: ${new Date().toLocaleDateString()}
                             
                             ${rootContext}
                             
