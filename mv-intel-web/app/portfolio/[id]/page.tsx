@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Building2, 
@@ -23,7 +23,10 @@ import {
   Download,
   Search,
   Tag,
-  FileText as FileIcon
+  FileText as FileIcon,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 
@@ -53,6 +56,96 @@ const flagIcons: Record<string, React.ReactNode> = {
   RED: <AlertCircle size={14} />
 };
 
+// Helper to parse filename into structured metadata
+function parseMetadata(name: string) {
+  // Remove extension
+  const cleanName = name.replace(/\.(docx|pdf|doc)$/i, '');
+  
+  // Try to split by " - " which is the standard separator
+  const parts = cleanName.split(' - ').map(p => p.trim());
+  
+  if (parts.length >= 3) {
+    // Assumption: Company - Deal/Round - Document Name
+    // e.g. "Zocks Inc - Series A - SPA"
+    return {
+      company: parts[0],
+      deal: parts[1],
+      docName: parts.slice(2).join(' - ')
+    };
+  } else if (parts.length === 2) {
+    // Assumption: Company - Document Name
+    return {
+      company: parts[0],
+      deal: 'General',
+      docName: parts[1]
+    };
+  }
+  
+  return {
+    company: 'Uncategorized',
+    deal: 'General',
+    docName: cleanName
+  };
+}
+
+function AnalysisCard({ analysis, displayName }: { analysis: AnalysisSummary; displayName: string }) {
+  return (
+    <Link
+      key={analysis.id}
+      href={`/portfolio/legal/analysis?id=${analysis.id}`}
+      className="block bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 rounded-lg p-5 transition-all group"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <FileIcon size={18} className="text-emerald-400 shrink-0" />
+            <h4 className="text-base font-medium text-white group-hover:text-emerald-400 transition-colors truncate" title={displayName}>
+              {displayName}
+            </h4>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-xs border border-blue-500/20">
+              {analysis.jurisdiction}
+            </span>
+            <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded text-xs border border-purple-500/20">
+              {analysis.document_type.replace(/_/g, ' ')}
+            </span>
+            <span className="flex items-center gap-1 text-white/40 text-xs ml-auto">
+              <Calendar size={10} />
+              {new Date(analysis.created_at).toLocaleDateString()}
+            </span>
+          </div>
+          
+          {analysis.flags && (
+            <div className="flex flex-wrap items-center gap-2">
+              {analysis.flags.economics_downside?.flag && (
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.economics_downside.flag]}`}>
+                  {flagIcons[analysis.flags.economics_downside.flag]}
+                  Econ
+                </span>
+              )}
+              {analysis.flags.control_governance?.flag && (
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.control_governance.flag]}`}>
+                  {flagIcons[analysis.flags.control_governance.flag]}
+                  Gov
+                </span>
+              )}
+              {analysis.flags.legal_gc_risk?.flag && (
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.legal_gc_risk.flag]}`}>
+                  {flagIcons[analysis.flags.legal_gc_risk.flag]}
+                  Legal
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <ArrowLeft size={18} className="text-white/20 group-hover:text-emerald-400 transition-colors shrink-0 mt-1 rotate-180" />
+      </div>
+    </Link>
+  );
+}
+
 function CompanyLegalList({ companyId }: { companyId: string }) {
   const [analyses, setAnalyses] = useState<AnalysisSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +167,21 @@ function CompanyLegalList({ companyId }: { companyId: string }) {
     fetchAnalyses();
   }, [companyId]);
 
+  // Group by Deal/Round
+  const groupedAnalyses = useMemo(() => {
+    const groups: Record<string, AnalysisSummary[]> = {};
+    
+    analyses.forEach(analysis => {
+      const { deal } = parseMetadata(analysis.document_name);
+      if (!groups[deal]) {
+        groups[deal] = [];
+      }
+      groups[deal].push(analysis);
+    });
+    
+    return groups;
+  }, [analyses]);
+
   if (loading) return <div className="p-8 text-center text-white/50"><Loader2 className="animate-spin mx-auto mb-2" />Loading documents...</div>;
 
   if (analyses.length === 0) {
@@ -90,7 +198,7 @@ function CompanyLegalList({ companyId }: { companyId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold text-white">Legal Analysis ({analyses.length})</h3>
         <Link href="/portfolio/legal" className="text-sm text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
@@ -98,63 +206,24 @@ function CompanyLegalList({ companyId }: { companyId: string }) {
         </Link>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {analyses.map((analysis) => (
-          <Link
-            key={analysis.id}
-            href={`/portfolio/legal/analysis?id=${analysis.id}`}
-            className="block bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 rounded-lg p-5 transition-all group"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <FileIcon size={18} className="text-emerald-400 shrink-0" />
-                  <h4 className="text-base font-medium text-white group-hover:text-emerald-400 transition-colors truncate" title={analysis.document_name}>
-                    {analysis.document_name}
-                  </h4>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-xs border border-blue-500/20">
-                    {analysis.jurisdiction}
-                  </span>
-                  <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded text-xs border border-purple-500/20">
-                    {analysis.document_type.replace(/_/g, ' ')}
-                  </span>
-                  <span className="flex items-center gap-1 text-white/40 text-xs ml-auto">
-                    <Calendar size={10} />
-                    {new Date(analysis.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                
-                {analysis.flags && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {analysis.flags.economics_downside?.flag && (
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.economics_downside.flag]}`}>
-                        {flagIcons[analysis.flags.economics_downside.flag]}
-                        Econ
-                      </span>
-                    )}
-                    {analysis.flags.control_governance?.flag && (
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.control_governance.flag]}`}>
-                        {flagIcons[analysis.flags.control_governance.flag]}
-                        Gov
-                      </span>
-                    )}
-                    {analysis.flags.legal_gc_risk?.flag && (
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.legal_gc_risk.flag]}`}>
-                        {flagIcons[analysis.flags.legal_gc_risk.flag]}
-                        Legal
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <ArrowLeft size={18} className="text-white/20 group-hover:text-emerald-400 transition-colors shrink-0 mt-1 rotate-180" />
+      {Object.entries(groupedAnalyses).sort().map(([deal, docs]) => (
+        <div key={deal} className="space-y-3">
+          {deal !== 'General' && (
+            <div className="flex items-center gap-2 text-white/60 border-b border-white/5 pb-2">
+              <FolderOpen size={16} className="text-emerald-500/60" />
+              <h4 className="text-sm font-semibold uppercase tracking-wider">{deal}</h4>
+              <span className="text-xs bg-white/5 px-2 py-0.5 rounded-full text-white/40">{docs.length} docs</span>
             </div>
-          </Link>
-        ))}
-      </div>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {docs.map((analysis) => {
+              const { docName } = parseMetadata(analysis.document_name);
+              return <AnalysisCard key={analysis.id} analysis={analysis} displayName={docName} />;
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
