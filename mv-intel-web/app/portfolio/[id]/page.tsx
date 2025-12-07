@@ -500,7 +500,16 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
         )}
       </div>
       
-      <div className="bg-white/5 rounded-xl p-6 border border-white/10 h-fit">
+      <div 
+        className={`
+          bg-white/5 rounded-xl p-6 border transition-all duration-200 h-fit relative
+          ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-white/10'}
+        `}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+      >
         <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <Settings size={20} className="text-emerald-400" />
           Configuration Assistant
@@ -519,7 +528,7 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
         <button
           onClick={handleUpdate}
           disabled={loading || !instruction}
-          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 mb-8"
+          className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 mb-4"
         >
           {loading ? (
             <>Processing...</>
@@ -531,50 +540,44 @@ function GuideEditor({ companyId, companyName }: { companyId: string, companyNam
           )}
         </button>
 
-        {/* Integrated Test File Upload */}
-        <h4 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-3 border-t border-white/10 pt-6">
-          Test Configuration
-        </h4>
-        
-        <div 
-          className={`
-            relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 mb-4
-            ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
-          `}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <input
-            type="file"
-            multiple
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            onChange={handleFileChange}
-          />
-          <div className="pointer-events-none">
-            <p className="text-sm font-medium text-white/70">Drop test files here (PDF/Excel)</p>
+        {/* Integrated File Upload State */}
+        {files.length > 0 ? (
+          <div className="mt-6 pt-6 border-t border-white/10 animate-in fade-in slide-in-from-top-2">
+            <h4 className="text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
+              <Upload size={14} className="text-blue-400" />
+              Test Files ({files.length})
+            </h4>
+            <div className="space-y-2 mb-4">
+              {files.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs bg-black/20 p-2 rounded border border-white/5">
+                  <span className="truncate text-white/70 flex-1">{file.name}</span>
+                  <button onClick={(e) => { e.stopPropagation(); setFiles(f => f.filter((_, i) => i !== idx)); }} className="text-white/40 hover:text-white ml-2 p-1">×</button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={handleTestRun}
+              disabled={isUploading}
+              className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 font-medium rounded-lg disabled:opacity-50 transition-colors flex justify-center items-center gap-2 text-sm"
+            >
+              {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
+            </button>
           </div>
-        </div>
-
-        {files.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {files.map((file, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs bg-white/5 p-2 rounded">
-                <span className="truncate text-white/70">{file.name}</span>
-                <button onClick={() => setFiles(f => f.filter((_, i) => i !== idx))} className="text-white/40 hover:text-white">×</button>
-              </div>
-            ))}
+        ) : (
+          <div className="mt-4 text-center">
+             <p className="text-xs text-white/30 flex items-center justify-center gap-2 pointer-events-none">
+               <Upload size={12} />
+               Drag & drop PDF/Excel files here to test
+             </p>
+             <input
+                type="file"
+                multiple
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={handleFileChange}
+                title="Drop files to test configuration"
+              />
           </div>
         )}
-
-        <button
-          onClick={handleTestRun}
-          disabled={isUploading || files.length === 0}
-          className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2 text-sm"
-        >
-          {isUploading ? <Loader2 size={16} className="animate-spin" /> : 'Run Test Extraction (Dry Run)'}
-        </button>
       </div>
     </div>
   );

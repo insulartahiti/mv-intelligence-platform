@@ -663,7 +663,8 @@ The system generates visual "screenshots" of source clauses using a hybrid appro
     *   Adds yellow highlight overlays to relevant sections (if coordinates available).
     *   Fallback: If image rendering fails, extracts the single page as an annotated PDF file.
 2.  **Word Docs**: Generates text-based snippet images (`generateTextSnippet`) by rendering the surrounding text context into a clean SVG/PNG image.
-3.  **Storage**: Snippets are uploaded to `legal-snippets` bucket and served via signed URLs.
+3.  **Inline Integration**: Sources are displayed directly next to the relevant analysis section in the UI (e.g., "Liquidation Preference [Page 5]"), linking to the visual snippet.
+4.  **Storage**: Snippets are uploaded to `legal-snippets` bucket and served via signed URLs.
 
 ### Supported File Formats
 
@@ -977,7 +978,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **Portfolio Page Enhancements**:
     *   **Taxonomy Display**: Added "Classification" section to the Overview tab showing taxonomy code and industry.
     *   **News Search**: Added a search bar to the News section for custom Perplexity queries.
-    *   **Integrated Config Testing**: Moved the "Test Configuration" file upload directly into the Config Guide editor panel for a streamlined workflow.
+    *   **Integrated Config Testing**: Merged file upload into the Config Guide assistant panel. Users can drag & drop files directly onto the assistant to trigger a dry-run extraction test.
 
 ### Features Added
 
