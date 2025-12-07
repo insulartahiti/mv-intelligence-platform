@@ -458,6 +458,34 @@ export default function LegalAnalysisPage() {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
   
+  // State for company selection
+  const [companySearch, setCompanySearch] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
+  const [companySuggestions, setCompanySuggestions] = useState<{ id: string; name: string }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Company search handler
+  useEffect(() => {
+    const searchCompanies = async () => {
+      if (companySearch.length < 2) {
+        setCompanySuggestions([]);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/companies/search?q=${encodeURIComponent(companySearch)}`);
+        const data = await res.json();
+        if (data.companies) {
+          setCompanySuggestions(data.companies);
+        }
+      } catch (err) {
+        console.error('Failed to search companies:', err);
+      }
+    };
+
+    const timeoutId = setTimeout(searchCompanies, 300);
+    return () => clearTimeout(timeoutId);
+  }, [companySearch]);
+
   // Analysis handler using new pipeline API with SSE Streaming
   const handleAnalyze = async () => {
     if (files.length === 0) return;
@@ -493,6 +521,8 @@ export default function LegalAnalysisPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           files: filesPayload,
+          companyId: selectedCompany?.id,
+          companyName: selectedCompany?.name,
           dryRun,
           stream: true // Request streaming
         })
@@ -739,41 +769,92 @@ export default function LegalAnalysisPage() {
             )}
             
             {/* Options & Button */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-white/60 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                  className="rounded border-white/20 bg-white/5"
-                  disabled={isAnalyzing}
-                />
-                Dry run (don't save to database)
-              </label>
-              
-              <button
-                onClick={handleAnalyze}
-                disabled={files.length === 0 || isAnalyzing}
-                className={`
-                  flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all
-                  ${files.length > 0 && !isAnalyzing
-                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                    : 'bg-white/10 text-white/30 cursor-not-allowed'
-                  }
-                `}
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin" />
-                    Analyzing ({progress.phase1.completed}/{progress.phase1.total})...
-                  </>
+            <div className="space-y-4">
+              {/* Company Selection */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-white/70 mb-1">
+                  Link to Portfolio Company (Optional)
+                </label>
+                {selectedCompany ? (
+                  <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} className="text-emerald-400" />
+                      <span className="text-white font-medium">{selectedCompany.name}</span>
+                    </div>
+                    <button 
+                      onClick={() => { setSelectedCompany(null); setCompanySearch(''); }}
+                      className="text-white/40 hover:text-white p-1"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 ) : (
-                  <>
-                    <Scale size={20} />
-                    Analyze Documents
-                  </>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search companies..."
+                      value={companySearch}
+                      onChange={(e) => { setCompanySearch(e.target.value); setShowSuggestions(true); }}
+                      className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                      disabled={isAnalyzing}
+                    />
+                    {showSuggestions && companySuggestions.length > 0 && (
+                      <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-slate-900 border border-white/10 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                        {companySuggestions.map(company => (
+                          <button
+                            key={company.id}
+                            onClick={() => {
+                              setSelectedCompany(company);
+                              setShowSuggestions(false);
+                              setCompanySearch('');
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-white/5 text-white text-sm transition-colors"
+                          >
+                            {company.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-white/60 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dryRun}
+                    onChange={(e) => setDryRun(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5"
+                    disabled={isAnalyzing}
+                  />
+                  Dry run (don't save to database)
+                </label>
+                
+                <button
+                  onClick={handleAnalyze}
+                  disabled={files.length === 0 || isAnalyzing}
+                  className={`
+                    flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all
+                    ${files.length > 0 && !isAnalyzing
+                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                      : 'bg-white/10 text-white/30 cursor-not-allowed'
+                    }
+                  `}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Analyzing ({progress.phase1.completed}/{progress.phase1.total})...
+                    </>
+                  ) : (
+                    <>
+                      <Scale size={20} />
+                      Analyze Documents
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
             
             {/* Error */}

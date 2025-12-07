@@ -22,9 +22,142 @@ import {
   AlertCircle,
   Download,
   Search,
-  Tag
+  Tag,
+  FileText as FileIcon
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
+
+interface AnalysisSummary {
+  id: string;
+  document_name: string;
+  document_type: string;
+  jurisdiction: string;
+  executive_summary: { point: string; flag: string; category: string }[];
+  flags: {
+    economics_downside?: { flag: string };
+    control_governance?: { flag: string };
+    legal_gc_risk?: { flag: string };
+  };
+  created_at: string;
+}
+
+const flagColors: Record<string, string> = {
+  GREEN: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  AMBER: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  RED: 'bg-red-500/20 text-red-400 border-red-500/30'
+};
+
+const flagIcons: Record<string, React.ReactNode> = {
+  GREEN: <CheckCircle size={14} />,
+  AMBER: <AlertTriangle size={14} />,
+  RED: <AlertCircle size={14} />
+};
+
+function CompanyLegalList({ companyId }: { companyId: string }) {
+  const [analyses, setAnalyses] = useState<AnalysisSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAnalyses = async () => {
+      try {
+        const res = await fetch(`/api/portfolio/legal-analysis?companyId=${companyId}&limit=50`);
+        const data = await res.json();
+        if (data.success) {
+          setAnalyses(data.analyses || []);
+        }
+      } catch (err) {
+        console.error('Error fetching legal analyses:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAnalyses();
+  }, [companyId]);
+
+  if (loading) return <div className="p-8 text-center text-white/50"><Loader2 className="animate-spin mx-auto mb-2" />Loading documents...</div>;
+
+  if (analyses.length === 0) {
+    return (
+      <div className="bg-white/5 rounded-xl p-12 text-center border border-white/10">
+        <Shield size={48} className="mx-auto text-white/20 mb-4" />
+        <h3 className="text-xl font-medium text-white">No Legal Documents</h3>
+        <p className="text-white/50 mt-2">Upload term sheets or agreements to see analysis here.</p>
+        <Link href="/portfolio/legal" className="inline-block mt-6 text-emerald-400 hover:underline">
+          Upload New Document →
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-white">Legal Analysis ({analyses.length})</h3>
+        <Link href="/portfolio/legal" className="text-sm text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+          <Upload size={14} /> Upload New
+        </Link>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {analyses.map((analysis) => (
+          <Link
+            key={analysis.id}
+            href={`/portfolio/legal/analysis?id=${analysis.id}`}
+            className="block bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 rounded-lg p-5 transition-all group"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileIcon size={18} className="text-emerald-400 shrink-0" />
+                  <h4 className="text-base font-medium text-white group-hover:text-emerald-400 transition-colors truncate" title={analysis.document_name}>
+                    {analysis.document_name}
+                  </h4>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-xs border border-blue-500/20">
+                    {analysis.jurisdiction}
+                  </span>
+                  <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded text-xs border border-purple-500/20">
+                    {analysis.document_type.replace(/_/g, ' ')}
+                  </span>
+                  <span className="flex items-center gap-1 text-white/40 text-xs ml-auto">
+                    <Calendar size={10} />
+                    {new Date(analysis.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                
+                {analysis.flags && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {analysis.flags.economics_downside?.flag && (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.economics_downside.flag]}`}>
+                        {flagIcons[analysis.flags.economics_downside.flag]}
+                        Econ
+                      </span>
+                    )}
+                    {analysis.flags.control_governance?.flag && (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.control_governance.flag]}`}>
+                        {flagIcons[analysis.flags.control_governance.flag]}
+                        Gov
+                      </span>
+                    )}
+                    {analysis.flags.legal_gc_risk?.flag && (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${flagColors[analysis.flags.legal_gc_risk.flag]}`}>
+                        {flagIcons[analysis.flags.legal_gc_risk.flag]}
+                        Legal
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <ArrowLeft size={18} className="text-white/20 group-hover:text-emerald-400 transition-colors shrink-0 mt-1 rotate-180" />
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface CompanyDetail {
   id: string;
@@ -314,14 +447,7 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
           </Tabs.Content>
           
            <Tabs.Content value="legal">
-             <div className="bg-white/5 rounded-xl p-12 text-center border border-white/10">
-               <Shield size={48} className="mx-auto text-white/20 mb-4" />
-               <h3 className="text-xl font-medium text-white">Legal Documents</h3>
-               <p className="text-white/50 mt-2">Term sheets, SPAs, and risk analysis.</p>
-               <Link href="/portfolio/legal" className="inline-block mt-6 text-blue-400 hover:underline">
-                 Go to Legal Analysis →
-               </Link>
-             </div>
+             <CompanyLegalList companyId={params.id} />
           </Tabs.Content>
 
           <Tabs.Content value="guide">
