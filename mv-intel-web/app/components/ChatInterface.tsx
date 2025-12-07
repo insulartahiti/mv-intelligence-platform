@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, User, Bot, Sparkles, Network, Building2, Users, Mail, MessageSquare, MessageCircle, ChevronDown, ChevronUp, BrainCircuit, Globe, Plus, History, Copy, Download, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { ChatService } from '@/lib/chat/service';
+import { getUserConversations, getConversationHistory } from '@/app/actions/chat';
 
 const PLACEHOLDERS = [
     "Search companies, people, or ask anything...",
@@ -75,8 +75,6 @@ export default function ChatInterface({
     
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
-    const chatService = useRef(new ChatService());
-
     const conversationId = propConvId !== undefined ? propConvId : internalConvId;
     const setConversationId = propSetConvId || setInternalConvId;
     
@@ -96,7 +94,7 @@ export default function ChatInterface({
     const loadConversations = async () => {
         if (!userEntity?.id) return;
         try {
-            const convs = await chatService.current.getUserConversations(userEntity.id);
+            const convs = await getUserConversations(userEntity.id);
             setConversations(convs || []);
         } catch (e) {
             console.error("Failed to load conversations", e);
@@ -113,7 +111,7 @@ export default function ChatInterface({
     const handleSelectConversation = async (id: string) => {
         setLoading(true);
         try {
-            const history = await chatService.current.getHistory(id);
+            const history = await getConversationHistory(id);
             setConversationId(id);
             setMessages(history.map((m: any) => ({
                 id: m.id,
