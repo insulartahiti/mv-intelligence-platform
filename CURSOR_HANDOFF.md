@@ -566,6 +566,7 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   Fixed Caching Issue in `/api/portfolio/news` (added `force-dynamic`).
     *   **Resolved Constraint Conflict**: Switched `saveMetricsToDb` to `DELETE` + `INSERT` logic to prevent unique constraint errors during metric updates.
     *   **Date Parsing**: Added support for `YYYYMMDD` formatted dates in filenames.
+    *   **DB-Backed Guides**: Updated `loadPortcoGuide` to fetch configuration from `portfolio_guides` table, enabling dynamic guide creation via UI to take immediate effect in ingestion pipeline.
 
 *   **Ingestion Pipeline Performance (Dec 07)**:
     *   Parallel Person Enrichment moved to concurrent block.
