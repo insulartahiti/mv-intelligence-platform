@@ -2,12 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { PortcoGuide, PortcoMetadata, MappingRules } from './types';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 function getFiscalYearEndDate(month: number): string {
     // Return MM-DD format for the last day of the given month
-    // We use 2024 (leap year) to handle Feb 29 if needed, but usually 28 is safe enough for generic FYE.
-    // Actually, FYE usually implies the accounting period end.
-    // Let's use a standard mapping.
     const daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     const day = daysInMonth[month] || 31;
     return `${String(month).padStart(2, '0')}-${day}`;
@@ -16,7 +14,7 @@ function getFiscalYearEndDate(month: number): string {
 // Embedded Nelly guide for serverless environments where YAML files aren't bundled
 const NELLY_GUIDE_EMBEDDED = {
   company: {
-    name: "Nelly Solutions GmbH",
+    name: "Nelly",
     slug: "nelly",
     business_models: ["saas", "factoring_private", "factoring_public", "pos"],
     currency: "EUR",
@@ -178,6 +176,19 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
       }
     }
     
+    if (rawGuide.metrics_mapping) {
+       for (const [metricId, config] of Object.entries(rawGuide.metrics_mapping as Record<string, any>)) {
+           // Also add explicit metrics mapping as line items if not already present
+           if (!lineItems[metricId] && config.labels && config.labels.length > 0) {
+                lineItems[metricId] = {
+                    source: 'pdf',
+                    label_match: config.labels[0],
+                    patterns: config.labels
+                };
+           }
+       }
+    }
+    
     mapping_rules = { line_items: lineItems };
   }
 
@@ -197,10 +208,47 @@ function normalizeGuide(rawGuide: any): PortcoGuide {
   };
 }
 
-export function loadPortcoGuide(slug: string): PortcoGuide {
+export async function loadPortcoGuide(slug: string, supabase?: SupabaseClient): Promise<PortcoGuide> {
   const guidePath = path.join(PORTCOS_DIR, slug, 'guide.yaml');
   
-  // Try to load from filesystem first
+  // 1. Try DB if Supabase client provided
+  if (supabase) {
+      try {
+          // First resolve slug to company_id (or try direct if UUID)
+          let companyId = slug;
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+          
+          if (!isUuid) {
+             const { data: entity } = await supabase
+                .schema('graph')
+                .from('entities')
+                .select('id')
+                .ilike('name', `%${slug}%`)
+                .limit(1)
+                .maybeSingle();
+                
+             if (entity) companyId = entity.id;
+          }
+
+          if (companyId) {
+              const { data: guideRecord } = await supabase
+                .from('portfolio_guides')
+                .select('content_yaml')
+                .eq('company_id', companyId)
+                .maybeSingle();
+                
+              if (guideRecord && guideRecord.content_yaml) {
+                  console.log(`[Loader] Loaded guide from DB for ${slug}`);
+                  const rawGuide = yaml.load(guideRecord.content_yaml) as any;
+                  return normalizeGuide(rawGuide);
+              }
+          }
+      } catch (dbErr) {
+          console.warn(`[Loader] DB guide lookup failed for ${slug}:`, dbErr);
+      }
+  }
+
+  // 2. Try filesystem
   try {
     if (fs.existsSync(guidePath)) {
       const fileContent = fs.readFileSync(guidePath, 'utf-8');
@@ -212,8 +260,8 @@ export function loadPortcoGuide(slug: string): PortcoGuide {
     console.warn(`[Loader] Failed to load guide from filesystem: ${err}`);
   }
   
-  // Fallback to embedded guides for serverless environments
-  if (slug === 'nelly') {
+  // 3. Fallback to embedded guides
+  if (slug.toLowerCase() === 'nelly') {
     console.log(`[Loader] Using embedded Nelly guide (filesystem not available)`);
     return normalizeGuide(NELLY_GUIDE_EMBEDDED);
   }
@@ -242,3 +290,4 @@ export function listConfiguredPortcos(): string[] {
   
   return embedded;
 }
+

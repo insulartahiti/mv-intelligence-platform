@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     console.log(`[Local Ingest] Screenshot rendering available: ${canRenderScreenshots}`);
     
     // Load guide once (shared across all files)
-    const guide = loadPortcoGuide(companySlug);
+    const guide = await loadPortcoGuide(companySlug);
     
     // =========================================================================
     // PARALLEL EXTRACTION: Process all files concurrently

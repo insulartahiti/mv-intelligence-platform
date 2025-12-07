@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
             }
             
             // 2. Load Guide
-            const guide = loadPortcoGuide(companySlug);
+            const guide = await loadPortcoGuide(companySlug, supabase);
             const companyName = guide.company_metadata?.name || (guide as any).company?.name;
             if (!companyName) throw new Error(`Invalid guide structure for ${companySlug}: Missing company name`);
 

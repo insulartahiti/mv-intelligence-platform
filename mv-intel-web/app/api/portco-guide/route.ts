@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const guide = loadPortcoGuide(company);
+    const guide = await loadPortcoGuide(company);
     return NextResponse.json({ guide });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
