@@ -14,8 +14,9 @@ import {
   Globe,
   Newspaper,
   Calendar,
-  Shield,
-  Briefcase
+  Shield, 
+  Briefcase,
+  Loader2
 } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 
@@ -32,13 +33,43 @@ interface CompanyDetail {
   status?: string;
 }
 
+interface NewsItem {
+  title: string;
+  date: string;
+  source: string;
+  summary: string;
+}
+
 export default function PortfolioCompanyPage({ params }: { params: { id: string } }) {
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
   
   useEffect(() => {
     fetchCompanyDetails();
   }, [params.id]);
+
+  useEffect(() => {
+    if (company?.name) {
+      fetchNews(company.name);
+    }
+  }, [company]);
+
+  const fetchNews = async (name: string) => {
+    setNewsLoading(true);
+    try {
+      const res = await fetch(`/api/portfolio/news?companyName=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (data.news && Array.isArray(data.news)) {
+        setNews(data.news);
+      }
+    } catch (err) {
+      console.error('Error fetching news:', err);
+    } finally {
+      setNewsLoading(false);
+    }
+  };
 
   const fetchCompanyDetails = async () => {
     try {
@@ -183,8 +214,32 @@ export default function PortfolioCompanyPage({ params }: { params: { id: string 
                     <Newspaper size={20} className="text-blue-400" />
                     Latest News
                   </h3>
-                  <div className="text-sm text-white/40 italic">
-                    Powered by Perplexity (Coming Soon)
+                  <div className="space-y-4">
+                    {newsLoading ? (
+                       <div className="text-sm text-white/40 italic flex items-center gap-2">
+                         <Loader2 size={14} className="animate-spin" /> Loading updates...
+                       </div>
+                    ) : news.length > 0 ? (
+                      news.map((item, idx) => (
+                        <div key={idx} className="p-3 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
+                          <div className="flex justify-between items-start mb-1">
+                             <span className="text-sm font-medium text-emerald-400 line-clamp-2">{item.title}</span>
+                             <span className="text-xs text-white/40 whitespace-nowrap ml-2">{item.date}</span>
+                          </div>
+                          <div className="text-xs text-white/50 mb-2">{item.source}</div>
+                          <p className="text-xs text-white/70 line-clamp-3">{item.summary}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-white/40 italic">
+                        No recent news found.
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/5 flex justify-end">
+                     <div className="text-[10px] text-white/30 uppercase tracking-widest flex items-center gap-1">
+                       Powered by Perplexity
+                     </div>
                   </div>
                 </section>
               </div>

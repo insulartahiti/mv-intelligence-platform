@@ -158,9 +158,10 @@ export default function PortfolioDashboard() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {fundCompanies.map((company) => (
-                    <div 
+                    <Link 
+                      href={`/portfolio/${company.id}`}
                       key={company.id}
-                      className="group bg-white/5 hover:bg-white/[0.07] border border-white/10 hover:border-emerald-500/30 rounded-xl p-5 transition-all duration-300 flex flex-col h-full"
+                      className="group bg-white/5 hover:bg-white/[0.07] border border-white/10 hover:border-emerald-500/30 rounded-xl p-5 transition-all duration-300 flex flex-col h-full cursor-pointer"
                     >
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-3">
@@ -219,7 +220,7 @@ export default function PortfolioDashboard() {
                            </span>
                         </div>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </div>
