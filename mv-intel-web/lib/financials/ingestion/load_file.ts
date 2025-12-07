@@ -92,6 +92,7 @@ async function loadFromSupabase(storagePath: string): Promise<FileMetadata> {
 
     return {
         filename,
+        path: storagePath,
         buffer,
         mimeType
     };

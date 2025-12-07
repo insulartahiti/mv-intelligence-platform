@@ -21,6 +21,11 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// Vercel Pro: maxDuration up to 300s (5 min) by default
+// With Fluid Compute enabled: up to 800s (13+ min)
+// This allows time for multi-file extraction with LLM calls
+export const maxDuration = 300;
+
 // Helper to create Supabase client lazily (inside handler, not at module load time)
 // This prevents Vercel build failures when env vars aren't available during build
 function getSupabaseClient() {

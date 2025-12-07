@@ -29,7 +29,25 @@ export interface NormalizedLineItem {
  * Maps variations like "total_actual_mrr" -> "mrr", "monthly_revenue" -> "mrr"
  */
 function normalizeMetricKey(key: string): string {
-  const lowerKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  let lowerKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  
+  // Strip common suffixes to map budget/target metrics to the same base metric ID
+  // The scenario field (Actual vs Budget) will distinguish the values
+  const suffixesToRemove = [
+    '_target', '_budget', '_plan', '_forecast', 
+    '_actual', '_actuals', '_ytd', '_l3m', '_l12m'
+  ];
+  
+  // Handle keys that end with these suffixes (but ensure we don't reduce to empty string)
+  for (const suffix of suffixesToRemove) {
+    if (lowerKey.endsWith(suffix) && lowerKey.length > suffix.length) {
+      lowerKey = lowerKey.slice(0, -suffix.length);
+      // Remove trailing underscore if present
+      if (lowerKey.endsWith('_')) {
+        lowerKey = lowerKey.slice(0, -1);
+      }
+    }
+  }
   
   // Direct mappings for common variations
   const mappings: Record<string, string> = {
@@ -104,7 +122,7 @@ function normalizeMetricKey(key: string): string {
  * - If only one separator, assume it's the decimal if it has 1-2 digits after
  * - If only commas with 3+ digits between, assume thousands separator
  */
-function parseLocalizedNumber(rawNum: string, defaultCurrency: string = 'USD'): number | null {
+function parseLocalizedNumber(rawNum: string, defaultCurrency: string = 'EUR'): number | null {
   if (!rawNum || rawNum.trim() === '') return null;
   
   // Remove any currency symbols, spaces, and other non-numeric chars except . and ,
@@ -239,6 +257,8 @@ export async function mapDataToSchema(
             source_location: {
               file_type: unifiedData.fileType,
               page: srcLoc?.page || 1,
+              sheet: srcLoc?.sheet,
+              cell: srcLoc?.cell,
               bbox: srcLoc?.bbox,
               context: `GPT-5.1 actuals (${financialSummary?.currency || 'EUR'})`
             }
@@ -266,6 +286,8 @@ export async function mapDataToSchema(
             source_location: {
               file_type: unifiedData.fileType,
               page: srcLoc?.page || 1,
+              sheet: srcLoc?.sheet,
+              cell: srcLoc?.cell,
               bbox: srcLoc?.bbox,
               context: `GPT-5.1 budget (${financialSummary?.currency || 'EUR'})`
             }
@@ -273,8 +295,81 @@ export async function mapDataToSchema(
         }
       }
     }
+
+    // Extract MULTI-PERIODS (Time Series)
+    if (financialSummary?.multi_periods && financialSummary.multi_periods.length > 0) {
+      console.log(`[Mapping] Processing ${financialSummary.multi_periods.length} historical periods`);
+      
+      for (const periodData of financialSummary.multi_periods) {
+        // Ensure we have a valid date string (YYYY-MM-DD)
+        const periodStr = periodData.period;
+        if (!periodStr) continue;
+
+        // Try to find deterministic sheet/cell data for this period if available
+        // Use per-period source locations from LLM if available
+        const periodSourceLocs = (periodData as any).source_locations || {};
+        
+        // Actuals
+        if (periodData.actuals) {
+          for (const [metricKey, value] of Object.entries(periodData.actuals)) {
+             if (typeof value === 'number' && !isNaN(value)) {
+                const normalizedKey = normalizeMetricKey(metricKey);
+                
+                // 1. Look for specific source in this period
+                // 2. Fallback to main list
+                const specificSrc = periodSourceLocs[metricKey] || periodSourceLocs[normalizedKey];
+                const mainSrc = sourceLocations[metricKey] || sourceLocations[normalizedKey];
+                
+                // Prefer specific source
+                const finalSrc = specificSrc || mainSrc;
+                
+                results.push({
+                  line_item_id: normalizedKey,
+                  amount: value,
+                  date: periodStr,
+                  scenario: 'actual',
+                  source_location: {
+                    file_type: unifiedData.fileType,
+                    page: finalSrc?.page || 1,
+                    sheet: finalSrc?.sheet,
+                    cell: finalSrc?.cell, 
+                    context: `GPT-5.1 multi-period actuals`
+                  }
+                });
+             }
+          }
+        }
+        
+        // Budget
+        if (periodData.budget) {
+          for (const [metricKey, value] of Object.entries(periodData.budget)) {
+             if (typeof value === 'number' && !isNaN(value)) {
+                const normalizedKey = normalizeMetricKey(metricKey);
+                
+                const specificSrc = periodSourceLocs[metricKey] || periodSourceLocs[normalizedKey] || periodSourceLocs[`budget_${metricKey}`];
+                const mainSrc = sourceLocations[`budget_${metricKey}`] || sourceLocations[metricKey];
+                const finalSrc = specificSrc || mainSrc;
+
+                results.push({
+                  line_item_id: normalizedKey,
+                  amount: value,
+                  date: periodStr,
+                  scenario: 'budget',
+                  source_location: {
+                    file_type: unifiedData.fileType,
+                    page: finalSrc?.page || 1,
+                    sheet: finalSrc?.sheet,
+                    cell: finalSrc?.cell,
+                    context: `GPT-5.1 multi-period budget`
+                  }
+                });
+             }
+          }
+        }
+      }
+    }
     
-    if (Object.keys(actuals).length === 0 && Object.keys(budget).length === 0) {
+    if (Object.keys(actuals).length === 0 && Object.keys(budget).length === 0 && (!financialSummary?.multi_periods || financialSummary.multi_periods.length === 0)) {
       console.warn(`[Mapping] No financial_summary metrics found in unified result`);
     }
     
@@ -400,7 +495,9 @@ export async function mapDataToSchema(
   // 2. Handle PDF Mapping (Enhanced with GPT-5.1 extraction)
   if (fileType === 'pdf' && 'pages' in (data as any)) {
     const pdfContent = data as PDFContent;
-    const currency = guide.company_metadata?.currency || 'USD';
+    // BUG FIX: Standardize on EUR as default to match ingest/route.ts
+    // Most portfolio companies are European (e.g., Nelly uses EUR)
+    const currency = guide.company_metadata?.currency || 'EUR';
     
     // A. First, extract from financial_summary if available (from GPT-5.1 structured analysis)
     const financialSummary = pdfContent.info?.financial_summary;

@@ -481,6 +481,20 @@ const tools = [
         required: ["channel", "recipient_name", "body"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_legal_analysis",
+      description: "Retrieve a past legal document analysis for a portfolio company. Use this when user asks about term sheets, deal terms, investment documents, SAFEs, CLAs, or legal terms for a company.",
+      parameters: {
+        type: "object",
+        properties: {
+          companyId: { type: "string", description: "The UUID of the company to get legal analyses for. Search for the company first to get its ID." },
+          analysisId: { type: "string", description: "Optional: Specific analysis ID to retrieve." }
+        }
+      }
+    }
   }
 ];
 
@@ -808,6 +822,61 @@ export async function POST(req: NextRequest) {
                                     
                                     contextText = `Message draft prepared (${draft.channel}). The user will see a button to open it.`;
                                     return { id: toolCall.id, result: contextText, nodeIds: [], draft: draft };
+                                }
+                                else if (toolCall.function.name === 'get_legal_analysis') {
+                                    sendEvent('thought', { content: `Retrieving legal document analysis...` });
+                                    
+                                    try {
+                                        // Build query parameters
+                                        const params = new URLSearchParams();
+                                        if (args.analysisId) params.set('id', args.analysisId);
+                                        if (args.companyId) params.set('companyId', args.companyId);
+                                        params.set('limit', '5');
+                                        
+                                        // Fetch from internal API
+                                        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                                        const response = await fetch(`${baseUrl}/api/portfolio/legal-analysis?${params.toString()}`);
+                                        const data = await response.json();
+                                        
+                                        if (!data.success) {
+                                            contextText = `No legal analyses found. ${data.error || ''}`;
+                                            sendEvent('thought', { content: "No legal analyses found." });
+                                            return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
+                                        }
+                                        
+                                        if (data.analysis) {
+                                            // Single analysis requested
+                                            const a = data.analysis;
+                                            contextText = `Legal Analysis for: ${a.document_name}
+Jurisdiction: ${a.jurisdiction}
+Instrument Type: ${a.document_type}
+Analyzed: ${new Date(a.created_at).toLocaleDateString()}
+
+Executive Summary:
+${(a.executive_summary || []).map((p: any) => `- [${p.flag}] ${p.point}`).join('\n')}
+
+Flag Summary:
+- Economics: ${a.flags?.economics_downside?.flag || 'N/A'}
+- Control: ${a.flags?.control_governance?.flag || 'N/A'}
+- Legal Risk: ${a.flags?.legal_gc_risk?.flag || 'N/A'}
+
+View full analysis at: /portfolio/legal/analysis?id=${a.id}`;
+                                        } else if (data.analyses && data.analyses.length > 0) {
+                                            // List of analyses
+                                            contextText = `Found ${data.analyses.length} legal document analyses:\n\n` + 
+                                                data.analyses.map((a: any) => 
+                                                    `- ${a.document_name} (${a.jurisdiction}, ${a.document_type.replace(/_/g, ' ')}) - ${new Date(a.created_at).toLocaleDateString()}`
+                                                ).join('\n');
+                                        } else {
+                                            contextText = "No legal analyses found for this company.";
+                                        }
+                                        
+                                        sendEvent('thought', { content: `Found legal analysis data.` });
+                                        return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
+                                    } catch (err: any) {
+                                        contextText = `Error retrieving legal analysis: ${err.message}`;
+                                        return { id: toolCall.id, result: contextText, nodeIds: [], draft: null };
+                                    }
                                 }
                                 
                                 return { id: toolCall.id, result: "Unknown tool", nodeIds: [], draft: null };

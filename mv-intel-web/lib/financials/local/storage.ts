@@ -161,6 +161,21 @@ export interface LocalFactRecord {
   source_file: string;
   source_location: any;
   extractedAt: string;
+  // Reconciliation fields
+  priority?: number;
+  explanation?: string;           // Contextual explanation from source doc
+  snippet_url?: string;           // Link to visual source
+  changelog?: ChangeLogEntry[];   // History of changes to this fact
+}
+
+export interface ChangeLogEntry {
+  timestamp: string;
+  oldValue: number | null;
+  newValue: number;
+  reason: string;
+  source_file: string;
+  explanation?: string;
+  view_source_url?: string;
 }
 
 export function saveFacts(companySlug: string, period: string, facts: LocalFactRecord[]): void {
@@ -346,6 +361,28 @@ export function clearCache(): void {
     fs.rmSync(cacheDir, { recursive: true });
     console.log(`[Local] Cleared cache`);
   }
+}
+
+// ============================================================================
+// Snippet Storage
+// ============================================================================
+
+export function saveSnippet(companySlug: string, filename: string, buffer: Buffer): string {
+  const dir = path.join(LOCAL_DATA_DIR, 'snippets', companySlug);
+  ensureDir(dir);
+  
+  const filePath = path.join(dir, filename);
+  fs.writeFileSync(filePath, buffer);
+  console.log(`[Local] Saved snippet: ${filePath}`);
+  
+  // Return relative path for API
+  return `/api/local-snippet?company=${encodeURIComponent(companySlug)}&file=${encodeURIComponent(filename)}`;
+}
+
+export function getSnippetPath(companySlug: string, filename: string): string | null {
+  const filePath = path.join(LOCAL_DATA_DIR, 'snippets', companySlug, filename);
+  if (fs.existsSync(filePath)) return filePath;
+  return null;
 }
 
 // ============================================================================

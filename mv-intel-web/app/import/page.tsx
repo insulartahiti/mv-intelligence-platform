@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, Check, AlertCircle, Loader2, Search, Database, Cloud } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import Link from 'next/link';
+import { Upload, FileText, Check, AlertCircle, Loader2, Search, Database, Cloud, History, AlertTriangle, Info, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 
 export default function ImportPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -16,6 +17,9 @@ export default function ImportPage() {
   const [targetCompanyName, setTargetCompanyName] = useState('');
   const [resolvedCompanyId, setResolvedCompanyId] = useState('');
   const [dryRunResults, setDryRunResults] = useState<any[]>([]);
+  const [expandedChangelog, setExpandedChangelog] = useState<string | null>(null);
+  const [guideUsed, setGuideUsed] = useState<any>(null);
+  const [extractedCompany, setExtractedCompany] = useState<string>('');
   
   // Local mode state
   const [localMode, setLocalMode] = useState(true); // Default to local for development
@@ -179,6 +183,8 @@ export default function ImportPage() {
           
           if (res.ok && data.status !== 'error') {
               setDryRunResults(data.results || []);
+              setGuideUsed(data.guide_used || null);
+              setExtractedCompany(data.company || selectedCompany);
               setUploadStatus('success');
               const cacheInfo = localMode && data.summary?.cached > 0 
                   ? ` (${data.summary.cached} from cache)` 
@@ -719,102 +725,510 @@ export default function ImportPage() {
             </button>
           </div>
 
+          {/* Portco Guide Card - Always visible when guide is loaded */}
+          {guideUsed && (
+              <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-xl border border-blue-500/30 overflow-hidden">
+                  <div className="p-4 border-b border-blue-500/20 bg-blue-500/10 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-500/20 rounded-lg">
+                              <FileText className="text-blue-400" size={20} />
+                          </div>
+                          <div>
+                              <h3 className="text-lg font-semibold text-blue-400">
+                                  Portco Guide: {guideUsed.company_metadata?.name || extractedCompany || selectedCompany}
+                              </h3>
+                              <p className="text-xs text-gray-400">
+                                  Currency: {guideUsed.company_metadata?.currency || 'N/A'} • 
+                                  FYE: {guideUsed.company_metadata?.fiscal_year_end || 'N/A'}
+                              </p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                          <Link 
+                              href={`/import/data?company=${extractedCompany || selectedCompany}`}
+                              target="_blank"
+                              className="px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 rounded-lg text-xs text-green-300 flex items-center gap-1.5 transition-colors"
+                          >
+                              <Database size={12} /> View Extracted Data
+                          </Link>
+                          <Link 
+                              href={`/import/guide?company=${extractedCompany || selectedCompany}`}
+                              target="_blank"
+                              className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-xs text-blue-300 flex items-center gap-1.5 transition-colors"
+                          >
+                              View Guide <ExternalLink size={12} />
+                          </Link>
+                      </div>
+                  </div>
+                  <details className="group" open>
+                      <summary className="px-4 py-2 cursor-pointer text-sm text-gray-400 hover:text-white flex items-center gap-2 bg-black/20">
+                          <ChevronRight size={14} className="group-open:rotate-90 transition-transform" />
+                          Metrics Mapping ({Object.keys(guideUsed.metrics_mapping || {}).length} metrics configured)
+                      </summary>
+                      <div className="p-4 bg-black/40 border-t border-white/5 max-h-64 overflow-y-auto">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                              {Object.entries(guideUsed.metrics_mapping || {}).map(([id, cfg]: [string, any]) => (
+                                  <div key={id} className="p-2 bg-white/5 rounded border border-white/10">
+                                      <div className="font-mono text-blue-300">{id}</div>
+                                      <div className="text-gray-500 truncate" title={(cfg.labels || []).join(', ')}>
+                                          {(cfg.labels || []).slice(0, 2).join(', ')}
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  </details>
+              </div>
+          )}
+
           {/* Dry Run Results */}
           {dryRunResults.length > 0 && (
               <div className="bg-black/40 rounded-xl border border-white/10 overflow-hidden">
                   <div className="p-4 border-b border-white/10 bg-white/5">
-                      <h3 className="text-lg font-semibold text-blue-400">Dry Run Results</h3>
+                      <h3 className="text-lg font-semibold text-blue-400">Extraction Results</h3>
                   </div>
                   <div className="p-4 space-y-6">
                       {dryRunResults.map((res, idx) => (
                           <div key={idx} className="space-y-4">
+                              {/* File Header with Priority Badge */}
                               <div className="flex items-center justify-between">
-                                  <h4 className="font-medium text-white">{res.file}</h4>
+                                  <div className="flex items-center gap-3">
+                                      <h4 className="font-medium text-white">{res.file}</h4>
+                                      {res.fileType && (
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase ${
+                                              res.fileType === 'board_deck' ? 'bg-amber-500/20 text-amber-400' :
+                                              res.fileType === 'investor_report' ? 'bg-blue-500/20 text-blue-400' :
+                                              res.fileType === 'budget_file' ? 'bg-purple-500/20 text-purple-400' :
+                                              'bg-gray-500/20 text-gray-400'
+                                          }`}>
+                                              {res.fileType?.replace('_', ' ')}
+                                              {res.priority && <span className="ml-1 opacity-60">P{res.priority}</span>}
+                                          </span>
+                                      )}
+                                  </div>
                                   <span className={`px-2 py-1 rounded text-xs ${res.status === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
                                       {res.status}
                                   </span>
                               </div>
                               
-                              {res.computed_metrics && res.computed_metrics.length > 0 && (
-                                  <div className="overflow-x-auto">
-                                      <table className="w-full text-sm text-left">
-                                          <thead className="text-xs text-gray-400 uppercase bg-white/5">
-                                              <tr>
-                                                  <th className="px-4 py-2">Metric</th>
-                                                  <th className="px-4 py-2">Value</th>
-                                                  <th className="px-4 py-2">Unit</th>
-                                                  <th className="px-4 py-2">Period</th>
-                                              </tr>
-                                          </thead>
-                                          <tbody>
-                                              {res.computed_metrics.map((m: any, i: number) => (
-                                                  <tr key={i} className="border-b border-white/5 hover:bg-white/5">
-                                                      <td className="px-4 py-2 font-medium text-gray-300">{m.metric_id}</td>
-                                                      <td className="px-4 py-2 text-white">
-                                                          {typeof m.value === 'number' 
-                                                              ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) 
-                                                              : m.value}
-                                                      </td>
-                                                      <td className="px-4 py-2 text-gray-400">{m.unit}</td>
-                                                      <td className="px-4 py-2 text-gray-400">{m.period}</td>
-                                                  </tr>
-                                              ))}
-                                          </tbody>
-                                      </table>
+                              {/* Reconciliation Summary */}
+                              {res.reconciliation && (
+                                  <div className="flex flex-wrap gap-3 text-xs">
+                                      {res.reconciliation.summary.inserted > 0 && (
+                                          <span className="flex items-center gap-1 px-2 py-1 bg-green-500/10 border border-green-500/20 rounded text-green-400">
+                                              <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                                              {res.reconciliation.summary.inserted} new
+                                          </span>
+                                      )}
+                                      {res.reconciliation.summary.updated > 0 && (
+                                          <span className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 border border-blue-500/20 rounded text-blue-400">
+                                              <History size={10} />
+                                              {res.reconciliation.summary.updated} updated
+                                          </span>
+                                      )}
+                                      {res.reconciliation.summary.ignored > 0 && (
+                                          <span className="flex items-center gap-1 px-2 py-1 bg-gray-500/10 border border-gray-500/20 rounded text-gray-400">
+                                              {res.reconciliation.summary.ignored} ignored (lower priority)
+                                          </span>
+                                      )}
+                                      {res.reconciliation.summary.conflicts > 0 && (
+                                          <span className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded text-red-400">
+                                              <AlertTriangle size={10} />
+                                              {res.reconciliation.summary.conflicts} conflicts
+                                          </span>
+                                      )}
+                                  </div>
+                              )}
+
+                              {/* Conflicts Panel */}
+                              {res.reconciliation?.conflicts?.length > 0 && (
+                                  <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                                      <div className="flex items-center gap-2 text-red-400 font-medium text-sm mb-2">
+                                          <AlertTriangle size={14} />
+                                          Data Conflicts Detected
+                                      </div>
+                                      <div className="space-y-2">
+                                          {res.reconciliation.conflicts.map((conflict: any, ci: number) => (
+                                              <div key={ci} className="flex items-start gap-3 text-xs bg-black/20 rounded p-2">
+                                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                                      conflict.severity === 'high' ? 'bg-red-500/20 text-red-400' :
+                                                      conflict.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                      'bg-gray-500/20 text-gray-400'
+                                                  }`}>
+                                                      {conflict.severity}
+                                                  </span>
+                                                  <div className="flex-1">
+                                                      <div className="text-white font-medium">{conflict.metric_id}</div>
+                                                      <div className="text-gray-400 mt-0.5">
+                                                          {conflict.existingValue.toLocaleString()} ({conflict.existingSource})
+                                                          <span className="mx-2">→</span>
+                                                          {conflict.newValue.toLocaleString()} ({conflict.newSource})
+                                                      </div>
+                                                      {conflict.newExplanation && (
+                                                          <div className="mt-1 text-blue-400 italic flex items-start gap-1">
+                                                              <Info size={10} className="mt-0.5 flex-shrink-0" />
+                                                              {conflict.newExplanation}
+                                                          </div>
+                                                      )}
+                                                  </div>
+                                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                      conflict.recommendation === 'use_new' ? 'bg-green-500/20 text-green-400' :
+                                                      conflict.recommendation === 'keep_existing' ? 'bg-gray-500/20 text-gray-400' :
+                                                      'bg-yellow-500/20 text-yellow-400'
+                                                  }`}>
+                                                      {conflict.recommendation === 'use_new' ? 'Using New' :
+                                                       conflict.recommendation === 'keep_existing' ? 'Kept Old' : 'Review'}
+                                                  </span>
+                                              </div>
+                                          ))}
+                                      </div>
                                   </div>
                               )}
                               
-                              {res.extracted_data && res.extracted_data.length > 0 && (
-                                  <details className="group" open>
-                                      <summary className="cursor-pointer text-sm text-blue-400 hover:text-blue-300 mb-2">
-                                          View {res.extracted_data.length} Raw Line Items
-                                      </summary>
-                                      <div className="overflow-x-auto mt-2 pl-4 border-l-2 border-white/10">
-                                          <table className="w-full text-xs text-left">
-                                              <thead>
-                                                  <tr className="text-gray-500">
-                                                      <th className="py-1 px-2">Line Item ID</th>
-                                                      <th className="py-1 px-2">Amount</th>
-                                                      <th className="py-1 px-2">Scenario</th>
-                                                      <th className="py-1 px-2">Source</th>
+                              {/* Key Metrics Table (same layout as Financial Data) */}
+                              {res.computed_metrics && res.computed_metrics.length > 0 && (
+                                  <div className="mb-6">
+                                      <h5 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                                          Computed Metrics
+                                          <span className="text-gray-500 font-normal ml-2">
+                                              ({res.computed_metrics.length} metrics)
+                                          </span>
+                                      </h5>
+                                      <div className="overflow-hidden border border-white/10 rounded-lg bg-white/5">
+                                          <table className="w-full text-xs text-left border-collapse">
+                                              <thead className="text-gray-400 bg-gray-900/90">
+                                                  <tr>
+                                                      <th className="py-3 px-4 font-medium min-w-[200px] border-r border-white/10">Metric</th>
+                                                      <th className="py-3 px-4 text-right font-medium">Value</th>
+                                                      <th className="py-3 px-4 text-center font-medium">Unit</th>
+                                                      <th className="py-3 px-4 text-center font-medium">Period</th>
                                                   </tr>
                                               </thead>
-                                              <tbody>
-                                                  {res.extracted_data.map((row: any, k: number) => (
-                                                      <tr key={k} className="border-b border-white/5 hover:bg-white/5">
-                                                          <td className="py-1 px-2 font-mono text-gray-400">{row.line_item_id}</td>
-                                                          <td className="py-1 px-2 text-white">{typeof row.amount === 'number' ? row.amount.toLocaleString() : row.amount}</td>
-                                                          <td className="py-1 px-2">
-                                                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                                                  row.scenario === 'budget' 
-                                                                      ? 'bg-purple-500/20 text-purple-400' 
-                                                                      : 'bg-green-500/20 text-green-400'
-                                                              }`}>
-                                                                  {row.scenario || 'Actual'}
-                                                              </span>
+                                              <tbody className="divide-y divide-white/5">
+                                                  {res.computed_metrics.map((m: any, i: number) => (
+                                                      <tr key={i} className="hover:bg-white/5 transition-colors">
+                                                          <td className="py-2 px-4 font-mono text-gray-300 border-r border-white/10">
+                                                              {m.metric_id.replace(/_/g, ' ')}
                                                           </td>
-                                                          <td className="py-1 px-2">
-                                                              {row.snippet_url ? (
-                                                                  <a 
-                                                                      href={row.snippet_url} 
-                                                                      target="_blank" 
-                                                                      rel="noopener noreferrer"
-                                                                      className="text-blue-400 hover:text-blue-300 underline"
-                                                                  >
-                                                                      Page {row.source_location?.page || '?'}
-                                                                  </a>
-                                                              ) : row.source_location?.page ? (
-                                                                  <span className="text-gray-500">Page {row.source_location.page}</span>
-                                                              ) : row.source_location?.sheet ? (
-                                                                  <span className="text-gray-500">{row.source_location.sheet}</span>
-                                                              ) : (
-                                                                  <span className="text-gray-600">-</span>
-                                                              )}
+                                                          <td className="py-2 px-4 text-right font-medium text-white">
+                                                              {typeof m.value === 'number' 
+                                                                  ? m.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) 
+                                                                  : m.value}
+                                                          </td>
+                                                          <td className="py-2 px-4 text-center text-gray-400">
+                                                              {m.unit}
+                                                          </td>
+                                                          <td className="py-2 px-4 text-center text-gray-500 text-[10px]">
+                                                              {m.period}
                                                           </td>
                                                       </tr>
                                                   ))}
                                               </tbody>
                                           </table>
+                                      </div>
+                                  </div>
+                              )}
+                              
+                              {/* Time-Series Financial Data Table */}
+                              {res.extracted_data && res.extracted_data.length > 0 && (() => {
+                                  // Build time-series pivot: Metric (rows) × Date (columns) × Scenario
+                                  const timeSeriesData: Record<string, Record<string, { actual?: any; budget?: any }>> = {};
+                                  const allDates = new Set<string>();
+                                  
+                                  res.extracted_data.forEach((item: any) => {
+                                      const date = item.date || res.period || 'Unknown';
+                                      allDates.add(date);
+                                      
+                                      if (!timeSeriesData[item.line_item_id]) {
+                                          timeSeriesData[item.line_item_id] = {};
+                                      }
+                                      if (!timeSeriesData[item.line_item_id][date]) {
+                                          timeSeriesData[item.line_item_id][date] = {};
+                                      }
+                                      
+                                      if (item.scenario === 'budget') {
+                                          timeSeriesData[item.line_item_id][date].budget = item;
+                                      } else {
+                                          timeSeriesData[item.line_item_id][date].actual = item;
+                                      }
+                                  });
+                                  
+                                  // Sort dates chronologically
+                                  const sortedDates = Array.from(allDates).sort();
+                                  const metrics = Object.keys(timeSeriesData).sort();
+                                  
+                                  // Format date for display
+                                  const formatDate = (d: string) => {
+                                      try {
+                                          const date = new Date(d);
+                                          return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                                      } catch { return d; }
+                                  };
+
+                                  // Helper to render value with source link
+                                  const renderValueWithSource = (item: any, colorClass: string) => {
+                                      if (!item || typeof item.amount !== 'number') return <span className="text-gray-600">-</span>;
+                                      
+                                      // Get snippet URL (local or remote)
+                                      let snippetUrl = item.snippet_url || item.source_location?.snippet_url;
+                                      
+                                      // If local mode and snippet exists but is a file path, convert to API URL
+                                      if (localMode && !snippetUrl && item.source_location?.page) {
+                                          // This is constructed in backend but fallback here
+                                      }
+
+                                      const valueDisplay = (
+                                          <span className={colorClass}>{item.amount.toLocaleString()}</span>
+                                      );
+
+                                      if (snippetUrl) {
+                                          return (
+                                              <a href={snippetUrl} target="_blank" rel="noopener noreferrer" 
+                                                 className="group flex items-center justify-end gap-1.5 hover:bg-white/5 px-1 rounded -mr-1"
+                                                 title="View source snippet">
+                                                  {valueDisplay}
+                                                  <ExternalLink size={10} className="text-gray-600 group-hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all" />
+                                              </a>
+                                          );
+                                      }
+                                      
+                                      return valueDisplay;
+                                  };
+                                  
+                                  return (
+                                      <div className="mb-4">
+                                          <h5 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                                              Financial Data 
+                                              <span className="text-gray-500 font-normal ml-2">
+                                                  ({metrics.length} metrics × {sortedDates.length} period{sortedDates.length > 1 ? 's' : ''})
+                                              </span>
+                                          </h5>
+                                          <div className="overflow-hidden border border-white/10 rounded-lg bg-white/5">
+                                              <div className="overflow-x-auto max-h-[600px]">
+                                                  <table className="w-full text-xs text-left border-collapse">
+                                                      <thead className="text-gray-400 bg-gray-900/90 sticky top-0 z-20 backdrop-blur-sm shadow-sm">
+                                                          <tr>
+                                                              <th className="py-3 px-4 font-medium sticky left-0 bg-gray-900 z-30 min-w-[200px] border-r border-white/10 shadow-[2px_0_5px_rgba(0,0,0,0.2)]">Metric</th>
+                                                              {sortedDates.map(date => (
+                                                                  <th key={date} colSpan={3} className="py-2 px-2 text-center border-l border-white/10">
+                                                                      <div className="font-semibold text-white">{formatDate(date)}</div>
+                                                                  </th>
+                                                              ))}
+                                                          </tr>
+                                                          <tr className="text-[10px] border-b border-white/10">
+                                                              <th className="py-1 px-4 sticky left-0 bg-gray-900 z-30 border-r border-white/10"></th>
+                                                              {sortedDates.map(date => (
+                                                                  <React.Fragment key={`${date}-headers`}>
+                                                                      <th className="py-1.5 px-3 text-right text-green-400 bg-green-900/10 border-l border-white/10 font-medium">Actual</th>
+                                                                      <th className="py-1.5 px-3 text-right text-purple-400 bg-purple-900/10 font-medium">Budget</th>
+                                                                      <th className="py-1.5 px-3 text-right text-gray-400 font-medium">Var %</th>
+                                                                  </React.Fragment>
+                                                              ))}
+                                                          </tr>
+                                                      </thead>
+                                                      <tbody className="divide-y divide-white/5">
+                                                          {metrics.map((metric, mi) => {
+                                                              const metricData = timeSeriesData[metric];
+                                                              const changelogKey = `${mi}-${metric}`;
+                                                              const isExpanded = expandedChangelog === changelogKey;
+                                                              
+                                                              // Check if any cell has changelog
+                                                              const hasAnyChangelog = Object.values(metricData).some(
+                                                                  d => d.actual?.hasChangelog || d.budget?.hasChangelog
+                                                              );
+                                                              
+                                                              return (
+                                                                  <React.Fragment key={metric}>
+                                                                      <tr className={`hover:bg-white/5 transition-colors group ${hasAnyChangelog ? 'bg-blue-500/5' : ''}`}>
+                                                                          <td className="py-2 px-4 font-mono text-gray-300 sticky left-0 bg-gray-900 z-10 border-r border-white/10 shadow-[2px_0_5px_rgba(0,0,0,0.2)] group-hover:bg-gray-800 transition-colors">
+                                                  <div className="flex items-center gap-2">
+                                                      {hasAnyChangelog && (
+                                                          <button
+                                                              onClick={() => setExpandedChangelog(isExpanded ? null : changelogKey)}
+                                                              className="p-0.5 hover:bg-white/10 rounded text-blue-400"
+                                                              title="View change history"
+                                                          >
+                                                              {isExpanded ? <ChevronDown size={10} /> : <History size={10} />}
+                                                          </button>
+                                                      )}
+                                                  <div className="flex-1 min-w-0">
+                                                      <div className="truncate" title={metric}>{metric.replace(/_/g, ' ')}</div>
+                                                      {(() => {
+                                                          // Find ANY cell for this metric that has a source location
+                                                          // Prioritize actuals, then budget
+                                                          // If it's a time series, any month will do for the row-level attribution
+                                                          const allCells = Object.values(metricData);
+                                                          const sourceCell = allCells.find(c => c.actual?.source_location) || 
+                                                                           allCells.find(c => c.budget?.source_location);
+                                                          
+                                                          const src = sourceCell?.actual?.source_location || sourceCell?.budget?.source_location;
+                                                          
+                                                          if (!src) return null;
+                                                          
+                                                          // Format: "Sheet!Cell" or "Context"
+                                                          // If context says "GPT-5.1 multi-period...", try to show sheet if available
+                                                          const displayText = src.sheet 
+                                                              ? `📄 ${src.sheet}${src.cell ? `!${src.cell}` : ''}`
+                                                              : (src.context || '').replace('GPT-5.1 ', '');
+
+                                                          return (
+                                                              <div className="text-[9px] text-gray-500 truncate" title={src.context || ''}>
+                                                                  {displayText}
+                                                              </div>
+                                                          );
+                                                      })()}
+                                                  </div>
+                                                  </div>
+                                          </td>
+                                                                          {sortedDates.map(date => {
+                                                                              const cell = metricData[date] || {};
+                                                                              const actual = cell.actual;
+                                                                              const budget = cell.budget;
+                                                                              const hasActual = !!actual;
+                                                                              const hasBudget = !!budget;
+                                                                              
+                                                                              let varPct: number | null = null;
+                                                                              if (hasActual && hasBudget && budget.amount !== 0) {
+                                                                                  varPct = ((actual.amount - budget.amount) / Math.abs(budget.amount)) * 100;
+                                                                              }
+                                                                              
+                                                                              return (
+                                                                                  <React.Fragment key={`${metric}-${date}`}>
+                                                                                      <td className="py-2 px-3 text-right font-medium bg-green-900/5 border-l border-white/10 relative">
+                                                                                          {renderValueWithSource(actual, "text-white")}
+                                                                                      </td>
+                                                                                      <td className="py-2 px-3 text-right font-medium bg-purple-900/5 relative">
+                                                                                          {renderValueWithSource(budget, "text-gray-300")}
+                                                                                      </td>
+                                                                                      <td className="py-2 px-3 text-right">
+                                                                                          {varPct !== null ? (
+                                                                                              <span className={`font-medium ${varPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                                                                  {varPct > 0 ? '+' : ''}{varPct.toFixed(1)}%
+                                                                                              </span>
+                                                                                          ) : <span className="text-gray-600">-</span>}
+                                                                                      </td>
+                                                                                  </React.Fragment>
+                                                                              );
+                                                                          })}
+                                                                      </tr>
+                                                                      
+                                                                      {/* Expanded row for changelog */}
+                                                                      {isExpanded && (
+                                                                          <tr>
+                                                                              <td colSpan={1 + sortedDates.length * 3} className="bg-black/30 border-l-2 border-blue-500">
+                                                                                  <div className="p-3 space-y-2">
+                                                                                      <div className="text-[10px] text-gray-500 uppercase font-medium">Change History for {metric.replace(/_/g, ' ')}</div>
+                                                                                      {Object.entries(metricData).map(([date, cell]) => {
+                                                                                          const changelog = cell.actual?.changelog || cell.budget?.changelog || [];
+                                                                                          if (changelog.length === 0) return null;
+                                                                                          return (
+                                                                                              <div key={date} className="space-y-1">
+                                                                                                  <div className="text-xs text-gray-400">{formatDate(date)}</div>
+                                                                                                  {changelog.map((entry: any, ei: number) => (
+                                                                                                      <div key={ei} className="flex items-center gap-3 text-xs bg-white/5 rounded p-2 ml-4">
+                                                                                                          <span className="text-gray-500 text-[10px] w-28 flex-shrink-0">
+                                                                                                              {new Date(entry.timestamp).toLocaleString()}
+                                                                                                          </span>
+                                                                                                          <span className="text-gray-300">
+                                                                                                              {entry.oldValue !== null && (
+                                                                                                                  <>
+                                                                                                                      <span className="text-red-400 line-through">{entry.oldValue?.toLocaleString()}</span>
+                                                                                                                      <span className="mx-1">→</span>
+                                                                                                                  </>
+                                                                                                              )}
+                                                                                                              <span className="text-green-400">{entry.newValue?.toLocaleString()}</span>
+                                                                                                          </span>
+                                                                                                          <span className="text-gray-500 flex-1 truncate">{entry.reason}</span>
+                                                                                                          {entry.view_source_url && (
+                                                                                                              <a href={entry.view_source_url} target="_blank" rel="noopener noreferrer"
+                                                                                                                  className="text-blue-400 hover:text-blue-300 text-[10px] flex-shrink-0">
+                                                                                                                  Source ↗
+                                                                                                              </a>
+                                                                                                          )}
+                                                                                                      </div>
+                                                                                                  ))}
+                                                                                              </div>
+                                                                                          );
+                                                                                      })}
+                                                                                  </div>
+                                                                              </td>
+                                                                          </tr>
+                                                                      )}
+                                                                  </React.Fragment>
+                                                              );
+                                                          })}
+                                                      </tbody>
+                                                  </table>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  );
+                              })()}
+                              
+                              {/* Variance Explanations from Document */}
+                              {res.variance_explanations && res.variance_explanations.length > 0 && (
+                                  <details className="group">
+                                      <summary className="cursor-pointer text-sm text-blue-400 hover:text-blue-300 mb-2 flex items-center gap-2">
+                                          <Info size={14} />
+                                          {res.variance_explanations.length} Variance Explanation{res.variance_explanations.length > 1 ? 's' : ''} Found
+                                      </summary>
+                                      <div className="mt-2 space-y-2">
+                                          {res.variance_explanations.map((exp: any, ei: number) => (
+                                              <div key={ei} className="flex items-start gap-3 text-xs bg-blue-500/5 border border-blue-500/20 rounded p-3">
+                                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                                      exp.explanation_type === 'restatement' ? 'bg-red-500/20 text-red-400' :
+                                                      exp.explanation_type === 'correction' ? 'bg-orange-500/20 text-orange-400' :
+                                                      exp.explanation_type === 'one_time' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                      'bg-gray-500/20 text-gray-400'
+                                                  }`}>
+                                                      {exp.explanation_type}
+                                                  </span>
+                                                  <div className="flex-1">
+                                                      <div className="text-white font-medium">{exp.metric_id}</div>
+                                                      <div className="text-gray-300 mt-1">{exp.explanation}</div>
+                                                  </div>
+                                                  {exp.source_page && (
+                                                      <span className="text-gray-500 text-[10px]">Page {exp.source_page}</span>
+                                                  )}
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </details>
+                              )}
+                              
+                              {/* Reconciliation Changelog */}
+                              {res.reconciliation?.changes?.length > 0 && (
+                                  <details className="group">
+                                      <summary className="cursor-pointer text-sm text-green-400 hover:text-green-300 mb-2 flex items-center gap-2">
+                                          <History size={14} />
+                                          {res.reconciliation.changes.length} Change{res.reconciliation.changes.length > 1 ? 's' : ''} Applied
+                                      </summary>
+                                      <div className="mt-2 pl-4 border-l-2 border-green-500/30 space-y-2 text-xs max-h-[200px] overflow-y-auto">
+                                          {res.reconciliation.changes.map((change: any, ci: number) => (
+                                              <div key={ci} className="flex items-center gap-3 bg-white/5 rounded p-2">
+                                                  <span className="font-mono text-gray-400 w-24 flex-shrink-0 truncate">{change.metric_id || change.line_item_id}</span>
+                                                  <span className="text-gray-300">
+                                                      {change.oldValue !== null ? (
+                                                          <>
+                                                              <span className="text-red-400">{change.oldValue?.toLocaleString()}</span>
+                                                              <span className="mx-1">→</span>
+                                                          </>
+                                                      ) : null}
+                                                      <span className="text-green-400">{change.newValue?.toLocaleString()}</span>
+                                                  </span>
+                                                  <span className="text-gray-500 flex-1 truncate" title={change.reason}>{change.reason}</span>
+                                                  {change.view_source_url && (
+                                                      <a 
+                                                          href={change.view_source_url}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="text-blue-400 hover:text-blue-300 flex-shrink-0"
+                                                      >
+                                                          Source ↗
+                                                      </a>
+                                                  )}
+                                              </div>
+                                          ))}
                                       </div>
                                   </details>
                               )}
@@ -863,6 +1277,21 @@ export default function ImportPage() {
                                           )}
                                       </div>
                                   </details>
+                              )}
+                              
+                              {/* Portco Guide Link */}
+                              {res.guide_used && (
+                                  <div className="mt-4 pt-4 border-t border-white/5 flex justify-end">
+                                      <Link 
+                                          href={`/import/guide?company=${res.company || selectedCompany}`}
+                                          target="_blank"
+                                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition-colors"
+                                      >
+                                          <FileText size={12} />
+                                          View Full Portco Guide Config
+                                          <ExternalLink size={10} />
+                                      </Link>
+                                  </div>
                               )}
                               
                               {/* Cache indicator */}

@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 02, 2025 (v3.3 - Local Development Mode)
+**Last Updated:** Dec 04, 2025 (v4.1 - Systematic Row Label Extraction)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -16,6 +16,8 @@ This document serves as the primary onboarding and operational guide for the Mot
 | **API Routes** | `mv-intel-web/app/api/` |
 | **Pipeline Scripts** | `mv-intel-web/scripts/` |
 | **Financial Ingestion** | `mv-intel-web/lib/financials/` |
+| **Legal Analysis** | `mv-intel-web/lib/legal/` |
+| **Portfolio Section** | `mv-intel-web/app/portfolio/` |
 | **Taxonomy Schema** | `mv-intel-web/lib/taxonomy/schema.ts` |
 | **Search Logic** | `mv-intel-web/lib/search/` |
 | **Supabase Migrations** | `supabase/migrations/` |
@@ -37,6 +39,8 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `dim_line_item` | Standard chart of accounts |
 | `dim_source_files` | Ingested file metadata |
 | `company_insights` | Qualitative insights from documents |
+| `legal_analyses` | Structured legal document analysis results |
+| `legal_term_sources` | Source attribution for extracted legal terms |
 
 ### Storage Buckets
 
@@ -44,6 +48,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | :--- | :--- | :--- |
 | `financial-docs` | Uploaded source files (PDF/Excel) | Temporary (deleted after ingestion) |
 | `financial-snippets` | Audit trail snippets (page extracts) | Permanent |
+| `legal-snippets` | Legal document page snippets with clause highlights | Permanent |
 
 ### API Endpoints
 
@@ -57,6 +62,7 @@ This document serves as the primary onboarding and operational guide for the Mot
 | `/api/upload` | POST | Direct storage upload (fallback) |
 | `/api/auth/check-access` | POST | Email authorization check |
 | `/api/taxonomy/entities` | GET | Entities by taxonomy code |
+| `/api/portfolio/legal-analysis` | POST/GET | Legal document analysis and retrieval |
 
 ---
 
@@ -66,10 +72,11 @@ This document serves as the primary onboarding and operational guide for the Mot
 2. [Development Setup](#2-development-setup)
 3. [Codebase Map](#3-codebase-map)
 4. [Financial Data Ingestion System](#4-financial-data-ingestion-system)
-5. [Operational Runbook](#5-operational-runbook-data-pipelines)
-6. [Current Status & Known Issues](#6-current-status--known-issues)
-7. [Roadmap & Priorities](#7-roadmap--priorities)
-8. [Key Architectural Decisions](#8-key-architectural-decisions)
+5. [Legal Document Analysis System](#5-legal-document-analysis-system)
+6. [Operational Runbook](#6-operational-runbook-data-pipelines)
+7. [Current Status & Known Issues](#7-current-status--known-issues)
+8. [Roadmap & Priorities](#8-roadmap--priorities)
+9. [Key Architectural Decisions](#9-key-architectural-decisions)
 - [Appendix A: Changelog](#appendix-a-changelog-dec-02-2025)
 - [Appendix B: Maintaining This Document](#appendix-b-maintaining-this-document)
 
@@ -402,6 +409,140 @@ The ingestion API supports a `dryRun: true` parameter that allows testing the ex
 | Benchmarks | `perplexity/sonar-pro` | Industry comparisons, outlier flagging |
 | Audit snippets | `pdf-lib` | Single page extraction with visual highlighting |
 
+### Systematic Row Label Extraction (v4.1)
+
+The coordinate-first extraction strategy eliminates LLM hallucination by separating **structure identification** from **value reading**.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              SYSTEMATIC COORDINATE EXTRACTION               │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  PHASE 1: Column Structure (LLM)                            │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ "Find date columns and actual/budget split" │            │
+│  │ → columnDates: { "D": "2024-03-01", ... }   │            │
+│  │ → actualColumns: ["D", "E", "F", ...]       │            │
+│  │ → budgetColumns: ["P", "Q", "R", ...]       │            │
+│  └─────────────────────────────────────────────┘            │
+│                         ↓                                   │
+│  PHASE 2: Row Label Index (NO LLM - Deterministic)          │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ Scan columns A/B/C of ALL sheets            │            │
+│  │ Build index of ALL row labels:              │            │
+│  │ → { sheet: "P&L", row: 29, label: "Gross Margin" }      │
+│  │ → { sheet: "P&L", row: 85, label: "Cash Balance" }      │
+│  │ → ... thousands of row labels indexed ...    │            │
+│  └─────────────────────────────────────────────┘            │
+│                         ↓                                   │
+│  PHASE 3: LLM Label Matching (Single Call)                  │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ "Match guide metrics to row labels"         │            │
+│  │ cash_balance_os → "Cash Balance" (row 85)   │            │
+│  │ runway_months → "Runway (months)" (row 90)  │            │
+│  │ saas_customers → "SaaS Customers" (row 45)  │            │
+│  └─────────────────────────────────────────────┘            │
+│                         ↓                                   │
+│  PHASE 4: Merge Coordinates                                 │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ Column structure + Row matches = Full map   │            │
+│  └─────────────────────────────────────────────┘            │
+│                         ↓                                   │
+│  PHASE 5: Single Deterministic Parse                        │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ sheet.data[row][col] for every coordinate   │            │
+│  │ NO LLM reads values - 100% deterministic    │            │
+│  └─────────────────────────────────────────────┘            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits:**
+- **100% row coverage**: Scans ALL rows, not samples
+- **No hallucinated values**: LLM only provides coordinates, code reads values
+- **Fuzzy label matching**: LLM excels at matching "Total actual MRR" → `total_actual_mrr`
+- **Single parse**: Values read once at the end with complete coordinate map
+
+**Results (Nelly Test Case):**
+- Before: 12 metrics extracted per period
+- After: 25 metrics extracted per period (2x+ improvement)
+- New metrics found: `cac`, `cogs_private_factoring`, `cogs_public_factoring`, `customers`, `customers_finos`, `customers_saas`, `installment_loans_outstanding`, `interest_cost`, `loan_loss`, `pos_hardware_cost`, `pos_processing_cost`, `services_cost`
+
+### Cross-File Reconciliation (v3.5)
+
+When multiple files are ingested for the same company/period, the system must intelligently resolve conflicts.
+
+#### Source Priority Rules
+
+| File Type | Base Priority | Notes |
+| :--- | :---: | :--- |
+| Board Deck | 100 | Gold standard for Actuals |
+| Investor Report | 80 | Monthly updates |
+| Budget File | 60 (Actuals) / 120 (Budget) | Highest for budget scenario |
+| Financial Model | 40 | Working documents |
+| Raw Export | 20 | Unstructured data |
+
+#### Explanation Priority Boost
+
+Contextual explanations extracted from documents can elevate a lower-priority source:
+
+| Explanation Type | Boost | Effect |
+| :--- | :---: | :--- |
+| `restatement` | +50 | "Q3 revenue restated..." - Can override Board Deck |
+| `correction` | +40 | "Accounting error fixed..." - Can override |
+| `forecast_revision` | +20 | "Updated forecast based on..." |
+| `one_time` | +10 | "Includes one-time charge..." |
+| `commentary` | 0 | General notes, no priority change |
+
+#### Reconciliation Logic
+
+```
+For each (company, metric, period, scenario):
+  
+  1. Calculate Effective Priority = Base Priority + Explanation Boost
+  
+  2. Compare New vs Existing:
+     - New > Existing → OVERWRITE (auto)
+     - New < Existing → IGNORE (auto)
+     - Equal Priority:
+       - If variance > 1% AND has restatement/correction → USE NEW
+       - If variance > 1% AND no explanation → FLAG CONFLICT
+       - If variance ≤ 1% → UPDATE (minor rounding)
+  
+  3. Append to Changelog:
+     { timestamp, oldValue, newValue, reason, source_file, explanation, view_source_url }
+```
+
+#### Changelog Structure
+
+Every `LocalFactRecord` stores its full history:
+
+```typescript
+interface LocalFactRecord {
+  // ... core fields ...
+  priority?: number;
+  explanation?: string;
+  changelog?: ChangeLogEntry[];
+}
+
+interface ChangeLogEntry {
+  timestamp: string;
+  oldValue: number | null;
+  newValue: number;
+  reason: string;           // "Higher Priority Source", "RESTATEMENT", etc.
+  source_file: string;
+  explanation?: string;     // Contextual note from document
+  view_source_url?: string; // Link to snippet
+}
+```
+
+#### UI Indicators
+
+- **History Icon** (📝): Appears next to any fact with `changelog.length > 1`
+- **Info Icon** (ℹ️): Appears if fact has an `explanation` but no changes
+- **Click to Expand**: Shows full changelog with source links
+- **Conflict Panel**: Red banner for high-severity conflicts requiring review
+
 ### Visual Audit Highlighting (v3.1)
 
 When GPT-5.1 extracts metrics, it also returns `source_locations` with bounding box coordinates:
@@ -477,7 +618,170 @@ company:
 
 ---
 
-## 5. Operational Runbook (Data Pipelines)
+## 5. Legal Document Analysis System
+
+**Status: Production Ready**
+
+This module provides AI-powered analysis of investor documentation, extracting structured legal terms and risk assessments from term sheets, SPAs, SHAs, SAFEs, CLAs, and other investment documents.
+
+### Architectural Philosophy
+
+1. **Extension, Not Silo**: Legal analysis attaches to portfolio companies in the Knowledge Graph via `company_id`.
+2. **Unified Extraction**: 3-Phase Pipeline using GPT-5.1 vision + structured output.
+3. **Agent-Accessible**: Exposed to Chat Agent via `get_legal_analysis` tool.
+4. **Audit Trail**: Source snippets stored with bounding box annotations for clause verification.
+
+### 3-Phase Extraction Pipeline
+
+The extraction process has been re-architected into a resilient 3-phase pipeline:
+
+```
+Phase 1: Individual Extraction (Parallel, gpt-4o-mini)
+    ↓ Each doc: ~2-3 seconds, runs 3 at a time
+    ↓ Extracts: type, jurisdiction, key terms, source quotes
+    
+Phase 2: Category Analysis (Sequential, gpt-4o)
+    ↓ Groups: Economics | Governance | Legal/GC | Standalone
+    ↓ Deep analysis per category
+    
+Phase 3: Deal Synthesis (Single call, gpt-4o)
+    ↓ Unified executive summary
+    ↓ Cross-document conflict detection
+    ↓ Final RED/AMBER/GREEN flags
+```
+
+This architecture ensures high-quality extraction across large deal bundles while providing real-time progress feedback.
+
+### Snippet Generation (Visual Audit)
+
+The system generates visual "screenshots" of source clauses using a hybrid approach:
+
+1.  **PDFs**: Uses `pdf-to-img` (with Node.js polyfill) to render high-resolution PNGs of pages.
+    *   Adds yellow highlight overlays to relevant sections (if coordinates available).
+    *   Fallback: If image rendering fails, extracts the single page as an annotated PDF file.
+2.  **Word Docs**: Generates text-based snippet images (`generateTextSnippet`) by rendering the surrounding text context into a clean SVG/PNG image.
+3.  **Storage**: Snippets are uploaded to `legal-snippets` bucket and served via signed URLs.
+
+### Supported File Formats
+
+| Format | Processing Method | Snippets |
+| :--- | :--- | :--- |
+| PDF | GPT-5.1 Vision API | Yes (page extraction with highlights) |
+| DOCX | `mammoth` text extraction → GPT-5.1 | No (text quotes only) |
+
+### Document Types Supported
+
+| Instrument Type | Description |
+| :--- | :--- |
+| `US_PRICED_EQUITY` | NVCA-style preferred share financings (Series Seed/A/B) |
+| `US_SAFE` | YC-style Simple Agreement for Future Equity |
+| `US_CONVERTIBLE_NOTE` | Convertible promissory notes with interest/maturity |
+| `UK_EQUITY_BVCA_STYLE` | UK equity with Subscription + SHA + Articles |
+| `UK_EU_CLA` | Convertible Loan Agreements (UK/EU) |
+| `EUROPEAN_PRICED_EQUITY` | Non-UK European priced equity (GmbH, AG, SAS, etc.) |
+
+### Document Grouping
+
+When multiple files are uploaded, the system automatically groups related documents:
+
+| Group Type | Documents Included |
+| :--- | :--- |
+| `priced_equity_bundle` | SPA + SHA + IRA + Voting Agreement + Articles |
+| `convertible_bundle` | SAFE/Note/CLA + Side Letters |
+| `standalone` | Single unrelated document |
+
+**Grouping Logic:**
+1. Each document is classified by filename/content (term_sheet, spa_stock_purchase, sha_shareholders_agreement, etc.)
+2. Related documents are grouped for combined analysis
+3. A primary document is identified (SPA > SHA > Term Sheet)
+4. The LLM cross-references terms between documents in the same group
+
+### Analysis Output Structure
+
+The analysis extracts and classifies terms across 9 major sections:
+
+1. **Executive Summary**: Key points with GREEN/AMBER/RED flags
+2. **Transaction Snapshot**: Valuation, round size, ownership
+3. **Economics & Downside**: Liquidation preference, anti-dilution, dividends
+4. **Ownership & Dilution**: Option pool, convertibles, founder vesting
+5. **Control & Governance**: Board seats, protective provisions, drag/tag-along
+6. **Investor Rights**: Pre-emption, information rights, ROFR
+7. **Exit & Liquidity**: Distribution waterfall, IPO conversion
+8. **GC Focus Points**: Legal risks, reps/warranties, disputes
+9. **Flag Summary**: Overall risk assessment by category
+
+### Data Flow
+
+```
+[Upload PDF] → [GPT-5.1 Vision] → [Structured JSON] → [Database]
+                    ↓                     ↓
+            [Jurisdiction/Type]    [Snippet Generation]
+               Detection              → Storage
+```
+
+### Key Files
+
+| File | Purpose |
+| :--- | :--- |
+| `lib/legal/types.ts` | TypeScript interfaces for analysis output |
+| `lib/legal/prompts/investor_doc_analyzer.ts` | Full VC lawyer prompt schema |
+| `lib/legal/pipeline/*` | 3-Phase extraction logic (Phase 1, 2, 3) |
+| `lib/legal/snippets/*` | Visual snippet generation (PDF/Image/Text) |
+| `lib/legal/extractor.ts` | Legacy document extraction pipeline (deprecated) |
+| `lib/legal/instrument_classifier.ts` | Jurisdiction & instrument type detection |
+| `app/portfolio/legal/page.tsx` | Upload and analysis UI |
+| `app/api/portfolio/legal-analysis/route.ts` | API endpoint |
+
+### Database Schema
+
+```sql
+-- Core analysis storage
+legal_analyses (
+  id UUID PRIMARY KEY,
+  company_id UUID REFERENCES graph.entities(id),
+  document_name TEXT,
+  document_type TEXT,      -- e.g. 'US_SAFE'
+  jurisdiction TEXT,       -- 'US', 'UK', 'Continental Europe'
+  analysis JSONB,          -- Full structured analysis
+  executive_summary JSONB, -- Key points with flags
+  flags JSONB,             -- Category-level risk flags
+  created_at TIMESTAMPTZ
+)
+
+-- Source attribution
+legal_term_sources (
+  id UUID PRIMARY KEY,
+  analysis_id UUID REFERENCES legal_analyses(id),
+  section TEXT,            -- e.g. 'liquidation_preference'
+  term_key TEXT,           -- e.g. 'multiple'
+  page_number INT,
+  snippet_url TEXT,        -- Link to annotated PDF page
+  bbox JSONB               -- Bounding box coordinates
+)
+```
+
+### Chat Agent Integration
+
+The Chat Agent can retrieve legal analyses via the `get_legal_analysis` tool:
+
+```
+User: "What are the terms of the Acme Series A?"
+Agent: [Calls get_legal_analysis with companyId]
+       Returns: Executive summary, key flags, link to full analysis
+```
+
+### UI Pages
+
+| Page | Purpose |
+| :--- | :--- |
+| `/portfolio` | Portfolio section dashboard |
+| `/portfolio/legal` | Document upload and analysis |
+| `/portfolio/legal/history` | Past analyses list |
+| `/portfolio/legal/analysis?id=...` | View specific analysis |
+
+---
+
+## 6. Operational Runbook (Data Pipelines)
 
 ### The "Self-Healing" Pipeline
 The master script `mv-intel-web/scripts/run_pipeline.js` orchestrates the data refresh. It runs **daily at 6 AM UTC** via GitHub Actions.
@@ -533,13 +837,14 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ---
 
-## 6. Current Status & Known Issues
+## 7. Current Status & Known Issues
 
 ### Status Summary
-*   **Conversational Agent**: **Live**. Uses GPT-5.1 with query expansion and tool calling (`search_notes`, `traverse_graph`).
+*   **Conversational Agent**: **Live**. Uses GPT-5.1 with query expansion and tool calling (`search_notes`, `traverse_graph`, `get_legal_analysis`).
 *   **Graph UI**: **Stable**. Features "Highlighting" for cited nodes and "Densification" to show hidden connections.
 *   **Data Pipeline**: **Stable**. Migrated to `supabase-js` to resolve server-side DNS issues.
 *   **Financial Ingestion**: **Staging**. New module for processing Portco financials (PDF/Excel) with drag-and-drop UI and "Portco Guide" mapping logic.
+*   **Legal Analysis**: **Production Ready**. New module for analyzing investor documentation (term sheets, SAFEs, CLAs, etc.) with Chat Agent integration.
 *   **Deployment**: **Production**. Live at https://motivepartners.ai.
 
 ### Known Risks & Limitations
@@ -566,7 +871,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ---
 
-## 7. Roadmap & Priorities
+## 8. Roadmap & Priorities
 
 ### Immediate Priorities (This Week)
 1.  **Monitor Edge Creation**: Verify `owner` and `sourced_by` fields are correctly creating edges in Neo4j.
@@ -581,7 +886,7 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ---
 
-## 8. Key Architectural Decisions
+## 9. Key Architectural Decisions
 
 ### Why Separate Affinity Sync from AI Processing?
 **Decision**: The pipeline fetches raw data first, then runs AI enrichment in a separate parallel block.
@@ -645,16 +950,166 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 
 ---
 
-## Appendix A: Changelog (Dec 02, 2025)
+## Appendix A: Changelog (Dec 04, 2025)
 
 ### Features Added
 
-*   **Financial Data Ingestion System v3.3**: Local development mode for fast iteration.
-    *   **Local Development Mode** (NEW): File-based storage for extraction results, facts, metrics
-    *   **API Response Caching**: Cached OpenAI responses keyed by file hash - no repeated API calls
-    *   **Extraction Diff View**: Compare current extraction to previous runs (added/removed/changed)
-    *   **Mode Toggle UI**: Switch between Local (green) and Cloud (blue) modes in import page
-    *   **Guide-Aware Extraction**: Portco Guide context injected into LLM prompt
+*   **Legal Document Analysis System v1.0**: AI-powered analysis of investor documentation.
+    *   **Comprehensive Term Extraction**: Analyzes term sheets, SPAs, SHAs, SAFEs, CLAs, convertible notes, and side letters.
+    *   **Multi-Jurisdiction Support**: Classifies documents as US, UK, or Continental Europe based on drafting signals.
+    *   **7 Instrument Types**: US_PRICED_EQUITY, US_SAFE, US_CONVERTIBLE_NOTE, UK_EQUITY_BVCA_STYLE, UK_EU_CLA, EUROPEAN_PRICED_EQUITY, OTHER.
+    *   **9-Section Analysis**: Executive Summary, Transaction Snapshot, Economics, Ownership, Control, Investor Rights, Exit, Legal/GC, Flag Summary.
+    *   **Risk Flagging**: GREEN/AMBER/RED flags for economics, control, dilution, investor rights, and legal risk.
+    *   **Source Attribution**: PDF page snippets with bounding box annotations for audit trail.
+    *   **Chat Agent Integration**: `get_legal_analysis` tool for conversational access to past analyses.
+    *   **Portfolio Section**: New `/portfolio` route structure housing both financial and legal analysis.
+    *   **Database Schema**: `legal_analyses` and `legal_term_sources` tables with `legal-snippets` storage bucket.
+    *   **Word Document Support**: Analyzes both PDF and Word (.docx) documents using `mammoth` library for text extraction.
+    *   **Document Grouping**: Automatically groups related documents (e.g., SPA + SHA + Side Letter) for combined deal-package analysis.
+        *   Groups detect priced equity bundles, convertible bundles, or standalone documents.
+        *   Primary document identified for each group (e.g., SPA > SHA > Term Sheet).
+        *   Multi-document analysis cross-references terms between documents.
+    *   **Multi-File Upload**: UI supports drag-and-drop of multiple files simultaneously.
+    *   **Visual Snippets**:
+        *   **PDF**: Renders true page "screenshots" (PNG) with `pdf-to-img` + `sharp`. Handles Node.js environments via custom `DOMMatrix` polyfills. Fallback to annotated PDF pages if image rendering fails.
+        *   **Word**: Generates synthesized text snippet images for `.docx` sources.
+        *   **UI**: "View Source" buttons open snippets in a modal lightbox.
+
+*   **Portfolio Section Hub**: Unified `/portfolio` route with sub-navigation.
+    *   `/portfolio` - Dashboard with links to financials and legal
+    *   `/portfolio/financials` - Redirects to existing `/import` (temporary)
+    *   `/portfolio/legal` - Legal document upload and analysis UI
+    *   `/portfolio/legal/history` - Past analyses list
+    *   `/portfolio/legal/analysis` - View specific analysis
+
+*   **Financial Data Ingestion System v4.1**: Systematic Row Label Extraction.
+    *   **5-Phase Coordinate-First Architecture**: Complete rewrite of extraction logic to eliminate LLM hallucination.
+        - Phase 1: LLM identifies column structure (dates, actual/budget columns)
+        - Phase 2: Deterministic scan builds complete row label index (NO LLM)
+        - Phase 3: LLM matches guide metrics to row labels (single fuzzy-match call)
+        - Phase 4: Merge column structure with row matches
+        - Phase 5: Single deterministic parse reads values from coordinates
+    *   **100% Row Coverage**: Scans ALL rows in ALL sheets for labels, not just samples.
+    *   **No Hallucinated Values**: LLM only provides coordinates (sheet, row, column). Code reads actual values using `xlsx` library - impossible to hallucinate.
+    *   **2x+ Metric Improvement**: Nelly test case improved from 12 to 25 metrics per period.
+    *   **New Metrics Found**: `cac`, `cogs_private_factoring`, `cogs_public_factoring`, `cogs_saas_and_integrations`, `customers`, `customers_finos`, `customers_saas`, `installment_loans_outstanding`, `interest_cost`, `loan_loss`, `pos_hardware_cost`, `pos_processing_cost`, `services_cost`.
+    *   **Timezone Fix**: Date display now uses UTC to prevent off-by-one errors (e.g., "Sep 24" showing as "Aug 24").
+    *   **Row Label Index**: `buildRowLabelIndex()` scans columns A/B/C of all sheets and builds a comprehensive index of potential metric labels.
+    *   **Fuzzy Label Matching**: `matchMetricsToRowLabels()` uses LLM to match guide metric IDs to actual spreadsheet row labels (e.g., "Total actual MRR" → `total_actual_mrr`).
+
+*   **Financial Data Ingestion System v3.9**: Multi-Sheet Time Series Extraction.
+    *   **Dynamic Actual/Forecast Detection**: Replaced hardcoded date logic with dynamic header scanning. The system now identifies transition columns (e.g., "Actual" vs "Forecast") per file.
+    *   **Snippet Cell Overlay**: Generated snippets now include the target cell address (e.g., "Target: J29") overlaid on the image for instant verification.
+    *   **Strict Sheet/Date Alignment**: LLM prompt updated to verify date headers *per sheet* to handle files where Revenue and P&L sheets have different column structures.
+    *   **Multi-Sheet Extraction**: LLM prompts now explicitly instruct extraction from BOTH Revenue sheet (MRR, ARR, customers) AND P&L sheet (revenue, margins, opex) and combine into same period entries.
+    *   **Full Time Series**: Extracts all monthly columns (typically 12-36 months) instead of just latest period.
+    *   **Metrics Table Layout**: Computed metrics now display in same table format as financial data (not cards).
+    *   **Granular Source Attribution**: Enforced `sheet` and `cell` extraction for every data point in time series.
+    *   **Guide Transparency**: Added "View Active Portco Guide" section in UI for debugging mapping logic.
+    *   **Robust JSON Parsing**: Fixed parser to handle truncated LLM responses and trailing commas.
+    *   **Column Reference Fix**: `columnIndexToLetter()` now supports columns beyond Z (AA, AB, AC...).
+    *   **Output Tab Prioritization**: `categorizeSheets()` identifies output tabs (Revenue, P&L, Charts) vs input tabs (Data, Raw) and prioritizes output tabs for extraction.
+    *   **Cover Sheet Context**: `extractCoverSheetContext()` captures high-level context from first rows of sheets.
+    *   **Tail Row Scanning**: Extracts last 100 rows of each sheet to capture summary/total rows.
+    *   **Actual/Forecast Detection**: Vision context now identifies transition columns between actual and forecast data.
+    *   **Excel Snippet Generation**: `generateExcelSnippetImage()` renders highlighted cell regions as PNG images for audit trail.
+    *   **Metrics Mapping Injection**: Up to 20 metrics from Portco Guide's `metrics_mapping` injected into extraction prompts.
+    *   **Source Location Enhancement**: Each extracted value includes sheet name and cell reference (e.g., "Revenue!N29").
+
+*   **Financial Data Ingestion System v3.8**: Robust Excel Ingestion with Layout-Aware Assistants.
+    *   **Layout-Aware Edge Functions**: `extract-excel-assistant` now performs a deterministic `xlsx` scan of the workbook before calling the LLM. It generates "Layout Hints" (sheet names, potential header rows, data dimensions) to guide the Assistant, drastically reducing hallucinations and empty extractions.
+    *   **Direct Storage Access**: Edge Functions now download files directly from Supabase Storage (using `storagePath`) instead of accepting base64 payloads, bypassing Vercel's payload limits and enabling processing of large financial models (20MB+).
+    *   **Strict Schema Enforcement**: The Assistant's instructions now enforce the exact `UnifiedExtractionResult` JSON structure, ensuring compatibility with the downstream mapping pipeline.
+    *   **Portco Guide Injection**: Company-specific mapping rules (`guide.yaml`) are injected into the Assistant's system prompt as high-priority "hints", allowing it to find obscure metrics (e.g., "Deferred Revenue is in cell B45").
+
+*   **Financial Data Ingestion System v3.7**: Hybrid Vercel + Supabase Edge Architecture.
+    *   **NO FUNCTIONALITY SACRIFICED**: Full feature parity across all deployment targets.
+    *   **Hybrid Architecture**: Vercel for API routing, Supabase Edge for heavy processing.
+        ```
+        ┌─────────────────────────────────────────────────────────────────────────┐
+        │                         VERCEL (Next.js API Routes)                     │
+        │                                                                         │
+        │  • maxDuration: 300s (Pro), 800s with Fluid Compute                    │
+        │  • Handles: File upload, routing, light processing, response           │
+        │  • Falls back to: Supabase Edge Functions for heavy operations         │
+        └────────────────────────────────────┬────────────────────────────────────┘
+                                             │
+                    ┌────────────────────────┴────────────────────────┐
+                    │                                                 │
+                    ▼                                                 ▼
+        ┌───────────────────────────────┐           ┌───────────────────────────────┐
+        │  Supabase Edge: extract-      │           │  Supabase Edge: render-       │
+        │  excel-assistant              │           │  pdf-snippet                  │
+        │                               │           │                               │
+        │  • OpenAI Assistants API      │           │  • magick-wasm (ImageMagick)  │
+        │  • Code Interpreter           │           │  • PDF to PNG rendering       │
+        │  • No timeout constraints     │           │  • Annotation overlays        │
+        │  • Polling without limits     │           │  • Crop to region             │
+        └───────────────────────────────┘           └───────────────────────────────┘
+        ```
+    *   **Supabase Edge Functions Created**:
+        *   `extract-excel-assistant`: Full Assistants API with Code Interpreter
+            - Handles complex Excel analysis
+            - 5+ minute execution time supported
+            - Returns structured JSON with source locations
+        *   `render-pdf-snippet`: PDF page to PNG with annotations
+            - Uses `magick-wasm` (WebAssembly ImageMagick)
+            - Draws bounding boxes and labels
+            - Supports cropping and DPI settings
+    *   **Vercel Configuration**:
+        *   `maxDuration: 300` on ingestion routes (Pro plan)
+        *   Fluid Compute can extend to 800s if needed
+        *   Automatic fallback to Edge Functions for long operations
+    *   **Extraction Priority Order (Excel)**:
+        1. Supabase Edge Function (Assistants API) - Best accuracy, no timeouts
+        2. Vision-Guided 2-Phase (Local) - Best for development
+        3. Chat API Single-Pass (Serverless fallback) - Always works
+    *   **Vision-Guided Excel Extraction**: 2-phase pipeline for maximum accuracy.
+        *   Phase 1: Vision pre-scan identifies sheet purposes, table locations, actual vs budget columns
+        *   Phase 2: Guided extraction uses context hints to extract precise values
+        *   Eliminates conflicting outputs from parallel extraction
+    *   **Parallel File Extraction**: Multiple files processed concurrently.
+        *   Extraction phase runs in parallel (`Promise.all`)
+        *   Post-processing (mapping, reconciliation) sequential for consistency
+        *   Significant speedup for multi-file uploads
+    *   **Time-Series Pivot Table**: New UI visualization.
+        *   Metrics as rows, dates as columns
+        *   Actual / Budget / Variance % for each period
+        *   Sticky metric column for horizontal scrolling
+        *   Supports multi-period data from single documents
+    *   **Screenshot Snippets**: High-resolution PNG rendering.
+        *   Supabase Edge: `magick-wasm` for serverless PDF rendering
+        *   Local: `pdf2pic` + `sharp` for development
+        *   Falls back gracefully based on environment
+
+*   **Financial Data Ingestion System v3.5**: Reconciliation Engine & Changelog.
+    *   **Reconciliation Service** (`lib/financials/ingestion/reconciliation.ts`): Intelligent conflict resolution when ingesting multiple files.
+        *   **Source Priority**: Board Deck (P100) > Investor Report (P80) > Budget File (P60) > Financial Model (P40) > Raw Export (P20)
+        *   **Scenario-Specific**: Budget files get higher priority (P120) for budget scenario data
+        *   **Explanation Boost**: Restatements (+50) and Corrections (+40) can elevate a lower-priority file
+    *   **Variance Explanations**: LLM now extracts contextual commentary from documents (e.g., "MRR decreased due to churn from Enterprise customer X")
+        *   Types: `restatement`, `correction`, `one_time`, `forecast_revision`, `commentary`, `other`
+        *   Restatements/Corrections can override even Board Deck numbers
+    *   **Changelog Tracking**: Every fact stores a `changelog[]` array with full history of changes
+        *   Each entry: `{ timestamp, oldValue, newValue, reason, source_file, explanation, view_source_url }`
+    *   **UI Enhancements**:
+        *   History icon (📝) appears next to any data point that has been updated
+        *   Click icon to expand inline changelog with source links
+        *   Reconciliation summary shows: New / Updated / Ignored / Conflicts
+        *   Conflict panel highlights high-severity conflicts with recommendations
+        *   File type badges with priority scores (e.g., "BOARD DECK P100")
+    *   **Conflict Resolution Logic**:
+        *   Higher priority → Overwrite (automatic)
+        *   Lower priority → Ignore (automatic)
+        *   Equal priority + >1% variance → Flag conflict + optimistic update
+        *   Equal priority + explanation (restatement/correction) → Use new value
+
+*   **Financial Data Ingestion System v3.4**: Multi-Period & Advanced Visualization.
+    *   **Multi-Period Extraction**: Updated `unified_extractor.ts` and `map_to_schema.ts` to support time-series extraction (e.g., 12 months of MRR from one PDF).
+    *   **Pivoted Financial Table**: New UI table showing **Actual vs Budget vs Variance** side-by-side.
+    *   **Local Snippet Server**: Generated snippets are served locally (`/api/local-snippet`) for immediate audit links without cloud storage.
+    *   **Robust JSON Parsing**: Improved resiliency against markdown code blocks in LLM responses.
+    *   **Visual Improvements**: Cleaned up "Key Metrics" as cards and detailed financials as a structured table.
     *   **No Hallucination**: Prompt uses placeholders, not example values that could be copied
     *   **Fail-Fast**: Removed fallback methods - extraction fails clearly instead of degrading
     *   **Scenario Separation**: Actuals vs Budget clearly separated in UI and computation
@@ -687,6 +1142,15 @@ Entities that fail classification 3 times are marked with `taxonomy_skip_until` 
 *   **Database Tables**: `graph.conversations`, `graph.messages` for chat state persistence.
 
 ### Bug Fixes
+
+*   **Financial Ingestion (Dec 03)**:
+    *   Fixed column reference bug where columns beyond Z displayed incorrectly (e.g., `[231` instead of `AA231`)
+    *   Fixed time-series not displaying in UI due to missing `date` field in API response
+    *   Fixed XLSX import missing in `ingest-local` route causing `ReferenceError: XLSX is not defined`
+    *   Fixed `max_tokens` → `max_completion_tokens` for GPT-5.1 model calls
+    *   Fixed `outputFileTracingIncludes` location in `next.config.js` (moved to `experimental` block)
+    *   Fixed date parsing for YYYYMMDD filename format (e.g., `20250301_Budget.xlsx`)
+    *   Fixed Budget file detection patterns for `(\d{4}) Annual Budget` and `Budget (\d{4})` formats
 
 *   **Enrichment Pipeline**:
     *   Fixed **Schema Mismatch** in `enhanced_embedding_generator.js` by adding a robust fallback mechanism that retries updates without new columns if the database migration hasn't been applied.
