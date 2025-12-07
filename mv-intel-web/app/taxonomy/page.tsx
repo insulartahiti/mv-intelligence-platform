@@ -97,8 +97,8 @@ export default function TaxonomyPage() {
     else setIsFetchingMore(true);
 
     try {
-      // Fetch entities for specific path
-      const res = await fetch(`/api/taxonomy/entities?code=${path}&page=${pageNum}&limit=${BATCH_SIZE}`);
+      // Fetch entities EXACTLY classified in this category (not descendants)
+      const res = await fetch(`/api/taxonomy/entities?code=${path}&exact=true&page=${pageNum}&limit=${BATCH_SIZE}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -434,7 +434,7 @@ function TaxonomyDashboard({
                     <div className="flex gap-3">
                         <div className="text-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800 min-w-[90px]">
                             <div className="text-xl font-bold text-blue-400">{totalBranchCount.toLocaleString()}</div>
-                            <div className="text-xs text-slate-500 uppercase">Entities</div>
+                            <div className="text-xs text-slate-500 uppercase">Total</div>
                         </div>
                         <div className="text-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800 min-w-[90px]">
                             <div className="text-xl font-bold text-emerald-400">{Object.keys(subCategories).length}</div>
@@ -568,15 +568,13 @@ function TaxonomyDashboard({
                     </section>
                 )}
 
-                {/* 2. Direct Companies Grid */}
+                {/* 2. Direct Companies Grid - Only entities EXACTLY in this category */}
                 <section>
                     <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
                         <Building2 size={18} className="text-blue-400" />
-                        Classified Companies
+                        Companies in This Category
                         <span className="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">
-                            {/* We don't have exact direct count from stats easily unless we separate it, 
-                               but we can use entities.length if loaded, or just show 'Displaying X' */}
-                             {entities.length} loaded
+                             {entities.length}{hasMore ? '+' : ''} direct
                         </span>
                     </h3>
                     

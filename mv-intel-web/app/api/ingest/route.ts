@@ -117,22 +117,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing company or filePaths' }, { status: 400 });
     }
 
-    // Reject empty file arrays - nothing to process
-    if (filePaths.length === 0) {
+    // Reject empty file arrays - unless notes are provided
+    if (filePaths.length === 0 && (!notes || notes.trim().length === 0)) {
       return NextResponse.json({ 
-        error: 'No files provided. Please upload at least one file to ingest.',
+        error: 'No files provided and no notes entered. Please upload a file or enter text to ingest.',
         status: 'error'
       }, { status: 400 });
     }
 
     const results = [];
+    
+    // Prepare items to process (Storage files + Text input)
+    const itemsToProcess = [
+        ...filePaths.map((p: string) => ({ type: 'storage', path: p })),
+        ...(notes && notes.trim().length > 0 ? [{ type: 'text', content: notes }] : [])
+    ];
 
-    for (const filePath of filePaths) {
-        console.log(`[Ingest] Processing ${filePath} for ${companySlug} (Dry Run: ${!!dryRun})...`);
+    for (const item of itemsToProcess) {
+        const itemLabel = item.type === 'storage' ? item.path : 'Text Input';
+        // Define filePath for compatibility with existing code references
+        // For text input, use a placeholder that won't be used for storage operations
+        const filePath = (item.type === 'storage' ? item.path : 'text_input') as string;
+        
+        console.log(`[Ingest] Processing ${itemLabel} for ${companySlug} (Dry Run: ${!!dryRun})...`);
         
         try {
-            // 1. Load File (from Supabase Storage)
-            const fileMeta = await loadFile(filePath);
+            // 1. Load File (from Supabase Storage OR Text Input)
+            let fileMeta;
+            if (item.type === 'storage') {
+                fileMeta = await loadFile(item.path as string);
+            } else {
+                // Construct virtual file from text input
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                fileMeta = {
+                    filename: `investor_update_${timestamp}.txt`,
+                    buffer: Buffer.from(item.content as string, 'utf-8'),
+                    mimeType: 'text/plain',
+                    size: Buffer.byteLength(item.content as string)
+                };
+            }
             
             // 2. Load Guide
             const guide = loadPortcoGuide(companySlug);
@@ -588,11 +611,11 @@ export async function POST(req: NextRequest) {
             });
 
             // 6. Cleanup
-            if (!dryRun && lineItems.length > 0) {
+            if (!dryRun && lineItems.length > 0 && item.type === 'storage') {
                 console.log(`[Ingest] Deleting ${filePath} from storage (successful extraction)...`);
                 await deleteFile(filePath);
             } else {
-                console.log(`[Ingest] Retaining ${filePath} (Dry Run or Issue)`);
+                console.log(`[Ingest] Retaining ${filePath} (Dry Run, Issue, or Text Input)`);
             }
 
         } catch (fileError: any) {

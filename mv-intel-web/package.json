@@ -11,7 +11,8 @@
     "import-csv": "tsx scripts/import-affinity-csv.ts",
     "test:neo4j": "node ../test-neo4j-setup.js",
     "migrate:neo4j": "tsx scripts/migrate-to-neo4j.ts",
-    "pipeline:enrich": "node scripts/run_enrichment_only.js"
+    "pipeline:enrich": "node scripts/run_enrichment_only.js",
+    "sync:architecture": "tsx scripts/sync_architecture.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

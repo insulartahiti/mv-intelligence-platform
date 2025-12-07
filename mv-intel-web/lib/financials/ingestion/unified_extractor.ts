@@ -287,7 +287,7 @@ export interface BenchmarkContext {
 }
 
 export interface UnifiedExtractionResult {
-  fileType: 'pdf' | 'xlsx';
+  fileType: 'pdf' | 'xlsx' | 'text';
   pageCount: number;
   pages: {
     pageNumber: number;
@@ -321,17 +321,21 @@ export async function extractFinancialDocument(file: FileMetadata, guide?: Portc
   
   const isPDF = filenameLower.endsWith('.pdf');
   const isExcel = filenameLower.endsWith('.xlsx') || filenameLower.endsWith('.xls');
+  const isText = filenameLower.endsWith('.txt') || filenameLower.endsWith('.md');
   
-  if (!isPDF && !isExcel) {
-    throw new Error(`Unsupported file type: ${file.filename}. Supported: .pdf, .xlsx, .xls`);
+  if (!isPDF && !isExcel && !isText) {
+    throw new Error(`Unsupported file type: ${file.filename}. Supported: .pdf, .xlsx, .xls, .txt, .md`);
   }
   
-  console.log(`[Unified Extractor] Processing ${file.filename} (${isPDF ? 'PDF' : 'Excel'})`);
+  console.log(`[Unified Extractor] Processing ${file.filename} (${isPDF ? 'PDF' : isExcel ? 'Excel' : 'Text'})`);
   
   let structuredResult: Partial<UnifiedExtractionResult>;
   let deterministicResult: DeterministicExcelResult | null = null;
   
-  if (isPDF) {
+  if (isText) {
+    // Text-based extraction
+    structuredResult = await extractTextDocument(openai, file, guide);
+  } else if (isPDF) {
     // For PDFs: Upload to Files API, then use Responses API with vision
     structuredResult = await extractWithVisionAPI(openai, file, 'application/pdf', guide);
     
@@ -378,14 +382,14 @@ export async function extractFinancialDocument(file: FileMetadata, guide?: Portc
   
   // Build final result
   const finalResult: UnifiedExtractionResult = {
-    fileType: isPDF ? 'pdf' : 'xlsx',
+    fileType: isPDF ? 'pdf' : (isExcel ? 'xlsx' : 'text'),
     pageCount: structuredResult.pageCount || 1,
     pages: structuredResult.pages || [],
     fullText: structuredResult.fullText || '',
     financial_summary: structuredResult.financial_summary,
     info: {
       filename: file.filename,
-      extractionMethod: isPDF ? 'pdf-vision-responses-api' : 'xlsx-deterministic-gpt4o',
+      extractionMethod: isPDF ? 'pdf-vision-responses-api' : (isExcel ? 'xlsx-deterministic-gpt4o' : 'text-llm'),
       deterministic_data: deterministicResult,
       reconciliation_notes: structuredResult.info?.reconciliation_notes
     }
@@ -410,51 +414,34 @@ export async function extractFinancialDocument(file: FileMetadata, guide?: Portc
  * OpenAI extracts both text AND renders images of each page/sheet,
  * giving the model full visual context (charts, formatting, layouts)
  */
-async function extractWithVisionAPI(
-  openai: OpenAI,
-  file: FileMetadata,
-  mimeType: string,
-  guide?: PortcoGuide
-): Promise<Partial<UnifiedExtractionResult>> {
-  const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel';
-  console.log(`[Vision API] Uploading ${file.filename} (${fileType}) to Files API...`);
-  
-  try {
-    // Step 1: Upload file to Files API
-    const uploadedFile = await openai.files.create({
-      file: new File([file.buffer as any], file.filename, { type: mimeType }),
-      purpose: 'user_data'
-    });
-    
-    console.log(`[Vision API] File uploaded: ${uploadedFile.id}`);
-    
-    // Step 2: Build system prompt with guide context
-    const documentType = mimeType.includes('pdf') ? 'PDF report' : 'Excel spreadsheet';
-    
-    // Generate guide context for the LLM
-    let guideContext = '';
-    if (guide) {
-      guideContext = `\n\nCOMPANY-SPECIFIC CONTEXT (use these hints to find metrics):
+/**
+ * Build the standardized system prompt for financial extraction
+ */
+function buildSystemPrompt(guide?: PortcoGuide, documentType: string = 'document'): string {
+  // Generate guide context for the LLM
+  let guideContext = '';
+  if (guide) {
+    guideContext = `\n\nCOMPANY-SPECIFIC CONTEXT (use these hints to find metrics):
 Company: ${guide.company_metadata?.name || 'Unknown'}
 Business Model: ${(guide.company_metadata?.business_models || []).join(', ')}
 Currency: ${guide.company_metadata?.currency || 'EUR'}
 
 KNOWN METRIC LABELS TO LOOK FOR:`;
-      
-      // Add mapping hints from guide (checking both structures)
-      const mappingRules = guide.mapping_rules?.line_items || (guide as any).metrics_mapping || {};
-      if (Object.keys(mappingRules).length > 0) {
-        for (const [key, rule] of Object.entries(mappingRules)) {
-          const r = rule as any;
-          const label = r.label_match || (Array.isArray(r.labels) ? r.labels[0] : r.labels);
-          if (label) {
-            guideContext += `\n- "${label}" → map to "${key}"`;
-          }
+    
+    // Add mapping hints from guide (checking both structures)
+    const mappingRules = guide.mapping_rules?.line_items || (guide as any).metrics_mapping || {};
+    if (Object.keys(mappingRules).length > 0) {
+      for (const [key, rule] of Object.entries(mappingRules)) {
+        const r = rule as any;
+        const label = r.label_match || (Array.isArray(r.labels) ? r.labels[0] : r.labels);
+        if (label) {
+          guideContext += `\n- "${label}" → map to "${key}"`;
         }
       }
     }
-    
-    const systemPrompt = `You are a senior financial analyst extracting data from a portfolio company ${documentType}.
+  }
+  
+  return `You are a senior financial analyst extracting data from a portfolio company ${documentType}.
 
 TASK: Extract ALL financial metrics AND any explanatory commentary about variances or changes.
 
@@ -533,6 +520,67 @@ RULES:
 7. Convert percentages to decimals (75% → 0.75)
 8. If multiple months/periods are shown (Time Series), capture them in "multi_periods"
 9. IMPORTANT: Extract any text that explains WHY a number changed (e.g., "MRR decreased due to churn from X customer", "Revenue restated to exclude one-time fees", "Updated forecast based on Q3 pipeline")${guideContext}`;
+}
+
+/**
+ * Extract financial data from plain text updates (e.g. emails, memos)
+ */
+async function extractTextDocument(
+  openai: OpenAI,
+  file: FileMetadata,
+  guide?: PortcoGuide
+): Promise<Partial<UnifiedExtractionResult>> {
+  console.log(`[Text Extractor] Processing ${file.filename}...`);
+  
+  try {
+    const textContent = file.buffer.toString('utf-8');
+    const systemPrompt = buildSystemPrompt(guide, 'text update/memo');
+    
+    // Use Chat Completions API with GPT-5.1 (or gpt-4o)
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o', // Text only, 4o is sufficient and fast
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Extract financial data from this text:\n\n${textContent}` }
+      ],
+      response_format: { type: 'json_object' }
+    });
+
+    const content = response.choices[0].message.content;
+    
+    if (!content) {
+      return createEmptyResult(file.filename, 'text_no_response');
+    }
+
+    return parseJsonResponse(content, file.filename, 'text-llm');
+    
+  } catch (error: any) {
+    console.error('[Text Extractor] Extraction failed:', error);
+    throw new Error(`Text extraction failed: ${error.message}`);
+  }
+}
+
+async function extractWithVisionAPI(
+  openai: OpenAI,
+  file: FileMetadata,
+  mimeType: string,
+  guide?: PortcoGuide
+): Promise<Partial<UnifiedExtractionResult>> {
+  const fileType = mimeType.includes('pdf') ? 'PDF' : 'Excel';
+  console.log(`[Vision API] Uploading ${file.filename} (${fileType}) to Files API...`);
+  
+  try {
+    // Step 1: Upload file to Files API
+    const uploadedFile = await openai.files.create({
+      file: new File([file.buffer as any], file.filename, { type: mimeType }),
+      purpose: 'user_data'
+    });
+    
+    console.log(`[Vision API] File uploaded: ${uploadedFile.id}`);
+    
+    // Step 2: Build system prompt with guide context
+    const documentType = mimeType.includes('pdf') ? 'PDF report' : 'Excel spreadsheet';
+    const systemPrompt = buildSystemPrompt(guide, documentType);
 
     // Use the responses.create endpoint with GPT-5.1 for best extraction quality
     let response: any;

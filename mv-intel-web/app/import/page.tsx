@@ -215,9 +215,9 @@ export default function ImportPage() {
   };
 
   const handleSubmit = async (overrideCompanyId?: string) => {
-    // Require at least one file - text input alone is not sufficient for ingestion
-    if (files.length === 0) {
-        alert('Please upload at least one file to ingest.');
+    // Require at least one file OR text input
+    if (files.length === 0 && (!textInput || textInput.trim().length === 0)) {
+        alert('Please upload a file or enter text to ingest.');
         return;
     }
     if (!selectedCompany) {
@@ -233,7 +233,8 @@ export default function ImportPage() {
         // 1. Upload files using signed URLs (bypasses Vercel 4.5MB limit)
         const uploadedPaths: string[] = [];
         
-        for (let i = 0; i < files.length; i++) {
+        if (files.length > 0) {
+            for (let i = 0; i < files.length; i++) {
             const file = files[i];
             setStatusMessage(`Uploading file ${i + 1} of ${files.length}...`);
             
@@ -265,8 +266,9 @@ export default function ImportPage() {
             
             uploadedPaths.push(urlData.path);
         }
+    }
 
-        setStatusMessage('Processing files...');
+    setStatusMessage('Processing...');
 
         // 2. Trigger Ingestion API with paths
         const body: any = {

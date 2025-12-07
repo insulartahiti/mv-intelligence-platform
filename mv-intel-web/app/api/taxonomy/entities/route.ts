@@ -15,8 +15,9 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
   const search = searchParams.get('search') || '';
+  const exact = searchParams.get('exact') === 'true'; // If true, match taxonomy exactly; if false, prefix match
   const page = parseInt(searchParams.get('page') || '0');
-  const limit = parseInt(searchParams.get('limit') || '1000'); // Default batch size, can be overridden but max 1000 per request from client
+  const limit = parseInt(searchParams.get('limit') || '100'); // Default to 100 for better UX
 
   if (!code && !search) {
     return NextResponse.json({ success: false, message: 'Code or Search query is required' }, { status: 400 });
@@ -30,7 +31,13 @@ export async function GET(request: NextRequest) {
 
     // Apply Taxonomy Filter (if provided)
     if (code) {
-        query = query.ilike('taxonomy', `${code}%`);
+        if (exact) {
+            // Exact match - only entities classified directly in this category
+            query = query.eq('taxonomy', code);
+        } else {
+            // Prefix match - all entities in this branch (including descendants)
+            query = query.ilike('taxonomy', `${code}%`);
+        }
     }
 
     // Apply Search Filter (if provided)
