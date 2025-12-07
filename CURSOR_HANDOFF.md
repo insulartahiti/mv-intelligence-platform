@@ -485,6 +485,13 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Direct Linking**: Clicking external results opens the source URL directly.
     *   **Hybrid Intelligence**: The agent can now synthesize internal proprietary data with external market intelligence in a single conversation.
 
+*   **Layout Overhaul (Dec 7)**: Redesigned Knowledge Graph page for Agent-First experience.
+    *   **Split Pane**: Chat Agent (65%) vs Results/Graph (35%) by default.
+    *   **Resizable**: Chat window can be resized when Graph is expanded.
+    *   **Graph Toggle**: Floating icon to expand Graph visualization to full right pane.
+    *   **Stability**: Increased physics iterations (2500) for stable graph rendering.
+    *   **Chat Features**: Added History Sidebar, New Chat, Copy/Download buttons.
+
 ### Known Risks & Limitations
 *   **Taxonomy Limits**: The `/api/taxonomy/entities` endpoint hits Supabase's 1000-row limit.
 *   **Latency**: Initial graph load can be heavy (~2s).
