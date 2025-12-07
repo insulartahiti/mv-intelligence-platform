@@ -32,16 +32,36 @@ interface GroupedCompanies {
 }
 
 // Helper to normalize fund names into canonical categories
-const normalizeFund = (rawFund: string | undefined): string => {
+const normalizeFund = (company: PortfolioCompany): string => {
+  // 1. Try mapping from pipeline_stage (mapped to company.status) as it's the visible tag
+  if (company.status) {
+    const s = company.status.trim();
+    // Remove "Portfolio " prefix if present (e.g. "Portfolio MVF1" -> "MVF1")
+    const cleanStatus = s.replace(/^Portfolio\s+/i, '');
+    
+    // Check if status looks like a known fund
+    const lowerStatus = cleanStatus.toLowerCase();
+    if (lowerStatus.includes('mvf1') || lowerStatus.includes('mvf i') || (lowerStatus.includes('fund 1') && !lowerStatus.includes('10'))) return 'MVF1';
+    if (lowerStatus.includes('mvf2') || lowerStatus.includes('mvf ii') || lowerStatus.includes('fund 2')) return 'MVF2';
+    if (lowerStatus.includes('aav') || lowerStatus.includes('early stage')) return 'Motive AAV';
+    if (lowerStatus.includes('create') || lowerStatus.includes('incubation')) return 'Motive Create';
+    if (lowerStatus.includes('growth')) return 'Growth';
+    if (lowerStatus.includes('balance sheet') || lowerStatus.includes('former')) return 'Balance Sheet/Former Funds';
+  }
+
+  // 2. Fallback to 'fund' field if status didn't match a fund
+  const rawFund = company.fund;
   if (!rawFund) return 'Uncategorized';
+  
   const f = rawFund.toLowerCase().trim();
   
   // Explicit mappings based on common variations
   if (f.includes('mvf1') || f.includes('mvf i') || (f.includes('fund 1') && !f.includes('10'))) return 'MVF1';
   if (f.includes('mvf2') || f.includes('mvf ii') || f.includes('fund 2')) return 'MVF2';
-  if (f.includes('aav') || f.includes('early stage')) return 'Motive AAV';
+  if (f.includes('aav') || f.includes('early stage') || f.includes('mes(') || f.includes('mes (')) return 'Motive AAV'; // Map MES codes to AAV
   if (f.includes('create') || f.includes('incubation')) return 'Motive Create';
   if (f.includes('growth')) return 'Growth';
+  if (f.includes('balance sheet') || f.includes('former')) return 'Balance Sheet/Former Funds';
   
   // Default formatting: Capitalize words
   return rawFund.replace(/\b\w/g, l => l.toUpperCase());
@@ -169,7 +189,7 @@ export default function PortfolioDashboard() {
     );
 
     const grouped = filtered.reduce((acc, company) => {
-      const fundName = normalizeFund(company.fund);
+      const fundName = normalizeFund(company);
       if (!acc[fundName]) {
         acc[fundName] = [];
       }
@@ -177,8 +197,8 @@ export default function PortfolioDashboard() {
       return acc;
     }, {} as GroupedCompanies);
 
-    // Sort funds: MVF1, MVF2, Motive AAV, then others alphabetical
-    const priority = ['MVF1', 'MVF2', 'Motive AAV', 'Motive Create'];
+    // Sort funds: MVF1, MVF2, Motive AAV, Balance Sheet, then others alphabetical
+    const priority = ['MVF1', 'MVF2', 'Motive AAV', 'Motive Create', 'Balance Sheet/Former Funds'];
     
     const sortedGrouped: GroupedCompanies = {};
     const sortedKeys = Object.keys(grouped).sort((a, b) => {
