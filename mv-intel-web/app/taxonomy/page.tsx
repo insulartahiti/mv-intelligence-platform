@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import CollapsibleMenu from '@/app/components/CollapsibleMenu';
 import NodeDetailPanel from '@/app/components/NodeDetailPanel';
 import { ChevronRight, ChevronDown, Search, Folder, Tag, Layers, Building2, Zap, FolderOpen, ArrowRight, LayoutGrid, List, AlertTriangle, X, Hash, Building } from 'lucide-react';
@@ -52,28 +52,59 @@ export default function TaxonomyPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  // Initial Fetch - Load Everything
+  // Pagination state
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const BATCH_SIZE = 1000;
+
+  // Initial Fetch - Load First Batch
   useEffect(() => {
-    const fetchAllEntities = async () => {
-      setIsLoading(true);
-      try {
-        // Fetch all entities under IFT root
-        const res = await fetch('/api/taxonomy/entities?code=IFT');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
+    // Reset state when mounting
+    setAllEntities([]);
+    setPage(0);
+    setHasMore(true);
+    fetchEntities(0, true);
+  }, []);
+
+  const fetchEntities = async (pageNum: number, isInitial: boolean = false) => {
+    if (isInitial) setIsLoading(true);
+    else setIsFetchingMore(true);
+
+    try {
+      // Fetch entities under IFT root with pagination
+      const res = await fetch(`/api/taxonomy/entities?code=IFT&page=${pageNum}&limit=${BATCH_SIZE}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (isInitial) {
             setAllEntities(data.data);
+          } else {
+            setAllEntities(prev => [...prev, ...data.data]);
+          }
+          
+          if (data.pagination) {
+            setHasMore(data.pagination.hasMore);
+          } else {
+            setHasMore(data.data.length === BATCH_SIZE);
           }
         }
-      } catch (err) {
-        console.error('Failed to fetch taxonomy entities:', err);
-      } finally {
-        setIsLoading(false);
       }
-    };
+    } catch (err) {
+      console.error('Failed to fetch taxonomy entities:', err);
+    } finally {
+      if (isInitial) setIsLoading(false);
+      else setIsFetchingMore(false);
+    }
+  };
 
-    fetchAllEntities();
-  }, []);
+  // Load More Handler
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || isFetchingMore || isLoading) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchEntities(nextPage);
+  }, [page, hasMore, isFetchingMore, isLoading]);
   
   // Search results - combines taxonomy codes and entities
   const searchResults = useMemo<TaxonomySearchResult[]>(() => {
@@ -211,6 +242,9 @@ export default function TaxonomyPage() {
                  setIsSearchFocused={setIsSearchFocused}
                  searchResults={searchResults}
                  handleSearchSelect={handleSearchSelect}
+                 hasMore={hasMore}
+                 onLoadMore={handleLoadMore}
+                 isFetchingMore={isFetchingMore}
               />
           )}
       </div>
@@ -303,11 +337,15 @@ interface DashboardProps {
     setIsSearchFocused: (f: boolean) => void;
     searchResults: TaxonomySearchResult[];
     handleSearchSelect: (r: TaxonomySearchResult) => void;
+    hasMore: boolean;
+    onLoadMore: () => void;
+    isFetchingMore: boolean;
 }
 
 function TaxonomyDashboard({ 
     path, node, allEntities, onNavigate, onCompanyClick,
-    searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchResults, handleSearchSelect
+    searchQuery, setSearchQuery, isSearchFocused, setIsSearchFocused, searchResults, handleSearchSelect,
+    hasMore, onLoadMore, isFetchingMore
 }: DashboardProps) {
     // Use local filtered state derived from global 'allEntities'
     
@@ -580,6 +618,26 @@ function TaxonomyDashboard({
                     </section>
                 )}
                 
+                {/* Load More Trigger */}
+                {hasMore && (
+                    <div className="flex justify-center pt-8">
+                        <button 
+                            onClick={onLoadMore}
+                            disabled={isFetchingMore}
+                            className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            {isFetchingMore ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-slate-400/30 border-t-slate-400 rounded-full animate-spin" />
+                                    Loading more...
+                                </>
+                            ) : (
+                                'Load More Entities'
+                            )}
+                        </button>
+                    </div>
+                )}
+
                 {/* Spacer for bottom scrolling */}
                 <div className="h-20" />
             </div>
