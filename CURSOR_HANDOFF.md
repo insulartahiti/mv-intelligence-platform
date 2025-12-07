@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 07, 2025 (v4.5 - Import Dropdown & Guide API Robustness)
+**Last Updated:** Dec 07, 2025 (v4.6 - Enhanced Search Architecture)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -481,12 +481,11 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 *   **Deployment**: **Production**. Live at https://motivepartners.ai.
 
 ### Recent Updates (Dec 07, 2025)
-*   **External Search Toggle**: Added a "Web Search" toggle to the Chat Agent.
-    *   Integrates **Perplexity (`sonar-pro`)** as an optional tool for the agent.
-    *   Enables real-time web search for queries about recent events, valuations, or companies not in the Knowledge Graph.
-    *   **Virtual Nodes**: External results are rendered as "Virtual Nodes" (Amber colored) in the graph results list, distinct from internal nodes (Blue/Purple).
-    *   **Direct Linking**: Clicking external results opens the source URL directly.
-    *   **Hybrid Intelligence**: The agent can now synthesize internal proprietary data with external market intelligence in a single conversation.
+*   **Enhanced Search Architecture (Dec 7)**:
+    *   **Perplexity Primary**: Adopted `sonar-pro` as the primary external search engine due to its superior reasoning and structured response capabilities.
+    *   **Rich Ingestion**: Updated `app/api/chat/route.ts` to ingest rich metadata (`title`, `snippet`, `date`) from Perplexity's `search_results` field instead of just `citations`.
+    *   **Fallback Strategy**: Rejected parallel GPT-5.1 web search in favor of a robust fallback pattern (using OpenAI native web search only if Perplexity fails, if implemented in future).
+    *   **Data Quality**: Virtual Nodes in the graph now contain actual article titles and publication dates, improving user trust and context.
 
 *   **Layout Overhaul (Dec 7)**: Redesigned Knowledge Graph page for Agent-First experience.
     *   **Split Pane**: Chat Agent (65%) vs Results/Graph (35%) by default.
@@ -522,6 +521,13 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 ---
 
 ## 10. Key Architectural Decisions
+
+### Why Perplexity for External Search?
+**Decision**: Use `sonar-pro` as the exclusive search engine for the agent's `perform_web_search` tool.
+**Rationale**:
+1.  **Structured Data**: Returns `search_results` with titles/snippets/dates, enabling rich Virtual Nodes in the graph.
+2.  **Reasoning**: `sonar-pro` includes Chain-of-Thought reasoning, providing pre-synthesized answers that GPT-5.1 can further refine.
+3.  **Efficiency**: Single API call replaces the [Search -> Scrape -> Clean -> Embed] pipeline required for manual GPT web search.
 
 ### Why Separate Affinity Sync from AI Processing?
 **Decision**: The pipeline fetches raw data first, then runs AI enrichment in a separate parallel block.

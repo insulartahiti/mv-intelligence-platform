@@ -13,3 +13,4 @@ SET
 WHERE name = 'Nelly' 
   AND is_portfolio = true 
   AND (fund IS NULL OR pipeline_stage IS NULL);
+
