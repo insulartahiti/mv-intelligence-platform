@@ -2,10 +2,10 @@
  * Financial Data Ingestion API
  * POST /api/ingest - Process uploaded financial files
  * 
- * Accepts: { companySlug: string, filePaths: string[], notes?: string }
- * Returns: { status, company, summary, results }
+ * Accepts: { companyId: string (UUID), companySlug?: string, filePaths: string[], notes?: string }
+ * Returns: { status, company, companyId, summary, results }
  * 
- * @version 3.2.0 - Parallelized extraction pipeline
+ * @version 3.3.0 - Direct companyId from dropdown selection
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
@@ -146,20 +146,30 @@ async function pLimit<T>(concurrency: number, tasks: (() => Promise<T>)[]): Prom
 }
 
 // Process files from Storage - POST handler for financial data ingestion
-// Accepts: { companySlug: string, filePaths: string[], notes?: string }
+// Accepts: { companyId: string (UUID), companySlug?: string, filePaths: string[], notes?: string }
 export async function POST(req: NextRequest) {
   try {
     // Initialize Supabase client inside handler (lazy initialization)
     const supabase = getSupabaseClient();
     
     const json = await req.json();
-    const { companySlug: requestedSlug, filePaths, notes, forceCompanyId, dryRun } = json;
+    // companyId is now the primary identifier (UUID from dropdown selection)
+    // companySlug is optional, used for display/logging only
+    // forceCompanyId is deprecated but kept for backwards compatibility
+    const { companyId: requestedCompanyId, companySlug: requestedSlug, filePaths, notes, forceCompanyId, dryRun } = json;
 
-    // For dry runs, default to 'nelly' if no company specified (our test case)
-    const companySlug = requestedSlug || (dryRun ? 'nelly' : null);
+    // Use companyId if provided, fall back to forceCompanyId for backwards compatibility
+    const companyId = requestedCompanyId || forceCompanyId;
+    
+    // companySlug is now optional - used for folder paths and logging
+    const companySlug = requestedSlug || (dryRun ? 'nelly' : 'unknown');
 
-    if (!companySlug || !filePaths || !Array.isArray(filePaths)) {
-      return NextResponse.json({ error: 'Missing company or filePaths' }, { status: 400 });
+    if (!companyId && !dryRun) {
+      return NextResponse.json({ error: 'Missing companyId. Please select a portfolio company.' }, { status: 400 });
+    }
+    
+    if (!filePaths || !Array.isArray(filePaths)) {
+      return NextResponse.json({ error: 'Missing filePaths array' }, { status: 400 });
     }
 
     // Reject empty file arrays - unless notes are provided
@@ -176,7 +186,18 @@ export async function POST(req: NextRequest) {
         ...(notes && notes.trim().length > 0 ? [{ type: 'text', content: notes }] : [])
     ];
 
-    console.log(`[Ingest] Starting parallel processing for ${itemsToProcess.length} items for ${companySlug}`);
+    console.log(`[Ingest] Starting parallel processing for ${itemsToProcess.length} items for company ${companySlug} (ID: ${companyId})`);
+
+    // companyId is already provided from the dropdown selection - no resolution needed
+    // For dry runs without companyId, use a placeholder
+    const resolvedCompanyId = companyId || (dryRun ? '00000000-0000-0000-0000-000000000000' : null);
+    
+    if (!resolvedCompanyId) {
+        return NextResponse.json({ 
+            error: 'Could not determine company ID. Please select a portfolio company.',
+            status: 'error'
+        }, { status: 400 });
+    }
 
     // Define the async task for processing a single item
     const processItemTask = async (item: any) => {
@@ -409,7 +430,7 @@ export async function POST(req: NextRequest) {
     const statusCode = overallStatus === 'error' ? 500 : (overallStatus === 'partial' || overallStatus === 'needs_review' ? 207 : 200);
 
     return NextResponse.json({
-      status: overallStatus, company: companySlug, companyId: companyId, dryRun: !!dryRun,
+      status: overallStatus, company: companySlug, companyId: resolvedCompanyId, dryRun: !!dryRun,
       summary: { total: results.length, success: successCount, needs_review: needsReviewCount, error: errorCount },
       results
     }, { status: statusCode });

@@ -8,6 +8,7 @@ import { Upload, FileText, Check, AlertCircle, Loader2, Search, Database, Cloud,
 interface Job {
   id: string;
   companySlug: string;
+  companyId: string; // Added companyId to Job
   files: string[];
   status: 'uploading' | 'processing' | 'success' | 'partial' | 'error';
   progress: number;
@@ -16,9 +17,18 @@ interface Job {
   createdAt: number;
 }
 
+interface PortfolioCompany {
+  id: string;
+  name: string;
+  domain?: string;
+}
+
 export default function ImportPage() {
   const [activeTab, setActiveTab] = useState('import');
-  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState(''); // Changed to store UUID
+  const [selectedCompanyName, setSelectedCompanyName] = useState('');
+  const [portfolioCompanies, setPortfolioCompanies] = useState<PortfolioCompany[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [textInput, setTextInput] = useState('');
@@ -26,21 +36,28 @@ export default function ImportPage() {
   
   // Job Queue State
   const [jobs, setJobs] = useState<Job[]>([]);
-  
-  // Modal State
-  const [showResolutionModal, setShowResolutionModal] = useState(false);
-  const [resolutionCandidates, setResolutionCandidates] = useState<{id: string, name: string}[]>([]);
-  const [targetCompanyName, setTargetCompanyName] = useState('');
-  const [resolvedCompanyId, setResolvedCompanyId] = useState('');
-  
-  // Search state for modal
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{id: string, name: string}[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+
+  // Load portfolio companies on mount
+  useEffect(() => {
+    const loadPortfolioCompanies = async () => {
+      try {
+        const res = await fetch('/api/portfolio/companies?limit=100');
+        if (res.ok) {
+          const data = await res.json();
+          setPortfolioCompanies(data.companies || []);
+        }
+      } catch (err) {
+        console.error('Failed to load portfolio companies:', err);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+    loadPortfolioCompanies();
+  }, []);
   
   // Auto-detect company when files are added
   useEffect(() => {
-    if (files.length > 0 && !selectedCompany) {
+    if (files.length > 0 && !selectedCompanyId && portfolioCompanies.length > 0) {
       const detect = async () => {
         setIsDetecting(true);
         try {
@@ -48,7 +65,15 @@ export default function ImportPage() {
           if (res.ok) {
             const data = await res.json();
             if (data.detected_slug) {
-              setSelectedCompany(data.detected_slug);
+              // Try to match the detected slug to a portfolio company
+              const match = portfolioCompanies.find(c => 
+                c.name.toLowerCase().includes(data.detected_slug.toLowerCase()) ||
+                data.detected_slug.toLowerCase().includes(c.name.toLowerCase().split(' ')[0])
+              );
+              if (match) {
+                setSelectedCompanyId(match.id);
+                setSelectedCompanyName(match.name);
+              }
             }
           }
         } catch (err) {
@@ -59,37 +84,7 @@ export default function ImportPage() {
       };
       detect();
     }
-  }, [files, selectedCompany]);
-
-  const handleCompanySearch = async (query: string) => {
-    setSearchQuery(query);
-    if (query.length < 2) {
-        setSearchResults([]);
-        return;
-    }
-    
-    setIsSearching(true);
-    try {
-        const res = await fetch(`/api/companies/search?q=${encodeURIComponent(query)}`);
-        if (res.ok) {
-            const data = await res.json();
-            setSearchResults(data.companies || []);
-        }
-    } catch (err) {
-        console.error('Search failed:', err);
-    } finally {
-        setIsSearching(false);
-    }
-  };
-
-  // Reset search state when modal opens
-  useEffect(() => {
-      if (showResolutionModal) {
-          setSearchQuery('');
-          setSearchResults([]);
-          setResolvedCompanyId('');
-      }
-  }, [showResolutionModal]);
+  }, [files, selectedCompanyId, portfolioCompanies]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -126,77 +121,13 @@ export default function ImportPage() {
   const updateJob = (id: string, updates: Partial<Job>) => {
     setJobs(prev => prev.map(job => job.id === id ? { ...job, ...updates } : job));
   };
-
-  const processJob = async (job: Job, fileObjects: File[], companyIdOverride?: string) => {
-    try {
-        // 1. Upload Phase
-        const uploadedPaths: string[] = [];
-        
-        if (fileObjects.length > 0) {
-            for (let i = 0; i < fileObjects.length; i++) {
-                const file = fileObjects[i];
-                updateJob(job.id, { 
-                    status: 'uploading',
-                    progress: (i / fileObjects.length) * 50,
-                    message: `Uploading ${file.name}...`
-                });
-                
-                // Get signed URL
-                const urlRes = await fetch(
-                    `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(job.companySlug)}`
-                );
-                const urlData = await urlRes.json();
-                
-                if (urlData.status !== 'success') {
-                    throw new Error(`Failed to get upload URL: ${urlData.error}`);
-                }
-                
-                // Upload to Supabase
-                const uploadRes = await fetch(urlData.signedUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-                    body: file
-                });
-                
-                if (!uploadRes.ok) throw new Error(`Upload failed for ${file.name}`);
-                uploadedPaths.push(urlData.path);
-            }
-        }
-
-        // 2. Processing Phase
-        updateJob(job.id, { 
-            status: 'processing', 
-            progress: 50, 
-            message: 'Processing with AI...' 
-        });
-
-        const body: any = {
-            companySlug: job.companySlug,
-            filePaths: uploadedPaths,
-            notes: textInput // Note: This uses the closure's textInput which might be empty if cleared.
-                             // Ideally we should have passed the text content to processJob.
-                             // But for now let's assume we capture it before clearing.
-                             // Wait, I need to pass the text input content to this function.
-        };
-        // Fix: Use the text captured in the job object if I had stored it, or pass it as arg.
-        // Actually, let's fix the call site to pass it or store it in the job? 
-        // Job doesn't have 'notes' field. I'll pass it as arg to be safe, but since I can't change signature easily in this flow without changing all calls...
-        // Let's modify the processJob signature to accept notes.
-    } catch (err: any) {
-        updateJob(job.id, { 
-            status: 'error', 
-            progress: 100, 
-            message: err.message || 'Unknown error' 
-        });
-    }
-  };
   
-  // Revised Process Job logic with correct arguments
-  const runIngestion = async (jobId: string, company: string, fileList: File[], notes: string, companyIdOverride?: string) => {
+  // Process job with companyId directly (UUID from dropdown selection)
+  const runIngestion = async (jobId: string, companyId: string, companyName: string, fileList: File[], notes: string) => {
       try {
         const uploadedPaths: string[] = [];
         
-        // Upload
+        // Upload - use companyName for folder organization
         if (fileList.length > 0) {
             for (let i = 0; i < fileList.length; i++) {
                 const file = fileList[i];
@@ -206,8 +137,10 @@ export default function ImportPage() {
                     message: `Uploading ${file.name}...`
                 });
                 
+                // Use company name (sanitized) as folder slug
+                const folderSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
                 const urlRes = await fetch(
-                    `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(company)}`
+                    `/api/upload?filename=${encodeURIComponent(file.name)}&companySlug=${encodeURIComponent(folderSlug)}`
                 );
                 const urlData = await urlRes.json();
                 if (urlData.status !== 'success') throw new Error(urlData.error);
@@ -222,17 +155,15 @@ export default function ImportPage() {
             }
         }
 
-        // Process
+        // Process - pass companyId directly (no resolution needed)
         updateJob(jobId, { status: 'processing', progress: 50, message: 'Extracting financial data...' });
         
-        const body: any = {
-            companySlug: company,
+        const body = {
+            companyId: companyId, // UUID from dropdown - primary identifier
+            companySlug: companyName, // For logging/display purposes
             filePaths: uploadedPaths,
             notes: notes
         };
-        if (companyIdOverride) {
-            body.forceCompanyId = companyIdOverride;
-        }
 
         const res = await fetch('/api/ingest', { 
             method: 'POST', 
@@ -249,24 +180,9 @@ export default function ImportPage() {
         }
 
         if (data.status === 'success') {
-            updateJob(jobId, { status: 'success', progress: 100, message: 'Complete', result: data });
+            updateJob(jobId, { status: 'success', progress: 100, message: 'Complete', result: { ...data, companyId } });
         } else if (data.status === 'partial' || data.status === 'needs_review') {
-             // Handle partial/company not found
-             const companyNotFound = data.results?.find((r: any) => r.status === 'company_not_found');
-             if (companyNotFound) {
-                 // Special handling for resolution needed - might need to bubble this up or show in the job card
-                 // For now, mark as error with specific message
-                 updateJob(jobId, { 
-                     status: 'error', 
-                     progress: 100, 
-                     message: 'Company not found. Please verify config.',
-                     result: data
-                 });
-                 // We could potentially trigger the modal here, but that blocks the UI again.
-                 // A better UX might be a "Resolve" button on the job card.
-             } else {
-                 updateJob(jobId, { status: 'partial', progress: 100, message: 'Completed with warnings', result: data });
-             }
+            updateJob(jobId, { status: 'partial', progress: 100, message: 'Completed with warnings', result: { ...data, companyId } });
         } else {
             throw new Error(data.error || 'Processing failed');
         }
@@ -276,19 +192,20 @@ export default function ImportPage() {
       }
   };
 
-  const handleSubmit = (overrideCompanyId?: string) => {
+  const handleSubmit = () => {
     if (files.length === 0 && (!textInput || textInput.trim().length === 0)) {
         alert('Please upload a file or enter text.');
         return;
     }
-    if (!selectedCompany) {
+    if (!selectedCompanyId) {
         alert('Please select a company.');
         return;
     }
 
     const newJob: Job = {
         id: Math.random().toString(36).substring(2, 15),
-        companySlug: selectedCompany,
+        companySlug: selectedCompanyName, // Display name
+        companyId: selectedCompanyId, // UUID
         files: files.map(f => f.name),
         status: 'uploading',
         progress: 0,
@@ -301,32 +218,17 @@ export default function ImportPage() {
     // Capture current state values
     const currentFiles = [...files];
     const currentText = textInput;
-    const currentCompany = selectedCompany;
+    const currentCompanyId = selectedCompanyId;
+    const currentCompanyName = selectedCompanyName;
 
     // Reset Form
     setFiles([]);
     setTextInput('');
-    setSelectedCompany('');
+    setSelectedCompanyId('');
+    setSelectedCompanyName('');
     
-    // Start Background Process
-    runIngestion(newJob.id, currentCompany, currentFiles, currentText, overrideCompanyId);
-  };
-
-  const handleResolveCompany = () => {
-      if (!resolvedCompanyId) return;
-      setShowResolutionModal(false);
-      // This is a bit tricky with the new architecture if we want to "retry" a specific job.
-      // For now, let's assume the resolution is for the *current* attempt context if it was modal-based.
-      // But since we moved to async jobs, the modal logic needs to be tied to a job or we re-submit.
-      // Given the complexity, I'll simplify: If 'Resolve' was clicked, we probably just trigger a new ingestion 
-      // with the resolved ID.
-      // BUT, we cleared the files! 
-      // So actually, "Resolving" mid-flight requires keeping the files. 
-      // If we want to support resolution, we might need to NOT clear files if we anticipate immediate failure?
-      // Or just fail the job and let user retry.
-      // Given the user wants "background processing", fail-fast on company detection is better.
-      // I will remove the modal flow for now and rely on the job error status telling the user "Company not found".
-      // They can then retry with the correct company selected.
+    // Start Background Process - pass companyId directly (no resolution needed)
+    runIngestion(newJob.id, currentCompanyId, currentCompanyName, currentFiles, currentText);
   };
 
   return (
@@ -432,19 +334,34 @@ export default function ImportPage() {
               </label>
               <div className="flex gap-4">
                  <select 
-                    value={selectedCompany}
-                    onChange={(e) => setSelectedCompany(e.target.value)}
+                    value={selectedCompanyId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setSelectedCompanyId(id);
+                      const company = portfolioCompanies.find(c => c.id === id);
+                      setSelectedCompanyName(company?.name || '');
+                    }}
                     className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                    disabled={loadingCompanies}
                   >
-                    <option value="" disabled>-- Select Company --</option>
-                    <option value="nelly">Nelly Solutions</option>
-                    <option value="acme-corp">Acme Corp</option>
-                    <option value="stark-industries">Stark Industries</option>
+                    <option value="" disabled>
+                      {loadingCompanies ? 'Loading companies...' : '-- Select Company --'}
+                    </option>
+                    {portfolioCompanies.map(company => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
                   </select>
-                  {selectedCompany ? (
+                  {loadingCompanies ? (
+                      <div className="flex items-center text-slate-400 text-sm font-medium px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700">
+                          <Loader2 size={14} className="mr-1.5 animate-spin"/> 
+                          Loading...
+                      </div>
+                  ) : selectedCompanyId ? (
                       <div className="flex items-center text-emerald-400 text-sm font-medium px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                           <Check size={14} className="mr-1.5"/> 
-                          Auto-detected
+                          Selected
                       </div>
                   ) : isDetecting && (
                       <div className="flex items-center text-blue-400 text-sm font-medium px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">

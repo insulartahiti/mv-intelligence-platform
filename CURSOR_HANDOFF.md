@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 07, 2025 (v4.4 - Financial Ingestion Refactor & Data Quality)
+**Last Updated:** Dec 07, 2025 (v4.5 - Import Dropdown & Guide API Robustness)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -567,6 +567,9 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Resolved Constraint Conflict**: Switched `saveMetricsToDb` to `DELETE` + `INSERT` logic to prevent unique constraint errors during metric updates.
     *   **Date Parsing**: Added support for `YYYYMMDD` formatted dates in filenames.
     *   **DB-Backed Guides**: Updated `loadPortcoGuide` to fetch configuration from `portfolio_guides` table, enabling dynamic guide creation via UI to take immediate effect in ingestion pipeline.
+    *   **Dynamic Company Dropdown (v4.5)**: Refactored Import page to load portfolio companies dynamically from `/api/portfolio/companies` instead of hardcoded options. Company selection now sends UUID directly to `/api/ingest`, eliminating slug-to-ID resolution errors.
+    *   **Ingest API Simplification (v3.3)**: Updated `/api/ingest` to accept `companyId` (UUID) as primary identifier. Removed complex company resolution logic that was causing `companyId is not defined` errors.
+    *   **Guide API Robustness**: Enhanced `/api/portfolio/guide` with comprehensive error handling, graceful fallback for missing `type` column (migration compatibility), and detailed server-side logging.
 
 *   **Ingestion Pipeline Performance (Dec 07)**:
     *   Parallel Person Enrichment moved to concurrent block.

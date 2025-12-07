@@ -98,29 +98,54 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
     }
     
+    console.log(`[Guide API] Fetching guide for company=${companyId}, type=${type}`);
+    
     const supabase = getSupabaseClient();
     
-    const { data, error } = await supabase
+    // First, check if the type column exists by querying with a broader select
+    // If the type column doesn't exist (migration not run), fall back to no type filter
+    let query = supabase
       .from('portfolio_guides')
       .select('*')
-      .eq('company_id', companyId)
-      .eq('type', type)
-      .maybeSingle(); // Use maybeSingle instead of single to handle 0 rows gracefully
+      .eq('company_id', companyId);
+    
+    // Try to filter by type - this column was added in a migration
+    // If it fails, we'll catch and retry without the type filter
+    try {
+      const { data, error } = await query.eq('type', type).maybeSingle();
       
-    if (error) {
-       console.error('Fetch guide error:', error);
-       return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
+      if (error) {
+        // Check if error is due to missing column
+        if (error.message?.includes('type') && error.message?.includes('does not exist')) {
+          console.warn('[Guide API] Type column not found, falling back to query without type filter');
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('portfolio_guides')
+            .select('*')
+            .eq('company_id', companyId)
+            .maybeSingle();
+          
+          if (fallbackError) {
+            console.error('[Guide API] Fallback fetch error:', fallbackError);
+            return NextResponse.json({ error: `Database error: ${fallbackError.message}` }, { status: 500 });
+          }
+          
+          return NextResponse.json({ guide: fallbackData || null });
+        }
+        
+        console.error('[Guide API] Fetch guide error:', error);
+        return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
+      }
+      
+      console.log(`[Guide API] Found guide: ${data ? 'yes' : 'no'}`);
+      return NextResponse.json({ guide: data || null });
+      
+    } catch (queryError: any) {
+      console.error('[Guide API] Query execution error:', queryError);
+      return NextResponse.json({ error: queryError.message || 'Query failed' }, { status: 500 });
     }
-    
-    if (!data) {
-       // Return null if no guide found (frontend will show "Generate" button)
-       return NextResponse.json({ guide: null });
-    }
-    
-    return NextResponse.json({ guide: data });
     
   } catch (error: any) {
-    console.error('Fetch guide error:', error);
+    console.error('[Guide API] Unexpected error:', error);
     return NextResponse.json({ error: error.message || 'Failed to fetch guide' }, { status: 500 });
   }
 }
@@ -133,11 +158,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 });
     }
 
+    console.log(`[Guide API] POST request for company=${companyId}, type=${type}, files=${filePaths?.length || 0}`);
+
+    // Check for OpenAI API key early
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('[Guide API] OPENAI_API_KEY is not configured');
+      return NextResponse.json({ error: 'OpenAI API key not configured on server' }, { status: 500 });
+    }
+
     const supabase = getSupabaseClient();
     let fileContext = "";
     
     if (filePaths && Array.isArray(filePaths) && filePaths.length > 0) {
+      console.log(`[Guide API] Extracting context from ${filePaths.length} files`);
       fileContext = await extractFileContext(filePaths, supabase);
+      console.log(`[Guide API] Extracted ${fileContext.length} chars of context`);
     }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -145,8 +180,6 @@ export async function POST(req: NextRequest) {
     // Helper to run completion with retries/fallback
     const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
       try {
-         if (!process.env.OPENAI_API_KEY) throw new Error("OpenAI API Key missing");
-
          const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
     Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
     
@@ -178,6 +211,8 @@ export async function POST(req: NextRequest) {
     Return the updated YAML.
     `;
 
+        console.log(`[Guide API] Calling OpenAI gpt-5.1 (attempt ${retryCount + 1})`);
+        
         const completion = await openai.chat.completions.create({
           model: "gpt-5.1", // Primary model for guide generation
           messages: [
@@ -187,15 +222,19 @@ export async function POST(req: NextRequest) {
           temperature: 0,
         });
         
-        return completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
+        const result = completion.choices[0].message.content?.replace(/```yaml/g, '').replace(/```/g, '').trim() || "";
+        console.log(`[Guide API] Generated ${result.length} chars of YAML`);
+        return result;
+        
       } catch (error: any) {
+        console.error(`[Guide API] OpenAI error:`, error.message || error);
+        
         // If it fails due to context length and we haven't retried yet, try with truncated context
         const isContextError = error.code === 'context_length_exceeded' || 
                                (error.message && error.message.toLowerCase().includes('maximum context length'));
                                
         if (retryCount === 0 && isContextError && promptContext.length > 50000) {
-           console.warn("First guide generation attempt failed (context length), retrying with truncated context...");
-           // Truncate to first 50k chars (approx 12-15k tokens) as a fallback
+           console.warn("[Guide API] Context too long, retrying with truncated context...");
            return generateGuide(promptContext.substring(0, 50000) + "\n...[TRUNCATED]...", 1);
         }
         throw error;
@@ -205,32 +244,66 @@ export async function POST(req: NextRequest) {
     const newYaml = await generateGuide(fileContext);
     
     if (!newYaml) {
-        throw new Error("Failed to generate YAML");
+        return NextResponse.json({ error: 'Failed to generate YAML - empty response from AI' }, { status: 500 });
     }
 
-    // Upsert into DB with explicit type and onConflict for composite unique key
-    const { data, error } = await supabase
-      .from('portfolio_guides')
-      .upsert({
-        company_id: companyId,
-        type: type, // Explicit type (default 'financial')
-        content_yaml: newYaml,
-        updated_at: new Date().toISOString()
-      }, { 
-        onConflict: 'company_id,type' // Specify composite unique key for conflict resolution
-      })
-      .select()
-      .single();
-      
-    if (error) {
-      console.error('Guide upsert error:', error);
-      throw new Error(`Database error: ${error.message}`);
-    }
+    console.log(`[Guide API] Upserting guide to database`);
     
-    return NextResponse.json({ guide: data });
+    // Try upsert with type column first, fall back if column doesn't exist
+    try {
+      const { data, error } = await supabase
+        .from('portfolio_guides')
+        .upsert({
+          company_id: companyId,
+          type: type,
+          content_yaml: newYaml,
+          updated_at: new Date().toISOString()
+        }, { 
+          onConflict: 'company_id,type'
+        })
+        .select()
+        .single();
+        
+      if (error) {
+        // Check if error is due to missing type column
+        if (error.message?.includes('type') && (error.message?.includes('does not exist') || error.message?.includes('column'))) {
+          console.warn('[Guide API] Type column issue, trying upsert without type');
+          
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('portfolio_guides')
+            .upsert({
+              company_id: companyId,
+              content_yaml: newYaml,
+              updated_at: new Date().toISOString()
+            }, { 
+              onConflict: 'company_id'
+            })
+            .select()
+            .single();
+            
+          if (fallbackError) {
+            console.error('[Guide API] Fallback upsert error:', fallbackError);
+            return NextResponse.json({ error: `Database error: ${fallbackError.message}` }, { status: 500 });
+          }
+          
+          console.log(`[Guide API] Guide saved successfully (fallback mode)`);
+          return NextResponse.json({ guide: fallbackData });
+        }
+        
+        console.error('[Guide API] Upsert error:', error);
+        return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
+      }
+      
+      console.log(`[Guide API] Guide saved successfully`);
+      return NextResponse.json({ guide: data });
+      
+    } catch (dbError: any) {
+      console.error('[Guide API] Database operation failed:', dbError);
+      return NextResponse.json({ error: dbError.message || 'Database operation failed' }, { status: 500 });
+    }
 
   } catch (error: any) {
-    console.error('Update guide error:', error);
+    console.error('[Guide API] Unexpected error:', error);
     return NextResponse.json({ error: error.message || 'Failed to update guide' }, { status: 500 });
   }
 }
