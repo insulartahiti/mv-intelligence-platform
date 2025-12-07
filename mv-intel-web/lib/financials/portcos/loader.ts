@@ -231,12 +231,48 @@ export async function loadPortcoGuide(slug: string, supabase?: SupabaseClient): 
           }
 
           if (companyId) {
-              const { data: guideRecord } = await supabase
-                .from('portfolio_guides')
-                .select('content_yaml')
-                .eq('company_id', companyId)
-                .maybeSingle();
-                
+              // Try fetching financial guide first (explicit type)
+              let guideRecord = null;
+              
+              try {
+                  const { data, error } = await supabase
+                    .from('portfolio_guides')
+                    .select('content_yaml')
+                    .eq('company_id', companyId)
+                    .eq('type', 'financial')
+                    .maybeSingle();
+                  
+                  if (!error) {
+                      guideRecord = data;
+                  } else if (error.message?.includes('type') && error.message?.includes('does not exist')) {
+                      // Fallback for missing type column (migration not run)
+                      console.warn('[Loader] Type column missing, falling back to untyped query');
+                      const { data: fallbackData } = await supabase
+                        .from('portfolio_guides')
+                        .select('content_yaml')
+                        .eq('company_id', companyId)
+                        .maybeSingle();
+                      guideRecord = fallbackData;
+                  }
+              } catch (err) {
+                   // Ignore specific query errors and try fallback logic if needed
+                   console.warn('[Loader] Error fetching typed guide, trying untyped fallback', err);
+              }
+              
+              // If still no record, try untyped query (legacy records)
+              if (!guideRecord) {
+                   const { data: fallbackData, error: fallbackError } = await supabase
+                        .from('portfolio_guides')
+                        .select('content_yaml')
+                        .eq('company_id', companyId)
+                        .maybeSingle();
+                   
+                   // Only use if we didn't get an error (e.g. multiple rows)
+                   if (!fallbackError) {
+                       guideRecord = fallbackData;
+                   }
+              }
+
               if (guideRecord && guideRecord.content_yaml) {
                   console.log(`[Loader] Loaded guide from DB for ${slug}`);
                   const rawGuide = yaml.load(guideRecord.content_yaml) as any;
