@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
           query_hash: queryHash,
           news_data: news,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'company_id, query_hash' });
+        }, { onConflict: 'company_id,query_hash' });
       } catch (err) {
         console.error('Cache update failed:', err);
       }

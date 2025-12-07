@@ -339,7 +339,7 @@ export async function POST(req: NextRequest) {
                 if (finalFacts.length > 0) {
                      await supabase.from('fact_financials').upsert(finalFacts.map(fact => ({
                         company_id: companyId, date: fact.date, line_item_id: fact.line_item_id, amount: fact.amount,
-                        currency: guide.company_metadata?.currency || 'EUR', scenario: fact.scenario,
+                        currency: guide.company_metadata?.currency || (guide as any).company?.currency || 'EUR', scenario: fact.scenario,
                         source_file_id: sourceFileId, source_location: fact.source_location, priority: fact.priority,
                         explanation: fact.explanation, changelog: fact.changelog, snippet_url: fact.snippet_url
                     })), { onConflict: 'company_id,date,scenario,line_item_id' });

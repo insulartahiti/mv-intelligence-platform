@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Menu, X, Network, Chrome, Activity, Database, Home, Shield, LogOut, Layout, Briefcase } from 'lucide-react';
+import { Menu, X, Network, Chrome, Activity, Database, Home, Shield, LogOut, Layout, Briefcase, Lightbulb } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { makeBrowserClient } from '@/lib/supabaseClient';
 
@@ -62,6 +62,7 @@ export default function CollapsibleMenu() {
         <nav className="flex flex-col p-2 space-y-1">
           <MenuItem onClick={close} href="/" icon={<Network size={18} />} label="Knowledge Graph" active={pathname === '/'} />
           <MenuItem onClick={close} href="/portfolio" icon={<Briefcase size={18} />} label="Portfolio" active={pathname?.startsWith('/portfolio') || false} />
+          <MenuItem onClick={close} href="/suggestions" icon={<Lightbulb size={18} />} label="Suggestions" active={pathname === '/suggestions'} />
           <MenuItem onClick={close} href="/taxonomy" icon={<Database size={18} />} label="Taxonomy View" active={pathname === '/taxonomy'} />
           <MenuItem onClick={close} href="/architecture" icon={<Layout size={18} />} label="Architecture" active={pathname === '/architecture'} />
           <MenuItem onClick={close} href="/chrome-extension" icon={<Chrome size={18} />} label="Chrome Extension" active={pathname === '/chrome-extension'} />
