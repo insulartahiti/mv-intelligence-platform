@@ -110,38 +110,30 @@ function extractPeriodDateFromFilename(filename: string): string | null {
   return null;
 }
 
-// Simple concurrency limiter
+// Simple concurrency limiter using worker pattern
 async function pLimit<T>(concurrency: number, tasks: (() => Promise<T>)[]): Promise<PromiseSettledResult<T>[]> {
-    const results: PromiseSettledResult<T>[] = new Array(tasks.length).fill({ status: 'rejected', reason: 'Not executed' });
-    const executing = new Set<Promise<void>>();
+    const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+    let currentIndex = 0;
     
-    // Wrapper to handle individual task execution and result tracking
-    const runTask = async (task: () => Promise<T>, index: number) => {
-        try {
-            const value = await task();
-            results[index] = { status: 'fulfilled', value };
-        } catch (reason) {
-            results[index] = { status: 'rejected', reason };
+    const worker = async () => {
+        while (currentIndex < tasks.length) {
+            const index = currentIndex++;
+            const task = tasks[index];
+            try {
+                const value = await task();
+                results[index] = { status: 'fulfilled', value };
+            } catch (reason) {
+                results[index] = { status: 'rejected', reason };
+            }
         }
     };
 
-    for (let i = 0; i < tasks.length; i++) {
-        const p = Promise.resolve().then(() => runTask(tasks[i], i));
+    // Start workers
+    const workers = Array(Math.min(concurrency, tasks.length))
+        .fill(null)
+        .map(() => worker());
         
-        // We use a separate promise for tracking completion in the set
-        // ensuring we remove the specific promise reference we added
-        const e = p.then(() => {
-            executing.delete(e);
-        });
-        
-        executing.add(e);
-        
-        if (executing.size >= concurrency) {
-            await Promise.race(executing);
-        }
-    }
-    
-    await Promise.all(executing);
+    await Promise.all(workers);
     return results;
 }
 

@@ -427,29 +427,79 @@ export default function ChatInterface({
                 </button>
             </div>
 
-            {/* History Sidebar */}
-            <div className={`absolute top-[60px] left-0 bottom-0 w-64 bg-slate-900/95 backdrop-blur border-r border-slate-800 z-50 transform transition-transform duration-300 ${showHistory ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-                    <span className="font-medium text-slate-300">History</span>
-                    <button onClick={() => setShowHistory(false)}><X className="w-4 h-4 text-slate-500" /></button>
-                </div>
-                <div className="overflow-y-auto h-full p-2 space-y-1">
-                    {conversations.map(c => (
-                        <button
-                            key={c.id}
-                            onClick={() => handleSelectConversation(c.id)}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${c.id === conversationId ? 'bg-blue-900/20 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}
-                        >
-                            {c.title || 'New Conversation'}
-                        </button>
-                    ))}
-                    {conversations.length === 0 && <div className="p-4 text-xs text-slate-600 text-center">No history found</div>}
-                </div>
-            </div>
+            {/* Main Content Area with Mini Sidebar */}
+            <div className="flex flex-1 overflow-hidden relative">
+                
+                {/* Mini Sidebar (Persistent Session History) */}
+                <div className="w-16 bg-slate-950 border-r border-slate-800 flex flex-col items-center py-4 gap-4 z-20 flex-shrink-0">
+                    <button 
+                        onClick={handleNewChat}
+                        className="p-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg transition-all hover:scale-105"
+                        title="New Chat"
+                    >
+                        <Plus className="w-5 h-5" />
+                    </button>
+                    
+                    <div className="w-8 h-[1px] bg-slate-800" />
+                    
+                    <div className="flex-1 overflow-y-auto w-full flex flex-col items-center gap-3 scrollbar-none">
+                        {conversations.slice(0, 5).map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => handleSelectConversation(c.id)}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                                    c.id === conversationId 
+                                        ? 'bg-slate-800 text-blue-400 border border-blue-500/30 ring-2 ring-blue-500/20' 
+                                        : 'bg-slate-900 text-slate-500 hover:bg-slate-800 hover:text-slate-300 border border-slate-800'
+                                }`}
+                                title={c.title || 'Conversation'}
+                            >
+                                <MessageSquare className="w-4 h-4" />
+                            </button>
+                        ))}
+                        {conversations.length > 5 && (
+                            <button 
+                                onClick={() => setShowHistory(true)}
+                                className="w-8 h-8 rounded-full bg-slate-900 text-slate-600 flex items-center justify-center hover:text-slate-400 text-xs font-medium"
+                            >
+                                +{conversations.length - 5}
+                            </button>
+                        )}
+                    </div>
 
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
-                {messages.length === 0 && (
+                    <button 
+                        onClick={() => setShowHistory(!showHistory)}
+                        className={`p-3 rounded-xl transition-colors ${showHistory ? 'bg-slate-800 text-blue-400' : 'text-slate-500 hover:bg-slate-900 hover:text-slate-300'}`}
+                        title="Full History"
+                    >
+                        <History className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* History Sidebar (Slide-out) */}
+                <div className={`absolute top-0 left-16 bottom-0 w-64 bg-slate-900/95 backdrop-blur border-r border-slate-800 z-30 transform transition-transform duration-300 ${showHistory ? 'translate-x-0' : '-translate-x-full'}`}>
+                    <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                        <span className="font-medium text-slate-300">History</span>
+                        <button onClick={() => setShowHistory(false)}><X className="w-4 h-4 text-slate-500" /></button>
+                    </div>
+                    <div className="overflow-y-auto h-full p-2 space-y-1">
+                        {conversations.map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => handleSelectConversation(c.id)}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${c.id === conversationId ? 'bg-blue-900/20 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}
+                            >
+                                {c.title || 'New Conversation'}
+                            </button>
+                        ))}
+                        {conversations.length === 0 && <div className="p-4 text-xs text-slate-600 text-center">No history found</div>}
+                    </div>
+                </div>
+
+                {/* Messages Area */}
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-900">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
+                        {messages.length === 0 && (
                     <div className="text-center text-slate-500 mt-12 px-6">
                         <Network className="w-12 h-12 mx-auto mb-3 opacity-20" />
                         <p>Ask about companies, people, or relationships in your network.</p>
@@ -673,7 +723,7 @@ export default function ChatInterface({
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-slate-900 border-t border-slate-800">
+            <div className="p-4 bg-slate-900 border-t border-slate-800 z-20">
                 <form onSubmit={handleFormSubmit} className="relative">
                     <input
                         type="text"
@@ -692,5 +742,6 @@ export default function ChatInterface({
                 </form>
             </div>
         </div>
+    </div>
     );
 }

@@ -251,6 +251,15 @@ export default function Neo4jVisNetwork({
                     }
                 });
 
+                network.on("stabilizationIterationsDone", function () {
+                    network.fit({ 
+                        animation: {
+                            duration: 1000,
+                            easingFunction: 'easeInOutQuad' 
+                        }
+                    });
+                });
+
                 networkRef.current = network;
             }
         }

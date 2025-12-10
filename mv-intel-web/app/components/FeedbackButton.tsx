@@ -7,7 +7,7 @@ import { submitIssue } from '@/app/actions/issues';
 import { makeBrowserClient } from '@/lib/supabaseClient';
 import { usePathname } from 'next/navigation';
 
-export default function FeedbackButton() {
+export default function FeedbackButton({ className }: { className?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [screenshot, setScreenshot] = useState<string | null>(null);
@@ -16,6 +16,11 @@ export default function FeedbackButton() {
   
   const pathname = usePathname();
   const supabase = makeBrowserClient();
+
+  // Hide global instance on knowledge graph page (where it's manually placed)
+  if (!className && pathname === '/knowledge-graph') {
+    return null;
+  }
 
   const handleCapture = async () => {
     setIsCapturing(true);
@@ -74,11 +79,11 @@ export default function FeedbackButton() {
     }
   };
 
-  if (!isOpen) {
+    if (!isOpen) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 right-4 z-[90] bg-slate-800 hover:bg-slate-700 text-slate-300 p-3 rounded-full shadow-lg border border-slate-700 transition-all hover:scale-105"
+        className={className || "fixed bottom-4 right-4 z-[90] bg-slate-800 hover:bg-slate-700 text-slate-300 p-4 rounded-full shadow-lg border border-slate-700 transition-all hover:scale-105"}
         title="Report a Bug"
       >
         <Bug size={24} />

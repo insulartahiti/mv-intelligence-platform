@@ -5,7 +5,32 @@ import Neo4jGraphViewer from '@/app/components/Neo4jGraphViewer';
 import NodeDetailPanel from '@/app/components/NodeDetailPanel';
 import ChatInterface, { Message } from '@/app/components/ChatInterface';
 import SearchResultsList from '@/app/components/SearchResultsList';
+import FeedbackButton from '@/app/components/FeedbackButton';
 import { Maximize2, Minimize2, Network } from 'lucide-react';
+
+const LoadingResultsSkeleton = () => (
+  <div className="h-full p-6 space-y-6 animate-pulse overflow-hidden">
+    <div className="flex items-center gap-4 mb-8">
+        <div className="h-8 bg-slate-800/50 rounded w-1/3"></div>
+        <div className="h-8 bg-slate-800/30 rounded w-1/4 ml-auto"></div>
+    </div>
+    {[1, 2, 3, 4].map(i => (
+      <div key={i} className="p-4 rounded-xl border border-slate-800/50 bg-slate-900/20 space-y-3">
+        <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-slate-800/50"></div>
+            <div className="space-y-2 flex-1">
+                <div className="h-4 bg-slate-800/50 rounded w-1/3"></div>
+                <div className="h-3 bg-slate-800/30 rounded w-1/4"></div>
+            </div>
+        </div>
+        <div className="space-y-2 pt-2">
+            <div className="h-3 bg-slate-800/30 rounded w-full"></div>
+            <div className="h-3 bg-slate-800/30 rounded w-5/6"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 export default function KnowledgeGraphPageContent({ greeting, userEntity }: { greeting?: { text: string, name: string }, userEntity?: any }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -165,22 +190,33 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
           
           {/* A. Results List (Visible when Graph Minimized) */}
           <div className={`absolute inset-0 transition-opacity duration-500 ${!isGraphExpanded ? 'opacity-100 z-20 pointer-events-auto' : 'opacity-0 z-0 pointer-events-none'}`}>
-              <SearchResultsList 
-                    nodes={subgraphData?.nodes || []} 
-                    onSelectNode={handleNodeClick}
-                    onHoverNode={setHoveredNodeId}
-                    onClose={() => {}}
-              />
               
-              {/* Floating Graph Toggle Button */}
-              <button
-                onClick={() => setIsGraphExpanded(true)}
-                className="absolute bottom-24 right-6 z-50 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center gap-2 group"
-                title="Expand Graph Visualization"
-              >
-                <Network className="w-6 h-6" />
-                <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap">View Graph</span>
-              </button>
+              {loading && !subgraphData ? (
+                  <LoadingResultsSkeleton />
+              ) : (
+                  <SearchResultsList 
+                        nodes={subgraphData?.nodes || []} 
+                        onSelectNode={handleNodeClick}
+                        onHoverNode={setHoveredNodeId}
+                        onClose={() => {}}
+                  />
+              )}
+              
+              {/* Floating Action Buttons Container */}
+              <div className="absolute bottom-6 right-6 z-50 flex flex-col gap-4 items-center">
+                  
+                  {/* Graph Toggle Button */}
+                  <button
+                    onClick={() => setIsGraphExpanded(true)}
+                    className="bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group w-14 h-14"
+                    title="Expand Graph Visualization"
+                  >
+                    <Network className="w-6 h-6" />
+                  </button>
+
+                  {/* Feedback Button - Stacked below */}
+                  <FeedbackButton className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-4 rounded-full shadow-lg border border-slate-700 transition-all hover:scale-105 w-14 h-14 flex items-center justify-center" />
+              </div>
           </div>
 
           {/* B. Graph Visualization (Always Mounted for Stability, but z-indexed) */}
