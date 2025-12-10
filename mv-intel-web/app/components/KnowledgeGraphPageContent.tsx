@@ -5,8 +5,7 @@ import Neo4jGraphViewer from '@/app/components/Neo4jGraphViewer';
 import NodeDetailPanel from '@/app/components/NodeDetailPanel';
 import ChatInterface, { Message } from '@/app/components/ChatInterface';
 import SearchResultsList from '@/app/components/SearchResultsList';
-import FeedbackButton from '@/app/components/FeedbackButton';
-import { Maximize2, Minimize2, Network } from 'lucide-react';
+import { Maximize2, Minimize2, Share2 } from 'lucide-react';
 
 const LoadingResultsSkeleton = () => (
   <div className="h-full p-6 space-y-6 animate-pulse overflow-hidden">
@@ -203,7 +202,7 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
               )}
               
               {/* Floating Action Buttons Container */}
-              <div className="absolute bottom-6 right-6 z-50 flex flex-col gap-4 items-center">
+              <div className="absolute bottom-24 right-4 z-50 flex flex-col gap-4 items-center">
                   
                   {/* Graph Toggle Button */}
                   <button
@@ -211,11 +210,8 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
                     className="bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center group w-14 h-14"
                     title="Expand Graph Visualization"
                   >
-                    <Network className="w-6 h-6" />
+                    <Share2 className="w-6 h-6" />
                   </button>
-
-                  {/* Feedback Button - Stacked below */}
-                  <FeedbackButton className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-4 rounded-full shadow-lg border border-slate-700 transition-all hover:scale-105 w-14 h-14 flex items-center justify-center" />
               </div>
           </div>
 

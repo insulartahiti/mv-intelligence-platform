@@ -14,7 +14,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: ./mv-intel-web
+        shell: bash
 
     steps:
     - uses: actions/checkout@v4
@@ -29,9 +29,11 @@ jobs:
         cache-dependency-path: mv-intel-web/package-lock.json
 
     - name: Install Dependencies
+      working-directory: ./mv-intel-web
       run: npm ci
 
     - name: Run Architecture Sync
+      working-directory: ./mv-intel-web
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: npm run sync:architecture
@@ -39,7 +41,7 @@ jobs:
     - name: Check for changes
       id: check_changes
       run: |
-        if [[ -n $(git status -s lib/architecture/data.ts) ]]; then
+        if [[ -n $(git status -s mv-intel-web/lib/architecture/data.ts) ]]; then
           echo "changes_detected=true" >> $GITHUB_OUTPUT
         fi
 
@@ -48,6 +50,6 @@ jobs:
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git add lib/architecture/data.ts
+        git add mv-intel-web/lib/architecture/data.ts
         git commit -m "chore: auto-sync architecture data from handoff doc"
         git push

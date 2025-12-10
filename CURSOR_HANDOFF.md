@@ -560,6 +560,14 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
     *   **Fixed Legal Export Error**: Added backward-compatible alias for `LEGAL_ANALYSIS_SYSTEM_PROMPT` to fix import errors during build.
     *   **Staging Environment**: Validated that 401 OpenAI errors in staging are due to Vercel Preview environment variable configuration (mismatch vs Production).
 
+*   **Knowledge Graph UI Overhaul (Dec 10)**:
+    *   **Chat Interface**: Added persistent Mini Sidebar for chat history and quick "New Chat" access.
+    *   **Button Alignment**: Standardized Knowledge Graph toggle and Feedback buttons to be the same size and stacked vertically.
+    *   **Loading State**: Implemented `LoadingResultsSkeleton` for a pulsating blur effect while graph results load.
+    *   **Layout Fixes**: Resolved footer layout issues where input was blocked, ensuring clean flex-column structure.
+    *   **Auto-Centering**: Added graph stabilization event listener to auto-center the visualization on load.
+    *   **UI Polish**: Unified Feedback button (removed duplicate), stacked Graph Toggle button above it with updated `Share2` icon, and fixed chat message clipping issues.
+
 *   **Architecture Page UI (Dec 07)**:
     *   Moved the close button on the details panel to the left side to prevent overlap with the global navigation menu.
     *   Added a notebook-style "Architectural Context" section to the details panel for richer documentation.

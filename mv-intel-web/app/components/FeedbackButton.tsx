@@ -17,11 +17,6 @@ export default function FeedbackButton({ className }: { className?: string }) {
   const pathname = usePathname();
   const supabase = makeBrowserClient();
 
-  // Hide global instance on knowledge graph page (where it's manually placed)
-  if (!className && pathname === '/knowledge-graph') {
-    return null;
-  }
-
   const handleCapture = async () => {
     setIsCapturing(true);
     try {
