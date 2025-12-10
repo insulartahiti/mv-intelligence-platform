@@ -21,11 +21,27 @@ export default function FeedbackButton() {
     setIsCapturing(true);
     try {
       const canvas = await html2canvas(document.body, {
-        useCORS: true, // Handle cross-origin images if possible
-        ignoreElements: (element) => element.id === 'feedback-modal', // Avoid capturing the modal itself if open (though we usually close it or move it)
+        useCORS: true,
+        ignoreElements: (element) => element.id === 'feedback-modal',
       });
-      // Use JPEG with 60% quality to reduce payload size (prevents Server Action payload limit errors)
-      setScreenshot(canvas.toDataURL('image/jpeg', 0.6));
+      
+      // Resize if too large to avoid payload limits
+      const MAX_WIDTH = 1280;
+      let finalCanvas = canvas;
+      
+      if (canvas.width > MAX_WIDTH) {
+          const scale = MAX_WIDTH / canvas.width;
+          const scaledCanvas = document.createElement('canvas');
+          scaledCanvas.width = MAX_WIDTH;
+          scaledCanvas.height = canvas.height * scale;
+          const ctx = scaledCanvas.getContext('2d');
+          if (ctx) {
+              ctx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+              finalCanvas = scaledCanvas;
+          }
+      }
+
+      setScreenshot(finalCanvas.toDataURL('image/jpeg', 0.5)); // 50% quality JPEG
     } catch (err) {
       console.error('Screenshot failed:', err);
       alert('Could not capture screen. You can still submit a text report.');

@@ -478,6 +478,9 @@ Throughout, prioritise terms that materially affect:
 3) Ability to deploy follow-on capital and/or achieve liquidity
 4) Legal, regulatory, and operational risk`;
 
+// Alias for backward compatibility
+export const LEGAL_ANALYSIS_SYSTEM_PROMPT = DEFAULT_LEGAL_ANALYSIS_SYSTEM_PROMPT;
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================

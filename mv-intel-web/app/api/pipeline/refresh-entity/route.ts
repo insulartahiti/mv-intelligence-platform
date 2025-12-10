@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 // Import the generator class. Note: This assumes the file is transpiled/handled correctly by Next.js
 // We use require here as it's a JS file in the parent directory
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const GeneratorPath = path.resolve(process.cwd(), 'mv-intel-web/enhanced_embedding_generator.js');
 // Or try relative require if path resolution fails in build
 // const Generator = require('../../../../enhanced_embedding_generator.js');

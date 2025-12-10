@@ -555,6 +555,11 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ### Bug Fixes
 
+*   **Build & Deployment (Dec 10)**:
+    *   **Fixed Dynamic Route Warnings**: Added `export const dynamic = 'force-dynamic'` to 18 API routes to resolve "Dynamic server usage" build warnings.
+    *   **Fixed Legal Export Error**: Added backward-compatible alias for `LEGAL_ANALYSIS_SYSTEM_PROMPT` to fix import errors during build.
+    *   **Staging Environment**: Validated that 401 OpenAI errors in staging are due to Vercel Preview environment variable configuration (mismatch vs Production).
+
 *   **Architecture Page UI (Dec 07)**:
     *   Moved the close button on the details panel to the left side to prevent overlap with the global navigation menu.
     *   Added a notebook-style "Architectural Context" section to the details panel for richer documentation.

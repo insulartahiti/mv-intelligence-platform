@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 // import Neo4jMigration from '../../../scripts/migrate-to-neo4j';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Temporarily disabled - use npm run migrate:neo4j instead

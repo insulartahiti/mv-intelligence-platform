@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { driver, NEO4J_DATABASE } from '../../../../lib/neo4j';
 import neo4j from 'neo4j-driver'; // Import neo4j for integer types
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(parseInt(searchParams.get('limit') || '200', 10), 2000); // Cap at 2000

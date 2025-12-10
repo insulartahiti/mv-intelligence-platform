@@ -78,3 +78,4 @@ export async function GET() {
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
   }
 }
+
