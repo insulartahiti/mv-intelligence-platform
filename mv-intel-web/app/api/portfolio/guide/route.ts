@@ -189,36 +189,144 @@ export async function POST(req: NextRequest) {
         // Helper to run completion with retries/fallback
         const generateGuide = async (promptContext: string, retryCount = 0): Promise<string> => {
           try {
-             const systemPrompt = `You are an expert at configuring financial data extraction for SaaS companies.
-        Your goal is to create or modify a YAML configuration file based on user instructions and provided file samples.
-        
-        The YAML schema structure is:
-        company:
-          name: string
-          business_models: string[]
-          currency: string
-          fiscal_year_end_month: number
-        metrics_mapping:
-          metric_key: { labels: string[], unit: string }
-        
-        RULES:
-        1. Only return the valid YAML. No markdown blocks.
-        2. Preserve existing keys unless asked to remove.
-        3. Ensure valid YAML syntax.
-        4. If file content is provided, use it to infer metric labels (e.g. if file has "Total Revenue", map 'revenue' to labels: ["Total Revenue"]).
-        `;
+             const systemPrompt = `You are an expert at configuring financial data extraction for portfolio companies.
+Your goal is to create a COMPREHENSIVE YAML configuration file that will guide automatic extraction of financial metrics from uploaded documents.
 
-            const userPrompt = `
-        Current YAML:
-        ${currentYaml || 'No existing guide.'}
-        
-        User Instruction:
-        ${instruction || (promptContext ? 'Generate a guide based on the attached files.' : 'Create a default guide.')}
-        
-        ${promptContext ? `\nFile Content Samples:\n${promptContext}` : ''}
-        
-        Return the updated YAML.
-        `;
+IMPORTANT: Generate a DETAILED guide with ALL sections populated based on the uploaded files. Do NOT generate a minimal skeleton.
+
+## COMPLETE YAML SCHEMA (include ALL relevant sections):
+
+company:
+  name: string                    # Full company name
+  slug: string                    # URL-safe identifier (lowercase, no spaces)
+  business_models: string[]       # e.g. [saas, marketplace, factoring, pos, lending]
+  currency: string                # e.g. EUR, USD
+  fiscal_year_end_month: number   # 1-12
+  main_entities:                  # Optional: legal entities if mentioned
+    - name: string
+      role: string                # e.g. operating_company, spv, holding
+
+reporting_profile:
+  cadence: string                 # monthly, quarterly, annual
+  primary_period_granularity: string
+  scenario_defaults:
+    - name: string                # e.g. Actuals, Budget, Forecast
+      code: string                # e.g. ACT, BUD, FCST
+
+source_docs:                      # Document templates found in the files
+  - id: string                    # e.g. 2024_q3_board_deck
+    type: string                  # monthly_investor_report, board_deck, budget_file
+    description: string
+    key_sections: string[]        # Sections/slides mentioned in the doc
+
+document_structure:               # CRITICAL: Map where metrics appear in documents
+  <template_name>:
+    kpi_tables:
+      <table_name>:
+        anchor_text: string[]     # Text that identifies this table (e.g. "Revenue KPIs", "Other KPIs")
+        granularity: string       # monthly, quarterly
+        metric_rows:              # Map row labels to metric IDs
+          <metric_id>: "Exact Row Label From Document"
+
+metrics_mapping:                  # CRITICAL: Define ALL metrics found in files
+  <metric_id>:                    # Use snake_case (e.g. total_revenue, monthly_burn)
+    labels: string[]              # Exact label(s) as they appear in documents
+    description: string           # What this metric measures
+    unit: string                  # EUR_k, EUR_m, count, percent, months
+    notes: string[]               # Optional clarifications
+
+line_item_mapping:                # P&L and financial statement mappings
+  revenue_total:
+    patterns: string[]            # e.g. ["Total Revenue", "Net Revenue"]
+  revenue_<segment>:
+    patterns: string[]
+  cogs_total:
+    patterns: string[]
+  ebitda:
+    patterns: string[]
+
+## EXTRACTION RULES:
+
+1. SCAN the file content for ALL tables with financial data (KPIs, P&L, Cash Flow, etc.)
+2. IDENTIFY the exact row/column labels used (copy them verbatim into "labels" and "metric_rows")
+3. INFER metric IDs using snake_case (e.g. "Total MRR" → total_mrr, "Cash Balance" → cash_balance)
+4. MAP document structure by noting anchor text that identifies each table
+5. INCLUDE all business metrics found: revenue, customers, burn, cash, runway, churn, etc.
+
+## EXAMPLE (abbreviated):
+
+company:
+  name: Example SaaS GmbH
+  slug: example-saas
+  business_models: [saas, marketplace]
+  currency: EUR
+  fiscal_year_end_month: 12
+
+document_structure:
+  monthly_report:
+    kpi_tables:
+      revenue_kpis:
+        anchor_text: ["Revenue KPIs", "MRR Overview"]
+        metric_rows:
+          total_mrr: "Total MRR"
+          saas_mrr: "SaaS MRR"
+      other_kpis:
+        anchor_text: ["Other KPIs"]
+        metric_rows:
+          total_customers: "Total Customers"
+          monthly_churn: "Monthly Churn Rate"
+      financials:
+        anchor_text: ["Financial Summary", "Cash Position"]
+        metric_rows:
+          monthly_burn: "Monthly Burn"
+          cash_balance: "Cash Balance"
+          runway_months: "Runway"
+
+metrics_mapping:
+  total_mrr:
+    labels: ["Total MRR", "Total Monthly Recurring Revenue"]
+    description: "Total monthly recurring revenue across all products"
+    unit: "EUR_k"
+  total_customers:
+    labels: ["Total Customers", "Active Customers"]
+    description: "Number of paying customers"
+    unit: "count"
+  monthly_burn:
+    labels: ["Monthly Burn", "Net Burn"]
+    description: "Net cash burn per month"
+    unit: "EUR_m"
+  cash_balance:
+    labels: ["Cash Balance", "Cash Position"]
+    description: "Available cash"
+    unit: "EUR_m"
+  runway_months:
+    labels: ["Runway", "Runway (months)"]
+    description: "Months of runway at current burn"
+    unit: "months"
+
+line_item_mapping:
+  revenue_total:
+    patterns: ["Total Revenue", "Net Revenue"]
+  revenue_saas:
+    patterns: ["SaaS Revenue", "Subscription Revenue"]
+  cogs_total:
+    patterns: ["Cost of Sales", "COGS"]
+  ebitda:
+    patterns: ["EBITDA", "Operating Income"]
+
+## OUTPUT RULES:
+1. Return ONLY valid YAML (no markdown code blocks, no explanations)
+2. Generate a COMPREHENSIVE guide with 50+ lines minimum
+3. Extract EVERY metric you can identify from the file content
+4. Use exact labels from the documents in the "labels" arrays
+5. If unsure about a unit, use the most likely (EUR_k for monetary KPIs, count for customers)
+`;
+
+            const userPrompt = `${currentYaml ? `CURRENT GUIDE (preserve and enhance):\n${currentYaml}\n\n` : ''}${instruction ? `USER INSTRUCTION: ${instruction}\n\n` : ''}${promptContext ? `DOCUMENT CONTENT TO ANALYZE:\n${promptContext}\n\n` : ''}TASK: ${promptContext 
+  ? 'Analyze the document content above and generate a COMPREHENSIVE financial extraction guide. Extract ALL metrics, tables, and KPIs you can identify. Map exact labels from the documents. Generate at minimum: company info, document_structure with anchor_text for each table, metrics_mapping for every metric found, and line_item_mapping for P&L items.'
+  : 'Create a starter guide template that can be customized for this company.'}
+
+Return ONLY the YAML (no markdown, no explanations).`;
 
             console.log(`[Guide API] Calling OpenAI gpt-5.1 (attempt ${retryCount + 1})`);
             
