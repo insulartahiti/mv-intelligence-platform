@@ -15,9 +15,11 @@ import { mapDataToSchema } from '@/lib/financials/ingestion/map_to_schema';
 import { computeMetricsForPeriod, saveMetricsToDb } from '@/lib/financials/metrics/compute_metrics';
 import { loadCommonMetrics, getMetricById } from '@/lib/financials/metrics/loader';
 import { extractPageSnippet, SourceAnnotation } from '@/lib/financials/audit/pdf_snippet';
+import { generateExcelSnippetImage } from '@/lib/financials/audit/excel_snippet';
 import { createClient } from '@supabase/supabase-js';
 import { reconcileFacts, ReconciliationResult } from '@/lib/financials/ingestion/reconciliation';
 import { LocalFactRecord } from '@/lib/financials/local/storage';
+import * as XLSX from 'xlsx';
 
 // Force dynamic rendering - prevents edge caching issues
 export const dynamic = 'force-dynamic';
@@ -307,9 +309,21 @@ export async function POST(req: NextRequest) {
 
             const processedPages = new Set<string>();
             const snippetUrls: Record<string, string> = {};
+            
+            // Parse Excel workbook once if needed for snippets
+            let excelWorkbook: XLSX.WorkBook | null = null;
+            if (extractedData.fileType === 'xlsx') {
+                try {
+                    excelWorkbook = XLSX.read(fileMeta.buffer, { type: 'buffer' });
+                } catch (e) {
+                    console.warn('[Ingest] Could not parse Excel for snippets:', e);
+                }
+            }
 
             for (const item of lineItems) {
                 let snippetUrl = undefined;
+                
+                // PDF Snippets
                 if (extractedData.fileType === 'pdf' && item.source_location.page) {
                      const pageNum = item.source_location.page;
                      const snippetKey = `${filePath}_page_${pageNum}`;
@@ -328,7 +342,29 @@ export async function POST(req: NextRequest) {
                             await supabase.storage.from('financial-snippets').upload(snippetPath, snippetBuffer, { contentType: 'application/pdf' });
                             const { data: signed } = await supabase.storage.from('financial-snippets').createSignedUrl(snippetPath, 3600);
                             if (signed?.signedUrl) { snippetUrl = signed.signedUrl; snippetUrls[snippetKey] = snippetUrl; }
-                         } catch (e) { console.error('Snippet gen failed', e); }
+                         } catch (e) { console.error('PDF Snippet gen failed', e); }
+                         processedPages.add(snippetKey);
+                     }
+                }
+                
+                // Excel Snippets
+                if (extractedData.fileType === 'xlsx' && item.source_location.sheet && item.source_location.cell && excelWorkbook) {
+                     const sheetName = item.source_location.sheet;
+                     const cellRef = item.source_location.cell;
+                     const snippetKey = `${filePath}_${sheetName}_${cellRef}`;
+                     
+                     if (snippetUrls[snippetKey]) snippetUrl = snippetUrls[snippetKey];
+                     else if (!processedPages.has(snippetKey)) {
+                         try {
+                            const snippetBuffer = await generateExcelSnippetImage(excelWorkbook, sheetName, cellRef);
+                            const safeFilename = fileMeta.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+                            const prefix = dryRun ? `_dry_run/${companySlug}` : companySlug;
+                            const snippetPath = `${prefix}/${Date.now()}_${safeFilename}_${sheetName}_${cellRef}.png`;
+                            
+                            await supabase.storage.from('financial-snippets').upload(snippetPath, snippetBuffer, { contentType: 'image/png' });
+                            const { data: signed } = await supabase.storage.from('financial-snippets').createSignedUrl(snippetPath, 3600);
+                            if (signed?.signedUrl) { snippetUrl = signed.signedUrl; snippetUrls[snippetKey] = snippetUrl; }
+                         } catch (e) { console.error('Excel Snippet gen failed', e); }
                          processedPages.add(snippetKey);
                      }
                 }

@@ -45,6 +45,87 @@ export interface NormalizedLineItem {
 }
 
 /**
+ * Check if a metric key looks like commentary/description text (not a valid metric)
+ * Returns true if the key should be REJECTED
+ */
+function isCommentaryOrInvalid(key: string): boolean {
+  if (!key) return true;
+  
+  // Too long - likely commentary
+  if (key.length > 60) return true;
+  
+  // Contains common sentence words - likely commentary
+  const commentaryPatterns = [
+    /\b(the|this|that|which|from|into|therefore|however|including|leading|still|underway)\b/i,
+    /\b(switch|setup|release|impact|contrast|estimate)\b.*\b(to|from|of|in)\b/i,
+    /vs\.?|versus/i,
+    /\bq[1-4]\s*q[1-4]\b/i, // "Q2 Q3" patterns in commentary
+  ];
+  
+  for (const pattern of commentaryPatterns) {
+    if (pattern.test(key)) return true;
+  }
+  
+  // More than 5 words - likely a sentence
+  const wordCount = key.split(/[\s_]+/).filter(w => w.length > 1).length;
+  if (wordCount > 6) return true;
+  
+  return false;
+}
+
+/**
+ * Extract embedded date from metric key (e.g., "cash_balance_apr25" -> { metric: "cash_balance", date: "2025-04-01" })
+ * Returns null if no embedded date found
+ */
+function extractEmbeddedDate(key: string): { metricId: string; date: string } | null {
+  // Pattern: metric_name_MonYY or metric_name_MMYY
+  const monthPatterns = [
+    // jan25, jan_25, january25, january_25
+    { regex: /(.*?)_?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)_?(\d{2,4})$/i, 
+      handler: (m: RegExpMatchArray) => {
+        const monthNames: Record<string, number> = {
+          jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+          apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+          aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+          oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
+        };
+        const monthKey = m[2].toLowerCase().slice(0, 3);
+        const month = monthNames[monthKey] || monthNames[m[2].toLowerCase()];
+        let year = parseInt(m[3]);
+        if (year < 100) year += 2000;
+        const metricPart = m[1].replace(/_+$/, '').trim();
+        if (month && metricPart && year >= 2000 && year <= 2100) {
+          return { metricId: metricPart, date: `${year}-${String(month).padStart(2, '0')}-01` };
+        }
+        return null;
+      }
+    },
+    // cash_balance_2025_04, cash_balance_202504
+    { regex: /(.*?)_?(\d{4})_?(\d{2})$/i,
+      handler: (m: RegExpMatchArray) => {
+        const year = parseInt(m[2]);
+        const month = parseInt(m[3]);
+        const metricPart = m[1].replace(/_+$/, '').trim();
+        if (month >= 1 && month <= 12 && metricPart && year >= 2000 && year <= 2100) {
+          return { metricId: metricPart, date: `${year}-${String(month).padStart(2, '0')}-01` };
+        }
+        return null;
+      }
+    }
+  ];
+  
+  for (const { regex, handler } of monthPatterns) {
+    const match = key.match(regex);
+    if (match) {
+      const result = handler(match);
+      if (result && result.metricId.length >= 2) return result;
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Normalize extracted metric keys to standard IDs
  * Maps variations like "total_actual_mrr" -> "mrr", "monthly_revenue" -> "mrr"
  */
@@ -259,12 +340,20 @@ export async function mapDataToSchema(
     
     // Extract ACTUALS
     if (Object.keys(actuals).length > 0) {
-      console.log(`[Mapping] Actuals metrics: ${JSON.stringify(actuals)}`);
+      console.log(`[Mapping] Actuals metrics: ${Object.keys(actuals).length} items`);
       
       for (const [metricKey, value] of Object.entries(actuals)) {
         if (typeof value === 'number' && !isNaN(value)) {
-          // Normalize metric key to standard ID
-          const normalizedKey = normalizeMetricKey(metricKey);
+          // Skip commentary/invalid metrics
+          if (isCommentaryOrInvalid(metricKey)) {
+            console.log(`[Mapping] Skipping commentary/invalid metric: ${metricKey.slice(0, 50)}...`);
+            continue;
+          }
+          
+          // Check for embedded date (e.g., cash_balance_apr25)
+          const embeddedDate = extractEmbeddedDate(metricKey);
+          const normalizedKey = embeddedDate ? normalizeMetricKey(embeddedDate.metricId) : normalizeMetricKey(metricKey);
+          const effectiveDate = embeddedDate ? embeddedDate.date : periodDate;
           
           // Get source location with bbox if available
           const srcLoc = sourceLocations[metricKey] || sourceLocations[normalizedKey];
@@ -272,7 +361,7 @@ export async function mapDataToSchema(
           results.push({
             line_item_id: normalizedKey,
             amount: value,
-            date: periodDate,
+            date: effectiveDate,
             scenario: 'actual',
             source_location: {
               file_type: unifiedData.fileType,
@@ -289,11 +378,20 @@ export async function mapDataToSchema(
     
     // Extract BUDGET/PLAN
     if (Object.keys(budget).length > 0) {
-      console.log(`[Mapping] Budget metrics: ${JSON.stringify(budget)}`);
+      console.log(`[Mapping] Budget metrics: ${Object.keys(budget).length} items`);
       
       for (const [metricKey, value] of Object.entries(budget)) {
         if (typeof value === 'number' && !isNaN(value)) {
-          const normalizedKey = normalizeMetricKey(metricKey);
+          // Skip commentary/invalid metrics
+          if (isCommentaryOrInvalid(metricKey)) {
+            console.log(`[Mapping] Skipping commentary/invalid metric: ${metricKey.slice(0, 50)}...`);
+            continue;
+          }
+          
+          // Check for embedded date (e.g., cash_balance_apr25)
+          const embeddedDate = extractEmbeddedDate(metricKey);
+          const normalizedKey = embeddedDate ? normalizeMetricKey(embeddedDate.metricId) : normalizeMetricKey(metricKey);
+          const effectiveDate = embeddedDate ? embeddedDate.date : periodDate;
           
           // Get source location with bbox if available (budget metrics may have different key)
           const srcLoc = sourceLocations[`budget_${metricKey}`] || sourceLocations[metricKey];
@@ -301,7 +399,7 @@ export async function mapDataToSchema(
           results.push({
             line_item_id: normalizedKey,
             amount: value,
-            date: periodDate,
+            date: effectiveDate,
             scenario: 'budget',
             source_location: {
               file_type: unifiedData.fileType,
@@ -333,6 +431,9 @@ export async function mapDataToSchema(
         if (periodData.actuals) {
           for (const [metricKey, value] of Object.entries(periodData.actuals)) {
              if (typeof value === 'number' && !isNaN(value)) {
+                // Skip commentary/invalid metrics
+                if (isCommentaryOrInvalid(metricKey)) continue;
+                
                 const normalizedKey = normalizeMetricKey(metricKey);
                 
                 // 1. Look for specific source in this period
@@ -364,6 +465,9 @@ export async function mapDataToSchema(
         if (periodData.budget) {
           for (const [metricKey, value] of Object.entries(periodData.budget)) {
              if (typeof value === 'number' && !isNaN(value)) {
+                // Skip commentary/invalid metrics
+                if (isCommentaryOrInvalid(metricKey)) continue;
+                
                 const normalizedKey = normalizeMetricKey(metricKey);
                 
                 const specificSrc = periodSourceLocs[metricKey] || periodSourceLocs[normalizedKey] || periodSourceLocs[`budget_${metricKey}`];
