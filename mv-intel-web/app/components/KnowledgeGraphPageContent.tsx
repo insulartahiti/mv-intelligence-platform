@@ -161,9 +161,10 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
       {/* COLUMN 1: Chat Interface */}
       <div 
         style={{ width: isGraphExpanded ? `${chatWidth}px` : '65%' }}
-        className="flex-shrink-0 h-full min-h-0 relative z-30 transition-all duration-500 ease-in-out"
+        className="flex-shrink-0 relative z-30 transition-all duration-500 ease-in-out"
       >
-         <ChatInterface 
+         <div className="absolute inset-0">
+           <ChatInterface 
             onGraphUpdate={handleGraphUpdate} 
             onNodeSelect={handleNodeClick}
             messages={messages}
@@ -174,6 +175,7 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
             setLoading={setLoading}
             userEntity={userEntity}
          />
+         </div>
          
          {/* Resizer Handle (Only visible when graph is expanded) */}
          {isGraphExpanded && (

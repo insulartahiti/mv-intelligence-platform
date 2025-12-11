@@ -10,6 +10,7 @@
  * Use this during development to avoid API costs and database writes.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import { loadPortcoGuide } from '@/lib/financials/portcos/loader';
 import { loadFile } from '@/lib/financials/ingestion/load_file';
@@ -131,8 +132,14 @@ export async function POST(req: NextRequest) {
     const canRenderScreenshots = await isRenderingAvailable();
     console.log(`[Local Ingest] Screenshot rendering available: ${canRenderScreenshots}`);
     
+    // Initialize Supabase client for guide loading (if credentials exist)
+    let supabase;
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    }
+
     // Load guide once (shared across all files)
-    const guide = await loadPortcoGuide(companySlug);
+    const guide = await loadPortcoGuide(companySlug, supabase);
     
     // =========================================================================
     // PARALLEL EXTRACTION: Process all files concurrently

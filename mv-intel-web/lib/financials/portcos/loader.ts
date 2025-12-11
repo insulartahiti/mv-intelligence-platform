@@ -222,8 +222,11 @@ export async function loadPortcoGuide(slug: string, supabase?: SupabaseClient): 
              const { data: entity } = await supabase
                 .schema('graph')
                 .from('entities')
-                .select('id')
+                .select('id, is_portfolio') // Select is_portfolio for ordering/verification if needed
                 .ilike('name', `%${slug}%`)
+                // Prioritize portfolio companies first, then by name length (shorter match is likely more exact)
+                .order('is_portfolio', { ascending: false })
+                .order('name', { ascending: true }) 
                 .limit(1)
                 .maybeSingle();
                 
