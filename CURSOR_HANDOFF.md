@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 11, 2025 (v4.12 - Hybrid Line Item Canonicalization)
+**Last Updated:** Dec 11, 2025 (v4.13 - Line Item Extraction Fixes)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -492,6 +492,38 @@ Intelligent mapping of extracted line items to canonical metric names:
 
 **Future Enhancement (Agent Tool):**
 Global vocabulary aggregation across all portfolio guides - designed to be called by a search agent once multiple companies have guides configured.
+
+### Line Item Extraction Fixes (v4.13)
+
+**Problems Fixed:**
+1. **Malformed metric names**: LLM was returning `cash_balance_apr25` instead of proper time series
+2. **Commentary as metrics**: Long text like "Switch From Varengold..." was treated as metric names
+3. **No Excel snippets**: Main ingest route only generated PDF snippets
+
+**Solutions:**
+
+| Issue | Solution | Location |
+|-------|----------|----------|
+| Embedded dates | `extractEmbeddedDate()` extracts date from metric name | `map_to_schema.ts` |
+| Commentary filter | `isCommentaryOrInvalid()` rejects > 60 chars, > 6 words, sentence patterns | `map_to_schema.ts` |
+| Excel snippets | Parse workbook, generate HTML table screenshot per cell | `ingest/route.ts` |
+
+**Embedded Date Patterns:**
+- `cash_balance_apr25` → metric: `cash_balance`, date: `2025-04-01`
+- `revenue_2025_04` → metric: `revenue`, date: `2025-04-01`
+- `mrr_september25` → metric: `mrr`, date: `2025-09-01`
+
+**Commentary Detection:**
+- Length > 60 characters
+- More than 6 words
+- Contains sentence words: "the", "from", "therefore", "including", "leading", etc.
+- Contains "vs" or "versus" patterns
+
+**Excel Snippet Generation:**
+- Uses `generateExcelSnippetImage()` from `lib/financials/audit/excel_snippet.ts`
+- Creates HTML table with cell highlighting
+- Renders via Puppeteer to PNG
+- Uploads to `financial-snippets` bucket
 
 ---
 
