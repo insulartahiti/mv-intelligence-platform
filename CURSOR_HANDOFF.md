@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 10, 2025 (v4.7 - Knowledge Graph UI Polish)
+**Last Updated:** Dec 11, 2025 (v4.9 - Financial Ingestion Pipeline Fixes)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -503,6 +503,11 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 **Issue**: The staging deployment has **Vercel Authentication** enabled, which blocks all API requests with 401/405 errors.
 **Resolution**: Disable Vercel Authentication for the staging deployment in Vercel Project Settings.
 
+### ⚠️ Active Investigation: Metrics API Returns Empty
+**Symptom**: `/api/portfolio/metrics?companyId=...` returns `{"metrics":[]}` on staging even though database contains data.
+**Verified**: Direct Supabase queries confirm data EXISTS (2 metrics, 237 facts for Aufinity).
+**Next Steps**: Check Vercel deployment logs for errors; verify environment variables are correct; added fallback to `fact_financials` in metrics API.
+
 ---
 
 ## 9. Roadmap & Priorities
@@ -554,6 +559,17 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 ## Appendix A: Changelog (Dec 07, 2025)
 
 ### Bug Fixes
+
+*   **Financial Ingestion Pipeline (Dec 11)**:
+    *   **Comprehensive Guide Generation**: Updated the Configuration Assistant (`/api/portfolio/guide`) system prompt from 17 lines to 138 lines, enabling AI to generate complete guides with `document_structure`, `metrics_mapping`, `line_item_mapping`, and other required sections (matching the quality of manual guides like Nelly).
+    *   **Ingestion History Page**: Fixed the query that joins `dim_source_files` with `graph.entities`. Changed from broken FK relation syntax to a proper two-query approach that fetches entities separately.
+    *   **View Dashboard Link**: Made links more explicit with cursor styling and fallback "No Link" text when company ID is missing.
+    *   **Metrics API Fallback**: Enhanced `/api/portfolio/metrics` to fall back to `fact_financials` if no computed metrics exist, ensuring dashboard shows data even before full metric computation.
+    *   **Entity Resolution**: Fixed `loadPortcoGuide` to prioritize `is_portfolio=true` entities when resolving company names (handles duplicate "Aufinity" entries).
+    *   **Database Verification**: Confirmed 237 fact_financials + 2 fact_metrics records exist for Aufinity in staging database.
+
+*   **Admin Console Issue Queue (Dec 10)**:
+    *   **Fixed "View" Button Not Clickable**: Added missing `X` icon import from `lucide-react` in `/admin` page. The modal close button (`<X />`) was causing a runtime error when clicking "View" because the icon component was undefined.
 
 *   **Build & Deployment (Dec 10)**:
     *   **Fixed Dynamic Route Warnings**: Added `export const dynamic = 'force-dynamic'` to 18 API routes to resolve "Dynamic server usage" build warnings.

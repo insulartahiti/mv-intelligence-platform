@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { makeBrowserClient } from '@/lib/supabaseClient';
-import { Loader2, Plus, RefreshCw, Trash2, Check, Shield, AlertTriangle, Bug, Image, ExternalLink } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Trash2, Check, Shield, AlertTriangle, Bug, Image, ExternalLink, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { getIssues, updateIssueStatus } from '@/app/actions/issues';

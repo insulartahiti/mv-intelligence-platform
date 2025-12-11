@@ -148,13 +148,15 @@ export default async function IngestionHistoryPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {(item.company as any)?.id && (
+                        {(item.company as any)?.id ? (
                           <Link 
                             href={`/portfolio/${(item.company as any).id}?tab=financials`}
-                            className="text-blue-400 hover:text-blue-300 text-xs font-medium hover:underline"
+                            className="text-blue-400 hover:text-blue-300 text-xs font-medium hover:underline cursor-pointer inline-block px-2 py-1"
                           >
                             View Dashboard
                           </Link>
+                        ) : (
+                          <span className="text-gray-500 text-xs">No Link</span>
                         )}
                       </td>
                     </tr>
