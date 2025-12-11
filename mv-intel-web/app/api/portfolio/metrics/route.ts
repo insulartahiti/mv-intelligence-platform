@@ -30,51 +30,52 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseClient();
     
-    // Fetch metrics sorted by period (ascending)
-    const { data: metrics, error, count } = await supabase
-      .from('fact_metrics')
-      .select('*', { count: 'exact' })
-      .eq('company_id', companyId)
-      .order('period', { ascending: true });
-    
-    console.log('[Metrics API] Query result - count:', count, 'error:', error?.message);
-      
-    if (error) {
-      console.error('Error fetching metrics:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // If no metrics found, also try to return fact_financials as fallback data
-    if (!metrics || metrics.length === 0) {
-      console.log('[Metrics API] No metrics found, checking fact_financials...');
-      
-      const { data: facts, count: factsCount } = await supabase
-        .from('fact_financials')
-        .select('line_item_id, amount, date, scenario', { count: 'exact' })
+    // Fetch BOTH fact_metrics and fact_financials in parallel
+    const [metricsResult, financialsResult] = await Promise.all([
+      // 1. Computed KPIs from fact_metrics
+      supabase
+        .from('fact_metrics')
+        .select('*')
         .eq('company_id', companyId)
-        .eq('scenario', 'actual')
+        .order('period', { ascending: true }),
+      
+      // 2. Raw line items from fact_financials
+      supabase
+        .from('fact_financials')
+        .select('id, line_item_id, amount, date, scenario, currency, source_location, snippet_url')
+        .eq('company_id', companyId)
         .order('date', { ascending: false })
-        .limit(20);
-      
-      console.log('[Metrics API] fact_financials count:', factsCount);
-      
-      // Convert facts to metric-like format for display
-      if (facts && facts.length > 0) {
-        const derivedMetrics = facts.map(f => ({
-          id: `derived-${f.line_item_id}-${f.date}`,
-          metric_id: f.line_item_id,
-          value: f.amount,
-          period: f.date,
-          unit: 'EUR'
-        }));
-        return NextResponse.json({ metrics: derivedMetrics, source: 'fact_financials' });
-      }
+        .limit(500) // Reasonable limit
+    ]);
+    
+    const { data: metrics, error: metricsError } = metricsResult;
+    const { data: financials, error: financialsError } = financialsResult;
+    
+    console.log('[Metrics API] Results - metrics:', metrics?.length || 0, 'financials:', financials?.length || 0);
+    
+    if (metricsError) {
+      console.error('Error fetching metrics:', metricsError);
+    }
+    if (financialsError) {
+      console.error('Error fetching financials:', financialsError);
     }
 
-    return NextResponse.json({ metrics: metrics || [] });
+    // Group financials by scenario for easy access
+    const actuals = financials?.filter(f => f.scenario?.toLowerCase() === 'actual') || [];
+    const budget = financials?.filter(f => f.scenario?.toLowerCase() === 'budget') || [];
+    const forecast = financials?.filter(f => f.scenario?.toLowerCase() === 'forecast') || [];
+
+    return NextResponse.json({ 
+      metrics: metrics || [],
+      financials: {
+        actuals,
+        budget,
+        forecast,
+        total: financials?.length || 0
+      }
+    });
   } catch (error: any) {
     console.error('Internal error:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }
-
