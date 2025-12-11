@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 07, 2025 (v4.6 - Enhanced Search Architecture)
+**Last Updated:** Dec 10, 2025 (v4.7 - Knowledge Graph UI Polish)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -562,11 +562,11 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 *   **Knowledge Graph UI Overhaul (Dec 10)**:
     *   **Chat Interface**: Added persistent Mini Sidebar for chat history and quick "New Chat" access.
-    *   **Button Alignment**: Standardized Knowledge Graph toggle and Feedback buttons to be the same size and stacked vertically.
+    *   **Button Alignment**: Graph Toggle button (`Share2` icon) positioned above global Feedback button at `bottom-24 right-4`.
     *   **Loading State**: Implemented `LoadingResultsSkeleton` for a pulsating blur effect while graph results load.
-    *   **Layout Fixes**: Resolved footer layout issues where input was blocked, ensuring clean flex-column structure.
     *   **Auto-Centering**: Added graph stabilization event listener to auto-center the visualization on load.
-    *   **UI Polish**: Unified Feedback button (removed duplicate), stacked Graph Toggle button above it with updated `Share2` icon, and fixed chat message clipping issues.
+    *   **Chat Layout Fix**: Resolved persistent footer gap issue using `absolute inset-0` positioning pattern for cross-browser reliability. Added `min-h-0` and `flex-shrink-0` to nested flex containers for proper overflow handling.
+    *   **Unified Feedback Button**: Removed duplicate from Knowledge Graph page; global button in `layout.tsx` now handles all pages.
 
 *   **Architecture Page UI (Dec 07)**:
     *   Moved the close button on the details panel to the left side to prevent overlap with the global navigation menu.
