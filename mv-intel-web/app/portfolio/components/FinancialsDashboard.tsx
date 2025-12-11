@@ -44,6 +44,72 @@ interface FinancialsDashboardProps {
   companyId: string;
 }
 
+// Canonical line item mappings (synonyms → canonical name)
+// The first item in each array is the canonical name
+const LINE_ITEM_SYNONYMS: string[][] = [
+  // Revenue metrics
+  ['arr', 'annual_recurring_revenue', 'annualized_recurring_revenue', 'total_arr'],
+  ['mrr', 'monthly_recurring_revenue', 'total_mrr'],
+  ['revenue', 'total_revenue', 'net_revenue', 'gross_revenue'],
+  ['arpu', 'average_revenue_per_user', 'revenue_per_user', 'avg_revenue_per_customer'],
+  ['nrr', 'net_revenue_retention', 'net_retention', 'ndr', 'net_dollar_retention'],
+  ['grr', 'gross_revenue_retention', 'gross_retention'],
+  
+  // Customer metrics
+  ['customers', 'total_customers', 'customer_count', 'active_customers', 'paying_customers'],
+  ['users', 'total_users', 'active_users', 'registered_users'],
+  ['churn', 'churn_rate', 'customer_churn', 'monthly_churn', 'logo_churn'],
+  ['cac', 'customer_acquisition_cost', 'acquisition_cost'],
+  ['ltv', 'lifetime_value', 'customer_lifetime_value', 'clv'],
+  
+  // Cash metrics
+  ['cash_balance', 'cash', 'cash_position', 'bank_balance', 'available_cash'],
+  ['runway', 'runway_months', 'cash_runway', 'months_runway'],
+  ['burn', 'burn_rate', 'monthly_burn', 'net_burn', 'cash_burn'],
+  
+  // Cost metrics
+  ['cogs', 'cost_of_goods_sold', 'cost_of_sales', 'cos', 'cost_of_revenue'],
+  ['opex', 'operating_expenses', 'operational_expenses', 'total_opex'],
+  
+  // Profitability
+  ['ebitda', 'adjusted_ebitda', 'ebitda_adjusted'],
+  ['gross_margin', 'gross_profit_margin', 'gm', 'gpm'],
+  ['gross_profit', 'gross_income'],
+  ['net_income', 'net_profit', 'profit', 'bottom_line'],
+];
+
+// Build lookup map: any synonym → canonical name
+const SYNONYM_TO_CANONICAL: Map<string, string> = new Map();
+LINE_ITEM_SYNONYMS.forEach(group => {
+  const canonical = group[0];
+  group.forEach(synonym => {
+    SYNONYM_TO_CANONICAL.set(synonym.toLowerCase(), canonical);
+  });
+});
+
+// Normalize a line item ID to its canonical form
+function normalizeLineItemId(id: string): string {
+  const lower = id.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  return SYNONYM_TO_CANONICAL.get(lower) || lower;
+}
+
+// Check if two line items are semantically similar
+function areLineItemsSimilar(id1: string, id2: string): boolean {
+  const norm1 = normalizeLineItemId(id1);
+  const norm2 = normalizeLineItemId(id2);
+  
+  // Exact match after normalization
+  if (norm1 === norm2) return true;
+  
+  // One contains the other (e.g., "customers" vs "customers_finos")
+  if (norm1.includes(norm2) || norm2.includes(norm1)) {
+    // But not for very short strings to avoid false positives
+    if (norm1.length > 3 && norm2.length > 3) return true;
+  }
+  
+  return false;
+}
+
 // Line item category definitions
 const LINE_ITEM_CATEGORIES: Record<string, { name: string; icon: any; color: string; items: string[] }> = {
   revenue: {
@@ -134,21 +200,23 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
 
   // Group and normalize actuals - take latest value per month/line_item
   // Sort oldest to newest (left to right)
-  const { actualsPeriods, actualsGrouped, actualsLatest, actualsLineItems } = useMemo(() => {
+  // Deduplicate semantically similar line items
+  const { actualsPeriods, actualsGrouped, actualsLatest, actualsLineItems, actualsDedupeCount } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
     
     const sorted = [...financials.actuals].sort((a, b) => b.date.localeCompare(a.date));
     
     sorted.forEach(f => {
       const month = normalizeToMonth(f.date);
-      const key = `${month}|${f.line_item_id}`;
+      // Normalize the line item ID to canonical form
+      const canonicalId = normalizeLineItemId(f.line_item_id);
+      const key = `${month}|${canonicalId}`;
       if (!byMonthItem[key]) {
-        byMonthItem[key] = { ...f, date: month };
+        byMonthItem[key] = { ...f, date: month, line_item_id: canonicalId };
       }
     });
     
     const normalized = Object.values(byMonthItem);
-    // Sort ascending (oldest first, left to right)
     const months = Array.from(new Set(normalized.map(f => f.date))).sort();
     
     const grouped: Record<string, Record<string, Financial>> = {};
@@ -162,30 +230,37 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       lineItems.add(f.line_item_id);
     });
     
+    // Track deduplication: count unique original IDs vs canonical IDs
+    const originalCount = new Set(financials.actuals.map(f => f.line_item_id)).size;
+    const dedupeCount = originalCount - lineItems.size;
+    
     return { 
       actualsPeriods: months, 
       actualsGrouped: grouped, 
       actualsLatest: latest,
-      actualsLineItems: Array.from(lineItems).sort()
+      actualsLineItems: Array.from(lineItems).sort(),
+      actualsDedupeCount: dedupeCount
     };
   }, [financials.actuals]);
 
   // Group and normalize budget/plan - oldest to newest
-  const { budgetPeriods, budgetGrouped, budgetLineItems } = useMemo(() => {
+  // Deduplicate semantically similar line items
+  const { budgetPeriods, budgetGrouped, budgetLineItems, budgetDedupeCount } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
     
     const sorted = [...financials.budget].sort((a, b) => b.date.localeCompare(a.date));
     
     sorted.forEach(f => {
       const month = normalizeToMonth(f.date);
-      const key = `${month}|${f.line_item_id}`;
+      // Normalize the line item ID to canonical form
+      const canonicalId = normalizeLineItemId(f.line_item_id);
+      const key = `${month}|${canonicalId}`;
       if (!byMonthItem[key]) {
-        byMonthItem[key] = { ...f, date: month };
+        byMonthItem[key] = { ...f, date: month, line_item_id: canonicalId };
       }
     });
     
     const normalized = Object.values(byMonthItem);
-    // Sort ascending (oldest first)
     const months = Array.from(new Set(normalized.map(f => f.date))).sort();
     
     const grouped: Record<string, Record<string, Financial>> = {};
@@ -197,15 +272,87 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       lineItems.add(f.line_item_id);
     });
     
-    return { budgetPeriods: months, budgetGrouped: grouped, budgetLineItems: Array.from(lineItems).sort() };
+    // Track deduplication
+    const originalCount = new Set(financials.budget.map(f => f.line_item_id)).size;
+    const dedupeCount = originalCount - lineItems.size;
+    
+    return { budgetPeriods: months, budgetGrouped: grouped, budgetLineItems: Array.from(lineItems).sort(), budgetDedupeCount: dedupeCount };
   }, [financials.budget]);
+
+  // Detect value-based duplicates: line items with identical values across all periods
+  // These might be semantically different names but same underlying data
+  const { deduplicatedLineItems, valueDuplicatesRemoved } = useMemo(() => {
+    const allItems = [...new Set([...actualsLineItems, ...budgetLineItems])];
+    
+    // Build value signature for each line item: hash of all period values
+    const getValueSignature = (lineItemId: string, grouped: Record<string, Record<string, Financial>>, periods: string[]): string => {
+      return periods.map(p => {
+        const val = grouped[p]?.[lineItemId]?.amount;
+        return val !== undefined ? val.toFixed(2) : 'null';
+      }).join('|');
+    };
+    
+    // Track which items to keep vs remove (value duplicates)
+    const signatureToCanonical: Map<string, string> = new Map();
+    const itemsToRemove = new Set<string>();
+    
+    // Check actuals for value duplicates
+    if (actualsPeriods.length > 0) {
+      actualsLineItems.forEach(item => {
+        const sig = getValueSignature(item, actualsGrouped, actualsPeriods);
+        if (sig && !sig.startsWith('null')) {
+          const existing = signatureToCanonical.get(sig);
+          if (existing) {
+            // Found a duplicate! Keep the shorter/simpler name
+            if (item.length > existing.length) {
+              itemsToRemove.add(item);
+            } else {
+              itemsToRemove.add(existing);
+              signatureToCanonical.set(sig, item);
+            }
+          } else {
+            signatureToCanonical.set(sig, item);
+          }
+        }
+      });
+    }
+    
+    // Check budget for value duplicates
+    if (budgetPeriods.length > 0) {
+      budgetLineItems.forEach(item => {
+        if (itemsToRemove.has(item)) return; // Already marked for removal
+        const sig = getValueSignature(item, budgetGrouped, budgetPeriods);
+        if (sig && !sig.startsWith('null')) {
+          const existing = signatureToCanonical.get(sig);
+          if (existing && existing !== item) {
+            // Found a duplicate! Keep the shorter/simpler name
+            if (item.length > existing.length) {
+              itemsToRemove.add(item);
+            } else {
+              itemsToRemove.add(existing);
+              signatureToCanonical.set(sig, item);
+            }
+          } else if (!existing) {
+            signatureToCanonical.set(sig, item);
+          }
+        }
+      });
+    }
+    
+    // Filter out value duplicates
+    const dedupedItems = allItems.filter(item => !itemsToRemove.has(item));
+    
+    return {
+      deduplicatedLineItems: dedupedItems,
+      valueDuplicatesRemoved: itemsToRemove.size
+    };
+  }, [actualsLineItems, budgetLineItems, actualsGrouped, budgetGrouped, actualsPeriods, budgetPeriods]);
 
   // Group line items by category
   const categorizedLineItems = useMemo(() => {
     const categories: Record<string, string[]> = {};
-    const allItems = [...new Set([...actualsLineItems, ...budgetLineItems])];
     
-    allItems.forEach(item => {
+    deduplicatedLineItems.forEach(item => {
       const cat = categorizeLineItem(item);
       if (!categories[cat]) categories[cat] = [];
       categories[cat].push(item);
@@ -217,7 +364,7 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     }
     
     return categories;
-  }, [actualsLineItems, budgetLineItems]);
+  }, [deduplicatedLineItems]);
 
   const formatValue = (val: number, unit?: string, currency?: string) => {
     if (unit === 'percentage' || unit === 'percent') {
@@ -446,18 +593,26 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       )}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-3 gap-4 text-center text-xs">
+      <div className="grid grid-cols-5 gap-3 text-center text-xs">
         <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
-          <div className="text-blue-400 font-medium">{financials.actuals.length}</div>
-          <div className="text-white/40">Actual Records</div>
+          <div className="text-blue-400 font-medium">{actualsPeriods.length}</div>
+          <div className="text-white/40">Periods (Actuals)</div>
         </div>
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
-          <div className="text-amber-400 font-medium">{financials.budget.length}</div>
-          <div className="text-white/40">Budget Records</div>
+          <div className="text-amber-400 font-medium">{budgetPeriods.length}</div>
+          <div className="text-white/40">Periods (Budget)</div>
+        </div>
+        <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
+          <div className="text-cyan-400 font-medium">{deduplicatedLineItems.length}</div>
+          <div className="text-white/40">Unique Metrics</div>
         </div>
         <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
           <div className="text-emerald-400 font-medium">{metrics.length}</div>
           <div className="text-white/40">Computed KPIs</div>
+        </div>
+        <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3">
+          <div className="text-purple-400 font-medium">{actualsDedupeCount + budgetDedupeCount + valueDuplicatesRemoved}</div>
+          <div className="text-white/40">Duplicates Merged</div>
         </div>
       </div>
 
