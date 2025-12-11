@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 11, 2025 (v4.10 - Financial Dashboard Improvements & Pipeline Review)
+**Last Updated:** Dec 11, 2025 (v4.11 - Categorized Financial Dashboard)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -394,53 +394,61 @@ When GPT-5.1 extracts metrics, it also returns `source_locations` with bounding 
 | **Missing source links** | Dashboard table didn't show snippet URLs for audit trail | ✅ Fixed: Source column added |
 | **Budget/Actuals mixed** | Single table showed all scenarios without distinction | ✅ Fixed: Separate tables with color coding |
 
-#### Proposed Per-Upload Output Architecture (v4.10)
+#### Reconciliation Logic (Already Implemented)
 
-**Goal**: Create a separate output for each file uploaded, then use orchestration rules to create one summary table with the latest values.
+The system has comprehensive reconciliation logic in `lib/financials/ingestion/reconciliation.ts`:
 
+**Priority System (Higher = Better):**
+
+| Source Type | Base Priority | Notes |
+| :--- | :---: | :--- |
+| Board Deck | 100 | Gold standard for Actuals |
+| Investor Report | 80 | Monthly updates |
+| Budget File | 60 (Actuals) / 120 (Budget) | Highest for budget scenario |
+| Financial Model | 40 | Working documents |
+| Raw Export | 20 | Unstructured data |
+
+**Priority Boosts (from variance explanations):**
+- Restatement: +50
+- Correction: +40
+- Forecast Revision: +20
+- One-Time: +10
+
+**Decision Matrix:**
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                    PER-UPLOAD OUTPUT MODEL                        │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  STAGE 1: Individual File Processing                              │
-│  ────────────────────────────────────                             │
-│  Each uploaded file creates:                                       │
-│  • dim_source_files record (metadata, upload time)                │
-│  • fact_file_extractions (raw extracted values per file)          │
-│    - company_id, source_file_id, line_item_id, amount             │
-│    - date, scenario, extraction_confidence, snippet_url           │
-│                                                                   │
-│  STAGE 2: Orchestrated Summary                                     │
-│  ─────────────────────────────                                     │
-│  After upload completes, run reconciliation to:                    │
-│  • Apply source priority rules (Board Deck > Investor Report)     │
-│  • Create/update fact_financials_summary (one row per metric/date)│
-│  • Track which source_file_id "won" for each metric               │
-│                                                                   │
-│  STAGE 3: UI Views                                                 │
-│  ───────────────                                                   │
-│  • "Per Upload" view: Show exactly what each file contributed     │
-│  • "Summary" view: Show orchestrated latest values                │
-│  • "Audit Trail": Click any value → see all sources & history     │
-│                                                                   │
-└──────────────────────────────────────────────────────────────────┘
+New Priority > Existing → UPDATE (overwrite)
+New Priority < Existing → IGNORE (keep existing)
+Equal Priority + Explanation → Use explanation to decide
+Equal Priority + >1% variance → Flag as CONFLICT for manual review
+Equal Priority + <1% variance → Silent update (rounding)
 ```
 
-**New Tables Needed:**
+**Changelog Tracking:** Every update is logged with timestamp, old/new values, reason, source file, explanation, and snippet URL.
 
-| Table | Purpose |
-| :--- | :--- |
-| `fact_file_extractions` | Raw extraction results per file (not reconciled) |
-| `fact_financials_summary` | Orchestrated "winning" values per company/period/metric |
-| `extraction_audit_log` | History of which file contributed which value |
+### UI Improvements Needed
 
-**Reconciliation Rules:**
+The reconciliation backend is complete. What's missing is UI exposure:
 
-1. **Same metric, same period, same file**: Keep latest extraction (overwrite)
-2. **Same metric, same period, different files**: Apply priority rules, log decision
-3. **Budget vs Actuals**: Never merge - always separate scenarios
-4. **Conflicts**: Flag for manual review if values differ by >10%
+| Feature | Status | Description |
+| :--- | :--- | :--- |
+| **Conflict Dashboard** | ⚠️ Not Built | UI to review high-severity conflicts flagged by reconciliation |
+| **Per-Upload View** | ⚠️ Not Built | Show what each source file contributed before reconciliation |
+| **Audit History Modal** | ⚠️ Not Built | Click any cell → see full changelog from all sources |
+
+### Dashboard Features (v4.11)
+
+The Financials Dashboard now includes:
+
+1. **All Periods**: Shows complete date range (no 12-period limit)
+2. **Chronological Order**: Oldest on left, newest on right
+3. **Collapsible Categories**:
+   - Revenue & Growth (arr, mrr, revenue, parr, nrr...)
+   - Customers & Retention (customers, churn, ltv, cac...)
+   - Cash & Liquidity (cash, runway, burn...)
+   - Costs & Expenses (cogs, opex, capex...)
+   - Profitability (ebitda, margin, profit...)
+4. **Source Links**: Snippet URLs for audit trail
+5. **Separate Actuals/Budget**: Visual distinction with color coding
 
 ---
 
