@@ -16,7 +16,13 @@ import {
   Users,
   Wallet,
   TrendingDown,
-  PiggyBank
+  PiggyBank,
+  X,
+  History,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  Scale
 } from 'lucide-react';
 
 interface Metric {
@@ -44,41 +50,38 @@ interface FinancialsDashboardProps {
   companyId: string;
 }
 
+interface AuditModalData {
+  lineItemId: string;
+  period: string;
+  actual?: Financial;
+  budget?: Financial;
+  allRecords: Financial[];
+}
+
 // Canonical line item mappings (synonyms → canonical name)
-// The first item in each array is the canonical name
 const LINE_ITEM_SYNONYMS: string[][] = [
-  // Revenue metrics
   ['arr', 'annual_recurring_revenue', 'annualized_recurring_revenue', 'total_arr'],
   ['mrr', 'monthly_recurring_revenue', 'total_mrr'],
   ['revenue', 'total_revenue', 'net_revenue', 'gross_revenue'],
   ['arpu', 'average_revenue_per_user', 'revenue_per_user', 'avg_revenue_per_customer'],
   ['nrr', 'net_revenue_retention', 'net_retention', 'ndr', 'net_dollar_retention'],
   ['grr', 'gross_revenue_retention', 'gross_retention'],
-  
-  // Customer metrics
   ['customers', 'total_customers', 'customer_count', 'active_customers', 'paying_customers'],
   ['users', 'total_users', 'active_users', 'registered_users'],
   ['churn', 'churn_rate', 'customer_churn', 'monthly_churn', 'logo_churn'],
   ['cac', 'customer_acquisition_cost', 'acquisition_cost'],
   ['ltv', 'lifetime_value', 'customer_lifetime_value', 'clv'],
-  
-  // Cash metrics
   ['cash_balance', 'cash', 'cash_position', 'bank_balance', 'available_cash'],
   ['runway', 'runway_months', 'cash_runway', 'months_runway'],
   ['burn', 'burn_rate', 'monthly_burn', 'net_burn', 'cash_burn'],
-  
-  // Cost metrics
   ['cogs', 'cost_of_goods_sold', 'cost_of_sales', 'cos', 'cost_of_revenue'],
   ['opex', 'operating_expenses', 'operational_expenses', 'total_opex'],
-  
-  // Profitability
   ['ebitda', 'adjusted_ebitda', 'ebitda_adjusted'],
   ['gross_margin', 'gross_profit_margin', 'gm', 'gpm'],
   ['gross_profit', 'gross_income'],
   ['net_income', 'net_profit', 'profit', 'bottom_line'],
 ];
 
-// Build lookup map: any synonym → canonical name
 const SYNONYM_TO_CANONICAL: Map<string, string> = new Map();
 LINE_ITEM_SYNONYMS.forEach(group => {
   const canonical = group[0];
@@ -87,30 +90,11 @@ LINE_ITEM_SYNONYMS.forEach(group => {
   });
 });
 
-// Normalize a line item ID to its canonical form
 function normalizeLineItemId(id: string): string {
   const lower = id.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   return SYNONYM_TO_CANONICAL.get(lower) || lower;
 }
 
-// Check if two line items are semantically similar
-function areLineItemsSimilar(id1: string, id2: string): boolean {
-  const norm1 = normalizeLineItemId(id1);
-  const norm2 = normalizeLineItemId(id2);
-  
-  // Exact match after normalization
-  if (norm1 === norm2) return true;
-  
-  // One contains the other (e.g., "customers" vs "customers_finos")
-  if (norm1.includes(norm2) || norm2.includes(norm1)) {
-    // But not for very short strings to avoid false positives
-    if (norm1.length > 3 && norm2.length > 3) return true;
-  }
-  
-  return false;
-}
-
-// Line item category definitions
 const LINE_ITEM_CATEGORIES: Record<string, { name: string; icon: any; color: string; items: string[] }> = {
   revenue: {
     name: 'Revenue & Growth',
@@ -144,7 +128,6 @@ const LINE_ITEM_CATEGORIES: Record<string, { name: string; icon: any; color: str
   }
 };
 
-// Categorize a line item
 function categorizeLineItem(lineItemId: string): string {
   const lower = lineItemId.toLowerCase();
   for (const [category, config] of Object.entries(LINE_ITEM_CATEGORIES)) {
@@ -155,16 +138,120 @@ function categorizeLineItem(lineItemId: string): string {
   return 'other';
 }
 
-// Normalize date to first of month (YYYY-MM-01)
 function normalizeToMonth(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
-// Format month label
 function formatMonthLabel(dateStr: string): string {
   const d = new Date(dateStr);
   return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+// Audit History Modal Component
+function AuditModal({ data, onClose, formatValue }: { 
+  data: AuditModalData; 
+  onClose: () => void;
+  formatValue: (val: number, unit?: string, currency?: string) => string;
+}) {
+  const variance = data.actual && data.budget 
+    ? data.actual.amount - data.budget.amount 
+    : null;
+  const variancePct = variance !== null && data.budget?.amount 
+    ? (variance / Math.abs(data.budget.amount)) * 100 
+    : null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div 
+        className="bg-[#1a1a1a] border border-white/20 rounded-xl max-w-lg w-full max-h-[80vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div>
+            <h3 className="text-white font-medium flex items-center gap-2">
+              <History size={16} className="text-blue-400" />
+              Audit Trail
+            </h3>
+            <p className="text-white/50 text-sm mt-1">
+              {data.lineItemId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} • {formatMonthLabel(data.period)}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-white/50 hover:text-white p-1">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3 p-4">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center">
+            <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">Actual</div>
+            <div className="text-lg font-mono text-white">
+              {data.actual ? formatValue(data.actual.amount, undefined, data.actual.currency) : '-'}
+            </div>
+          </div>
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-center">
+            <div className="text-xs text-amber-400 uppercase tracking-wider mb-1">Budget</div>
+            <div className="text-lg font-mono text-white">
+              {data.budget ? formatValue(data.budget.amount, undefined, data.budget.currency) : '-'}
+            </div>
+          </div>
+          <div className={`${variance !== null && variance >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'} border rounded-lg p-3 text-center`}>
+            <div className={`text-xs uppercase tracking-wider mb-1 ${variance !== null && variance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Variance</div>
+            <div className={`text-lg font-mono ${variance !== null && variance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {variance !== null ? (
+                <>
+                  {variance >= 0 ? '+' : ''}{formatValue(variance, undefined, data.actual?.currency || data.budget?.currency)}
+                  {variancePct !== null && (
+                    <span className="text-xs ml-1">({variancePct >= 0 ? '+' : ''}{variancePct.toFixed(1)}%)</span>
+                  )}
+                </>
+              ) : '-'}
+            </div>
+          </div>
+        </div>
+
+        {/* All Records */}
+        <div className="p-4 border-t border-white/10">
+          <h4 className="text-sm text-white/60 uppercase tracking-wider mb-3">All Source Records</h4>
+          {data.allRecords.length > 0 ? (
+            <div className="space-y-2">
+              {data.allRecords.map((record, idx) => (
+                <div key={record.id || idx} className="bg-white/5 rounded-lg p-3 text-sm">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        record.scenario?.toLowerCase() === 'actual' 
+                          ? 'bg-blue-500/20 text-blue-400' 
+                          : 'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        {record.scenario || 'Unknown'}
+                      </span>
+                      <span className="text-white/50 text-xs ml-2">{record.line_item_id}</span>
+                    </div>
+                    <span className="font-mono text-white">{formatValue(record.amount, undefined, record.currency)}</span>
+                  </div>
+                  {record.snippet_url && (
+                    <a 
+                      href={record.snippet_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 text-xs mt-2 inline-flex items-center gap-1"
+                    >
+                      <ExternalLink size={10} /> View Source Document
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/40 text-sm">No source records found for this cell.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
@@ -173,10 +260,12 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     actuals: [], budget: [], forecast: [], total: 0
   });
   const [loading, setLoading] = useState(true);
-  const [showBudget, setShowBudget] = useState(true);
+  const [showBudget, setShowBudget] = useState(false);
+  const [showActuals, setShowActuals] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     revenue: true, customers: true, cash: true, costs: false, profitability: true, other: false
   });
+  const [auditModal, setAuditModal] = useState<AuditModalData | null>(null);
 
   const toggleCategory = (cat: string) => {
     setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
@@ -198,19 +287,22 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     fetchData();
   }, [companyId]);
 
-  // Group and normalize actuals - take latest value per month/line_item
-  // Sort oldest to newest (left to right)
-  // Deduplicate semantically similar line items
-  const { actualsPeriods, actualsGrouped, actualsLatest, actualsLineItems, actualsDedupeCount } = useMemo(() => {
+  // Group and normalize actuals
+  const { actualsPeriods, actualsGrouped, actualsLatest, actualsLineItems, actualsDedupeCount, actualsRaw } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
+    const rawByMonthItem: Record<string, Financial[]> = {};
     
     const sorted = [...financials.actuals].sort((a, b) => b.date.localeCompare(a.date));
     
     sorted.forEach(f => {
       const month = normalizeToMonth(f.date);
-      // Normalize the line item ID to canonical form
       const canonicalId = normalizeLineItemId(f.line_item_id);
       const key = `${month}|${canonicalId}`;
+      
+      // Store raw records for audit
+      if (!rawByMonthItem[key]) rawByMonthItem[key] = [];
+      rawByMonthItem[key].push(f);
+      
       if (!byMonthItem[key]) {
         byMonthItem[key] = { ...f, date: month, line_item_id: canonicalId };
       }
@@ -230,7 +322,6 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       lineItems.add(f.line_item_id);
     });
     
-    // Track deduplication: count unique original IDs vs canonical IDs
     const originalCount = new Set(financials.actuals.map(f => f.line_item_id)).size;
     const dedupeCount = originalCount - lineItems.size;
     
@@ -239,22 +330,26 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       actualsGrouped: grouped, 
       actualsLatest: latest,
       actualsLineItems: Array.from(lineItems).sort(),
-      actualsDedupeCount: dedupeCount
+      actualsDedupeCount: dedupeCount,
+      actualsRaw: rawByMonthItem
     };
   }, [financials.actuals]);
 
-  // Group and normalize budget/plan - oldest to newest
-  // Deduplicate semantically similar line items
-  const { budgetPeriods, budgetGrouped, budgetLineItems, budgetDedupeCount } = useMemo(() => {
+  // Group and normalize budget/plan
+  const { budgetPeriods, budgetGrouped, budgetLineItems, budgetDedupeCount, budgetRaw } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
+    const rawByMonthItem: Record<string, Financial[]> = {};
     
     const sorted = [...financials.budget].sort((a, b) => b.date.localeCompare(a.date));
     
     sorted.forEach(f => {
       const month = normalizeToMonth(f.date);
-      // Normalize the line item ID to canonical form
       const canonicalId = normalizeLineItemId(f.line_item_id);
       const key = `${month}|${canonicalId}`;
+      
+      if (!rawByMonthItem[key]) rawByMonthItem[key] = [];
+      rawByMonthItem[key].push(f);
+      
       if (!byMonthItem[key]) {
         byMonthItem[key] = { ...f, date: month, line_item_id: canonicalId };
       }
@@ -272,19 +367,16 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       lineItems.add(f.line_item_id);
     });
     
-    // Track deduplication
     const originalCount = new Set(financials.budget.map(f => f.line_item_id)).size;
     const dedupeCount = originalCount - lineItems.size;
     
-    return { budgetPeriods: months, budgetGrouped: grouped, budgetLineItems: Array.from(lineItems).sort(), budgetDedupeCount: dedupeCount };
+    return { budgetPeriods: months, budgetGrouped: grouped, budgetLineItems: Array.from(lineItems).sort(), budgetDedupeCount: dedupeCount, budgetRaw: rawByMonthItem };
   }, [financials.budget]);
 
-  // Detect value-based duplicates: line items with identical values across all periods
-  // These might be semantically different names but same underlying data
+  // Value-based deduplication
   const { deduplicatedLineItems, valueDuplicatesRemoved } = useMemo(() => {
     const allItems = [...new Set([...actualsLineItems, ...budgetLineItems])];
     
-    // Build value signature for each line item: hash of all period values
     const getValueSignature = (lineItemId: string, grouped: Record<string, Record<string, Financial>>, periods: string[]): string => {
       return periods.map(p => {
         const val = grouped[p]?.[lineItemId]?.amount;
@@ -292,18 +384,15 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       }).join('|');
     };
     
-    // Track which items to keep vs remove (value duplicates)
     const signatureToCanonical: Map<string, string> = new Map();
     const itemsToRemove = new Set<string>();
     
-    // Check actuals for value duplicates
     if (actualsPeriods.length > 0) {
       actualsLineItems.forEach(item => {
         const sig = getValueSignature(item, actualsGrouped, actualsPeriods);
         if (sig && !sig.startsWith('null')) {
           const existing = signatureToCanonical.get(sig);
           if (existing) {
-            // Found a duplicate! Keep the shorter/simpler name
             if (item.length > existing.length) {
               itemsToRemove.add(item);
             } else {
@@ -317,15 +406,13 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       });
     }
     
-    // Check budget for value duplicates
     if (budgetPeriods.length > 0) {
       budgetLineItems.forEach(item => {
-        if (itemsToRemove.has(item)) return; // Already marked for removal
+        if (itemsToRemove.has(item)) return;
         const sig = getValueSignature(item, budgetGrouped, budgetPeriods);
         if (sig && !sig.startsWith('null')) {
           const existing = signatureToCanonical.get(sig);
           if (existing && existing !== item) {
-            // Found a duplicate! Keep the shorter/simpler name
             if (item.length > existing.length) {
               itemsToRemove.add(item);
             } else {
@@ -339,7 +426,6 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       });
     }
     
-    // Filter out value duplicates
     const dedupedItems = allItems.filter(item => !itemsToRemove.has(item));
     
     return {
@@ -348,7 +434,16 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     };
   }, [actualsLineItems, budgetLineItems, actualsGrouped, budgetGrouped, actualsPeriods, budgetPeriods]);
 
-  // Group line items by category
+  // Build summary data: periods where both budget and actual exist
+  const { summaryPeriods, summaryLineItems } = useMemo(() => {
+    const commonPeriods = actualsPeriods.filter(p => budgetPeriods.includes(p));
+    const commonLineItems = deduplicatedLineItems.filter(item => 
+      actualsLineItems.includes(item) || budgetLineItems.includes(item)
+    );
+    return { summaryPeriods: commonPeriods, summaryLineItems: commonLineItems };
+  }, [actualsPeriods, budgetPeriods, deduplicatedLineItems, actualsLineItems, budgetLineItems]);
+
+  // Categorize line items
   const categorizedLineItems = useMemo(() => {
     const categories: Record<string, string[]> = {};
     
@@ -358,7 +453,6 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
       categories[cat].push(item);
     });
     
-    // Sort items within each category
     for (const cat in categories) {
       categories[cat].sort();
     }
@@ -380,6 +474,20 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
 
   const formatLineItemName = (id: string) => {
     return id.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  const openAuditModal = (lineItemId: string, period: string) => {
+    const key = `${period}|${lineItemId}`;
+    const actualRecords = actualsRaw[key] || [];
+    const budgetRecords = budgetRaw[key] || [];
+    
+    setAuditModal({
+      lineItemId,
+      period,
+      actual: actualsGrouped[period]?.[lineItemId],
+      budget: budgetGrouped[period]?.[lineItemId],
+      allRecords: [...actualRecords, ...budgetRecords]
+    });
   };
 
   if (loading) {
@@ -405,7 +513,6 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     );
   }
 
-  // Key KPIs from fact_metrics
   const kpis = [
     { id: 'arr', label: 'ARR', icon: TrendingUp },
     { id: 'rule_of_40', label: 'Rule of 40', icon: BarChart3 },
@@ -416,108 +523,19 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
   const keyMetrics: Record<string, Metric> = {};
   metrics.forEach(m => { keyMetrics[m.metric_id] = m; });
 
-  // Render a categorized table
-  const renderCategorizedTable = (
-    periods: string[],
-    grouped: Record<string, Record<string, Financial>>,
-    lineItems: Record<string, string[]>,
-    latest: Record<string, Financial>,
-    isActuals: boolean
-  ) => {
-    const categoryOrder = ['revenue', 'customers', 'cash', 'profitability', 'costs', 'other'];
-    const colorMap: Record<string, string> = {
-      revenue: 'emerald', customers: 'blue', cash: 'cyan', costs: 'red', profitability: 'purple', other: 'gray'
-    };
+  const categoryOrder = ['revenue', 'customers', 'cash', 'profitability', 'costs', 'other'];
 
-    return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className={`text-xs uppercase sticky top-0 z-10 ${isActuals ? 'text-white/50 bg-black/30' : 'text-amber-400/70 bg-black/30'}`}>
-            <tr>
-              <th className={`px-4 py-3 sticky left-0 z-20 min-w-[220px] border-r ${isActuals ? 'bg-[#1a1a1a] border-white/10' : 'bg-[#1a1a1a] border-amber-500/20'}`}>
-                Line Item
-              </th>
-              {periods.map(date => (
-                <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
-                  {formatMonthLabel(date)}
-                </th>
-              ))}
-              {isActuals && <th className="px-3 py-3 text-center min-w-[50px]">Src</th>}
-            </tr>
-          </thead>
-          <tbody className={`divide-y ${isActuals ? 'divide-white/5' : 'divide-amber-500/10'}`}>
-            {categoryOrder.map(cat => {
-              const items = lineItems[cat];
-              if (!items || items.length === 0) return null;
-              
-              const config = LINE_ITEM_CATEGORIES[cat] || { name: 'Other', icon: FileText, color: 'gray' };
-              const Icon = config.icon;
-              const isExpanded = expandedCategories[cat];
-              const color = colorMap[cat];
-
-              return (
-                <React.Fragment key={cat}>
-                  {/* Category Header Row */}
-                  <tr 
-                    className={`bg-${color}-500/10 cursor-pointer hover:bg-${color}-500/15 transition-colors`}
-                    onClick={() => toggleCategory(cat)}
-                  >
-                    <td 
-                      colSpan={periods.length + (isActuals ? 2 : 1)} 
-                      className={`px-4 py-2 sticky left-0 bg-${color}-500/10`}
-                    >
-                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider">
-                        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        <Icon size={12} className={`text-${color}-400`} />
-                        <span className={`text-${color}-400`}>{config.name}</span>
-                        <span className="text-white/40 normal-case">({items.length})</span>
-                      </div>
-                    </td>
-                  </tr>
-                  
-                  {/* Line Items in Category */}
-                  {isExpanded && items.map(lineItemId => (
-                    <tr key={lineItemId} className={`hover:bg-white/5 transition-colors`}>
-                      <td className={`px-4 py-2 pl-8 font-medium sticky left-0 border-r text-xs ${isActuals ? 'text-white/80 bg-[#1a1a1a] border-white/10' : 'text-amber-200/80 bg-[#1a1a1a] border-amber-500/20'}`}>
-                        {formatLineItemName(lineItemId)}
-                      </td>
-                      {periods.map(date => {
-                        const item = grouped[date]?.[lineItemId];
-                        return (
-                          <td key={date} className={`px-3 py-2 font-mono text-right whitespace-nowrap text-xs ${isActuals ? 'text-white/70' : 'text-amber-100/60'}`}>
-                            {item ? formatValue(item.amount, undefined, item.currency) : '-'}
-                          </td>
-                        );
-                      })}
-                      {isActuals && (
-                        <td className="px-3 py-2 text-center">
-                          {latest[lineItemId]?.snippet_url && (
-                            <a 
-                              href={latest[lineItemId].snippet_url} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="text-blue-400 hover:text-blue-300"
-                              title="View source"
-                            >
-                              <ExternalLink size={10} />
-                            </a>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
+  // Use all periods from either actuals or budget for summary
+  const allPeriods = Array.from(new Set([...actualsPeriods, ...budgetPeriods])).sort();
 
   return (
     <div className="space-y-8">
-      {/* Section 1: Computed KPIs from fact_metrics */}
+      {/* Audit Modal */}
+      {auditModal && (
+        <AuditModal data={auditModal} onClose={() => setAuditModal(null)} formatValue={formatValue} />
+      )}
+
+      {/* Section 1: Computed KPIs */}
       {metrics.length > 0 && (
         <div>
           <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -552,24 +570,177 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
         </div>
       )}
 
-      {/* Section 2: Actuals Table */}
-      {financials.actuals.length > 0 && (
+      {/* Section 2: SUMMARY TABLE - Budget vs Actual vs Variance */}
+      {(financials.actuals.length > 0 || financials.budget.length > 0) && (
         <div>
           <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <FileText size={14} className="text-blue-400" />
-            Actuals
+            <Scale size={14} className="text-violet-400" />
+            Budget vs Actual Summary
             <span className="text-xs text-white/40 normal-case">
-              ({financials.actuals.length} records, {actualsPeriods.length} periods)
+              ({deduplicatedLineItems.length} metrics, {allPeriods.length} periods)
             </span>
           </h3>
           
-          <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
-            {renderCategorizedTable(actualsPeriods, actualsGrouped, categorizedLineItems, actualsLatest, true)}
+          <div className="bg-gradient-to-br from-violet-500/5 to-blue-500/5 border border-violet-500/20 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs uppercase sticky top-0 z-10 text-white/50 bg-black/50">
+                  <tr>
+                    <th className="px-4 py-3 sticky left-0 z-20 min-w-[180px] border-r bg-[#1a1a1a] border-white/10">
+                      Line Item
+                    </th>
+                    {allPeriods.map(date => (
+                      <th key={date} colSpan={3} className="px-1 py-2 text-center border-r border-white/10">
+                        <div className="text-white/70">{formatMonthLabel(date)}</div>
+                        <div className="flex text-[10px] text-white/40 mt-1">
+                          <span className="flex-1 text-blue-400">Act</span>
+                          <span className="flex-1 text-amber-400">Bud</span>
+                          <span className="flex-1 text-violet-400">Var</span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {categoryOrder.map(cat => {
+                    const items = categorizedLineItems[cat];
+                    if (!items || items.length === 0) return null;
+                    
+                    const config = LINE_ITEM_CATEGORIES[cat] || { name: 'Other', icon: FileText, color: 'gray' };
+                    const Icon = config.icon;
+                    const isExpanded = expandedCategories[cat];
+
+                    return (
+                      <React.Fragment key={cat}>
+                        <tr 
+                          className="bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
+                          onClick={() => toggleCategory(cat)}
+                        >
+                          <td 
+                            colSpan={allPeriods.length * 3 + 1}
+                            className="px-4 py-2 sticky left-0 bg-white/5"
+                          >
+                            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-white/60">
+                              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                              <Icon size={12} />
+                              {config.name}
+                              <span className="text-white/40 normal-case">({items.length})</span>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {isExpanded && items.map(lineItemId => (
+                          <tr key={lineItemId} className="hover:bg-white/5 transition-colors">
+                            <td className="px-4 py-2 pl-8 font-medium sticky left-0 border-r text-xs text-white/80 bg-[#1a1a1a] border-white/10">
+                              {formatLineItemName(lineItemId)}
+                            </td>
+                            {allPeriods.map(date => {
+                              const actual = actualsGrouped[date]?.[lineItemId];
+                              const budget = budgetGrouped[date]?.[lineItemId];
+                              const variance = actual && budget ? actual.amount - budget.amount : null;
+                              const variancePct = variance !== null && budget?.amount ? (variance / Math.abs(budget.amount)) * 100 : null;
+                              
+                              return (
+                                <React.Fragment key={date}>
+                                  <td 
+                                    className="px-1 py-2 font-mono text-right whitespace-nowrap text-xs text-blue-300 cursor-pointer hover:bg-blue-500/10"
+                                    onClick={() => openAuditModal(lineItemId, date)}
+                                    title="Click for audit trail"
+                                  >
+                                    {actual ? formatValue(actual.amount, undefined, actual.currency) : '-'}
+                                  </td>
+                                  <td className="px-1 py-2 font-mono text-right whitespace-nowrap text-xs text-amber-300/70">
+                                    {budget ? formatValue(budget.amount, undefined, budget.currency) : '-'}
+                                  </td>
+                                  <td className={`px-1 py-2 font-mono text-right whitespace-nowrap text-xs border-r border-white/10 ${
+                                    variance === null ? 'text-white/30' : variance >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                  }`}>
+                                    {variance !== null ? (
+                                      <span className="flex items-center justify-end gap-0.5">
+                                        {variance > 0 ? <ArrowUpRight size={10} /> : variance < 0 ? <ArrowDownRight size={10} /> : <Minus size={10} />}
+                                        {variancePct !== null ? `${variancePct >= 0 ? '+' : ''}${variancePct.toFixed(0)}%` : '-'}
+                                      </span>
+                                    ) : '-'}
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Section 3: Budget/Plan Table (Collapsible) */}
+      {/* Section 3: Actuals Detail (Collapsible) */}
+      {financials.actuals.length > 0 && (
+        <div>
+          <button 
+            onClick={() => setShowActuals(!showActuals)}
+            className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4 flex items-center gap-2 hover:text-white/80 transition-colors"
+          >
+            {showActuals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <FileText size={14} className="text-blue-400" />
+            Actuals Detail
+            <span className="text-xs text-white/40 normal-case">
+              ({financials.actuals.length} records, {actualsPeriods.length} periods)
+            </span>
+          </button>
+          
+          {showActuals && (
+            <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden max-h-[400px] overflow-y-auto">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs uppercase sticky top-0 z-10 text-white/50 bg-black/30">
+                    <tr>
+                      <th className="px-4 py-3 sticky left-0 z-20 min-w-[200px] border-r bg-[#1a1a1a] border-white/10">Line Item</th>
+                      {actualsPeriods.map(date => (
+                        <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">{formatMonthLabel(date)}</th>
+                      ))}
+                      <th className="px-3 py-3 text-center min-w-[50px]">Src</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {actualsLineItems.map(lineItemId => (
+                      <tr key={lineItemId} className="hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-2 font-medium sticky left-0 border-r text-xs text-white/80 bg-[#1a1a1a] border-white/10">
+                          {formatLineItemName(lineItemId)}
+                        </td>
+                        {actualsPeriods.map(date => {
+                          const item = actualsGrouped[date]?.[lineItemId];
+                          return (
+                            <td 
+                              key={date} 
+                              className="px-3 py-2 font-mono text-right whitespace-nowrap text-xs text-white/70 cursor-pointer hover:bg-blue-500/10"
+                              onClick={() => openAuditModal(lineItemId, date)}
+                            >
+                              {item ? formatValue(item.amount, undefined, item.currency) : '-'}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2 text-center">
+                          {actualsLatest[lineItemId]?.snippet_url && (
+                            <a href={actualsLatest[lineItemId].snippet_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                              <ExternalLink size={10} />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Section 4: Budget/Plan Detail (Collapsible) */}
       {financials.budget.length > 0 && (
         <div>
           <button 
@@ -578,15 +749,43 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
           >
             {showBudget ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <Target size={14} className="text-amber-400" />
-            Budget / Plan
+            Budget / Plan Detail
             <span className="text-xs text-white/40 normal-case">
               ({financials.budget.length} records, {budgetPeriods.length} periods)
             </span>
           </button>
           
           {showBudget && (
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
-              {renderCategorizedTable(budgetPeriods, budgetGrouped, categorizedLineItems, {}, false)}
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden max-h-[400px] overflow-y-auto">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs uppercase sticky top-0 z-10 text-amber-400/70 bg-black/30">
+                    <tr>
+                      <th className="px-4 py-3 sticky left-0 z-20 min-w-[200px] border-r bg-[#1a1a1a] border-amber-500/20">Line Item</th>
+                      {budgetPeriods.map(date => (
+                        <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">{formatMonthLabel(date)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-500/10">
+                    {budgetLineItems.map(lineItemId => (
+                      <tr key={lineItemId} className="hover:bg-amber-500/5 transition-colors">
+                        <td className="px-4 py-2 font-medium sticky left-0 border-r text-xs text-amber-200/80 bg-[#1a1a1a] border-amber-500/20">
+                          {formatLineItemName(lineItemId)}
+                        </td>
+                        {budgetPeriods.map(date => {
+                          const item = budgetGrouped[date]?.[lineItemId];
+                          return (
+                            <td key={date} className="px-3 py-2 font-mono text-right whitespace-nowrap text-xs text-amber-100/60">
+                              {item ? formatValue(item.amount, undefined, item.currency) : '-'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
