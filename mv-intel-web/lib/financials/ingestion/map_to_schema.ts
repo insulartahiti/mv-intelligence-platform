@@ -3,6 +3,26 @@ import { ExtractedSheet, getCellValue } from './parse_excel';
 import { PDFContent, findPagesWithKeywords } from './parse_pdf_vision';
 import { UnifiedExtractionResult } from './unified_extractor'; 
 
+/**
+ * Normalize any date string to first-of-month (YYYY-MM-01)
+ * This prevents duplicate columns when the same month has data from different day values
+ */
+function normalizeToFirstOfMonth(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  
+  // Try to parse the date
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    console.warn(`[Mapping] Could not parse date: ${dateStr}`);
+    return dateStr;
+  }
+  
+  // Return YYYY-MM-01 format
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}-01`;
+}
+
 export interface NormalizedLineItem {
   line_item_id: string;
   amount: number;
@@ -301,8 +321,8 @@ export async function mapDataToSchema(
       console.log(`[Mapping] Processing ${financialSummary.multi_periods.length} historical periods`);
       
       for (const periodData of financialSummary.multi_periods) {
-        // Ensure we have a valid date string (YYYY-MM-DD)
-        const periodStr = periodData.period;
+        // Ensure we have a valid date string normalized to first-of-month
+        const periodStr = normalizeToFirstOfMonth(periodData.period);
         if (!periodStr) continue;
 
         // Try to find deterministic sheet/cell data for this period if available

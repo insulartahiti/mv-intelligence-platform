@@ -9,10 +9,12 @@ import {
   ArrowUpRight, 
   ArrowDownRight,
   Loader2,
-  Table as TableIcon,
   FileText,
   ExternalLink,
-  BarChart3
+  BarChart3,
+  Target,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 interface Metric {
@@ -40,12 +42,25 @@ interface FinancialsDashboardProps {
   companyId: string;
 }
 
+// Normalize date to first of month (YYYY-MM-01)
+function normalizeToMonth(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Format month label
+function formatMonthLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
 export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [financials, setFinancials] = useState<{ actuals: Financial[]; budget: Financial[]; forecast: Financial[]; total: number }>({
     actuals: [], budget: [], forecast: [], total: 0
   });
   const [loading, setLoading] = useState(true);
+  const [showBudget, setShowBudget] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,43 +78,66 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     fetchData();
   }, [companyId]);
 
-  // Group metrics by Period and ID
-  const { periods: metricPeriods, groupedMetrics, keyMetrics } = useMemo(() => {
-    const dates = Array.from(new Set(metrics.map(m => m.period))).sort();
-    const grouped: Record<string, Record<string, Metric>> = {};
-    const latestValues: Record<string, Metric> = {};
-
-    metrics.forEach(m => {
-      if (!grouped[m.period]) grouped[m.period] = {};
-      grouped[m.period][m.metric_id] = m;
-      latestValues[m.metric_id] = m;
+  // Group and normalize actuals - take latest value per month/line_item
+  const { actualsPeriods, actualsGrouped, actualsLatest } = useMemo(() => {
+    const byMonthItem: Record<string, Financial> = {};
+    
+    // Sort by date descending so latest within a month wins
+    const sorted = [...financials.actuals].sort((a, b) => b.date.localeCompare(a.date));
+    
+    sorted.forEach(f => {
+      const month = normalizeToMonth(f.date);
+      const key = `${month}|${f.line_item_id}`;
+      if (!byMonthItem[key]) {
+        byMonthItem[key] = { ...f, date: month };
+      }
     });
-
-    return { 
-      periods: dates, 
-      groupedMetrics: grouped,
-      keyMetrics: latestValues
-    };
-  }, [metrics]);
-
-  // Group financials by date and line item
-  const { financialPeriods, groupedFinancials, latestFinancials } = useMemo(() => {
-    const dates = Array.from(new Set(financials.actuals.map(f => f.date))).sort().reverse();
+    
+    const normalized = Object.values(byMonthItem);
+    const months = Array.from(new Set(normalized.map(f => f.date))).sort().reverse();
+    
     const grouped: Record<string, Record<string, Financial>> = {};
     const latest: Record<string, Financial> = {};
-
-    financials.actuals.forEach(f => {
+    
+    normalized.forEach(f => {
       if (!grouped[f.date]) grouped[f.date] = {};
       grouped[f.date][f.line_item_id] = f;
       if (!latest[f.line_item_id]) latest[f.line_item_id] = f;
     });
+    
+    return { actualsPeriods: months, actualsGrouped: grouped, actualsLatest: latest };
+  }, [financials.actuals]);
 
-    return { 
-      financialPeriods: dates, 
-      groupedFinancials: grouped,
-      latestFinancials: latest
-    };
-  }, [financials]);
+  // Group and normalize budget/plan
+  const { budgetPeriods, budgetGrouped } = useMemo(() => {
+    const byMonthItem: Record<string, Financial> = {};
+    
+    const sorted = [...financials.budget].sort((a, b) => b.date.localeCompare(a.date));
+    
+    sorted.forEach(f => {
+      const month = normalizeToMonth(f.date);
+      const key = `${month}|${f.line_item_id}`;
+      if (!byMonthItem[key]) {
+        byMonthItem[key] = { ...f, date: month };
+      }
+    });
+    
+    const normalized = Object.values(byMonthItem);
+    const months = Array.from(new Set(normalized.map(f => f.date))).sort().reverse();
+    
+    const grouped: Record<string, Record<string, Financial>> = {};
+    normalized.forEach(f => {
+      if (!grouped[f.date]) grouped[f.date] = {};
+      grouped[f.date][f.line_item_id] = f;
+    });
+    
+    return { budgetPeriods: months, budgetGrouped: grouped };
+  }, [financials.budget]);
+
+  // Get all line items across actuals for consistent display
+  const allLineItems = useMemo(() => {
+    return Object.keys(actualsLatest).sort();
+  }, [actualsLatest]);
 
   const formatValue = (val: number, unit?: string, currency?: string) => {
     if (unit === 'percentage' || unit === 'percent') {
@@ -148,6 +186,9 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     { id: 'runway_months', label: 'Runway', icon: Calendar }
   ];
 
+  const keyMetrics: Record<string, Metric> = {};
+  metrics.forEach(m => { keyMetrics[m.metric_id] = m; });
+
   return (
     <div className="space-y-8">
       {/* Section 1: Computed KPIs from fact_metrics */}
@@ -175,105 +216,70 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
                   </div>
                   {metric?.period && (
                     <div className="text-xs text-white/40 mt-1">
-                      {new Date(metric.period).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}
+                      {formatMonthLabel(metric.period)}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-          
-          {/* All Metrics Table */}
-          {Object.keys(keyMetrics).length > 4 && (
-            <div className="mt-4 bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-              <div className="p-3 border-b border-white/10 bg-white/5 text-xs text-white/60 uppercase tracking-wider">
-                All Computed Metrics
-              </div>
-              <div className="divide-y divide-white/5">
-                {Object.entries(keyMetrics).map(([id, m]) => (
-                  <div key={id} className="flex justify-between items-center px-4 py-2 hover:bg-white/5">
-                    <span className="text-white/80 text-sm">{formatLineItemName(id)}</span>
-                    <span className="font-mono text-white">{formatValue(m.value, m.unit)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Section 2: Raw Financial Line Items from fact_financials */}
-      {financials.total > 0 && (
+      {/* Section 2: Actuals Table */}
+      {financials.actuals.length > 0 && (
         <div>
           <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4 flex items-center gap-2">
             <FileText size={14} className="text-blue-400" />
-            Financial Line Items
-            <span className="text-xs text-white/40 normal-case">({financials.actuals.length} actuals, {financials.budget.length} budget)</span>
+            Actuals
+            <span className="text-xs text-white/40 normal-case">
+              ({financials.actuals.length} records, {actualsPeriods.length} periods)
+            </span>
           </h3>
           
-          {/* Key Financial Highlights */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            {['revenue_total_group', 'parr_group', 'adj_ebitda', 'ebitda'].map(key => {
-              const item = latestFinancials[key];
-              if (!item) return null;
-              
-              return (
-                <div key={key} className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
-                  <div className="text-blue-400/70 text-xs uppercase tracking-wider mb-1">
-                    {formatLineItemName(key)}
-                  </div>
-                  <div className="text-xl font-mono text-white font-medium">
-                    {formatValue(item.amount, undefined, item.currency)}
-                  </div>
-                  <div className="text-xs text-white/40 mt-1 flex items-center gap-1">
-                    {new Date(item.date).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}
-                    {item.snippet_url && (
-                      <a href={item.snippet_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                        <ExternalLink size={10} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            }).filter(Boolean)}
-          </div>
-          
-          {/* Full Line Items Table */}
           <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
-              <h4 className="font-medium text-white flex items-center gap-2">
-                <Calendar size={16} className="text-blue-400" />
-                Historical Data (Actuals)
-              </h4>
-              <span className="text-xs text-white/40">{financialPeriods.length} periods</span>
-            </div>
-            
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-white/50 uppercase bg-black/20 sticky top-0">
+                <thead className="text-xs text-white/50 uppercase bg-black/30 sticky top-0 z-10">
                   <tr>
-                    <th className="px-4 py-3 sticky left-0 bg-[#1a1a1a] z-20 min-w-[180px]">Line Item</th>
-                    {financialPeriods.slice(0, 12).map(date => (
-                      <th key={date} className="px-4 py-3 whitespace-nowrap text-right">
-                        {new Date(date).toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' })}
+                    <th className="px-4 py-3 sticky left-0 bg-[#1a1a1a] z-20 min-w-[200px] border-r border-white/10">
+                      Line Item
+                    </th>
+                    {actualsPeriods.slice(0, 12).map(date => (
+                      <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
+                        {formatMonthLabel(date)}
                       </th>
                     ))}
+                    <th className="px-3 py-3 text-center min-w-[60px]">Source</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {Object.keys(latestFinancials).sort().map(lineItemId => (
+                  {allLineItems.map(lineItemId => (
                     <tr key={lineItemId} className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-2 font-medium text-white/80 sticky left-0 bg-[#1a1a1a] border-r border-white/10 text-xs">
                         {formatLineItemName(lineItemId)}
                       </td>
-                      {financialPeriods.slice(0, 12).map(date => {
-                        const item = groupedFinancials[date]?.[lineItemId];
+                      {actualsPeriods.slice(0, 12).map(date => {
+                        const item = actualsGrouped[date]?.[lineItemId];
                         return (
-                          <td key={date} className="px-4 py-2 text-white/70 font-mono text-right whitespace-nowrap text-xs">
+                          <td key={date} className="px-3 py-2 text-white/70 font-mono text-right whitespace-nowrap text-xs">
                             {item ? formatValue(item.amount, undefined, item.currency) : '-'}
                           </td>
                         );
                       })}
+                      <td className="px-3 py-2 text-center">
+                        {actualsLatest[lineItemId]?.snippet_url && (
+                          <a 
+                            href={actualsLatest[lineItemId].snippet_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-blue-400 hover:text-blue-300"
+                            title="View source"
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -282,6 +288,77 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
           </div>
         </div>
       )}
+
+      {/* Section 3: Budget/Plan Table (Collapsible) */}
+      {financials.budget.length > 0 && (
+        <div>
+          <button 
+            onClick={() => setShowBudget(!showBudget)}
+            className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4 flex items-center gap-2 hover:text-white/80 transition-colors"
+          >
+            {showBudget ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <Target size={14} className="text-amber-400" />
+            Budget / Plan
+            <span className="text-xs text-white/40 normal-case">
+              ({financials.budget.length} records, {budgetPeriods.length} periods)
+            </span>
+          </button>
+          
+          {showBudget && (
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-amber-400/70 uppercase bg-black/30 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 sticky left-0 bg-[#1a1a1a] z-20 min-w-[200px] border-r border-amber-500/20">
+                        Line Item
+                      </th>
+                      {budgetPeriods.slice(0, 12).map(date => (
+                        <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
+                          {formatMonthLabel(date)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-500/10">
+                    {Object.keys(budgetGrouped[budgetPeriods[0]] || {}).sort().map(lineItemId => (
+                      <tr key={lineItemId} className="hover:bg-amber-500/5 transition-colors">
+                        <td className="px-4 py-2 font-medium text-amber-200/80 sticky left-0 bg-[#1a1a1a] border-r border-amber-500/20 text-xs">
+                          {formatLineItemName(lineItemId)}
+                        </td>
+                        {budgetPeriods.slice(0, 12).map(date => {
+                          const item = budgetGrouped[date]?.[lineItemId];
+                          return (
+                            <td key={date} className="px-3 py-2 text-amber-100/60 font-mono text-right whitespace-nowrap text-xs">
+                              {item ? formatValue(item.amount, undefined, item.currency) : '-'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-3 gap-4 text-center text-xs">
+        <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+          <div className="text-blue-400 font-medium">{financials.actuals.length}</div>
+          <div className="text-white/40">Actual Records</div>
+        </div>
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+          <div className="text-amber-400 font-medium">{financials.budget.length}</div>
+          <div className="text-white/40">Budget Records</div>
+        </div>
+        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+          <div className="text-emerald-400 font-medium">{metrics.length}</div>
+          <div className="text-white/40">Computed KPIs</div>
+        </div>
+      </div>
 
       {/* Import Link */}
       <div className="text-center pt-4 border-t border-white/10">
