@@ -34,12 +34,10 @@ async function getHistory() {
   
   const supabase = createClient(supabaseUrl, supabaseKey);
   
-  const { data, error } = await supabase
+  // First get the source files
+  const { data: sourceFiles, error } = await supabase
     .from('dim_source_files')
-    .select(`
-      *,
-      company:graph.entities(name, id)
-    `)
+    .select('*')
     .order('ingested_at', { ascending: false })
     .limit(50);
     
@@ -48,7 +46,26 @@ async function getHistory() {
     return [];
   }
   
-  return data || [];
+  if (!sourceFiles || sourceFiles.length === 0) return [];
+  
+  // Get unique company IDs
+  const companyIds = [...new Set(sourceFiles.map(f => f.company_id).filter(Boolean))];
+  
+  // Fetch company names from graph.entities
+  const { data: entities } = await supabase
+    .schema('graph')
+    .from('entities')
+    .select('id, name')
+    .in('id', companyIds);
+  
+  // Create a lookup map
+  const entityMap = new Map(entities?.map(e => [e.id, e]) || []);
+  
+  // Attach company info to source files
+  return sourceFiles.map(f => ({
+    ...f,
+    company: entityMap.get(f.company_id) || null
+  }));
 }
 
 export default async function IngestionHistoryPage() {
