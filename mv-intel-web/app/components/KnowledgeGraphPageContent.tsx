@@ -118,7 +118,7 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   // Initial State: Centered Search
   if (!hasSearched) {
       return (
-          <div className="flex h-screen bg-slate-950 items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black relative">
+          <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black z-40">
               <div className="w-full max-w-3xl transform -translate-y-12 transition-all duration-700 ease-out animate-fadeIn">
                   <div className="text-center mb-10">
                       {greeting ? (
@@ -156,15 +156,14 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   }
 
   return (
-    <div className="flex h-[100dvh] bg-slate-950 overflow-hidden text-slate-100 font-sans relative">
+    <div className="fixed inset-0 bg-slate-950 overflow-hidden text-slate-100 font-sans z-0 flex">
       
       {/* COLUMN 1: Chat Interface */}
       <div 
         style={{ width: isGraphExpanded ? `${chatWidth}px` : '65%' }}
-        className="flex-shrink-0 h-full relative z-30 transition-all duration-500 ease-in-out"
+        className="flex-shrink-0 h-full relative z-30 transition-all duration-500 ease-in-out border-r border-slate-800"
       >
-         <div className="absolute inset-0">
-           <ChatInterface 
+         <ChatInterface 
             onGraphUpdate={handleGraphUpdate} 
             onNodeSelect={handleNodeClick}
             messages={messages}
@@ -175,7 +174,6 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
             setLoading={setLoading}
             userEntity={userEntity}
          />
-         </div>
          
          {/* Resizer Handle (Only visible when graph is expanded) */}
          {isGraphExpanded && (
