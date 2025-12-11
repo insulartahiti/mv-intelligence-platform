@@ -161,7 +161,7 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
       {/* COLUMN 1: Chat Interface */}
       <div 
         style={{ width: isGraphExpanded ? `${chatWidth}px` : '65%' }}
-        className="flex-shrink-0 h-full border-r border-slate-800 relative z-30 flex flex-col transition-all duration-500 ease-in-out"
+        className="flex-shrink-0 h-full min-h-0 relative z-30 transition-all duration-500 ease-in-out"
       >
          <ChatInterface 
             onGraphUpdate={handleGraphUpdate} 
