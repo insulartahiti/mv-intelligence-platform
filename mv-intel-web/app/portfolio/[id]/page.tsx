@@ -583,10 +583,228 @@ export default function PortfolioCompanyPage({ params, searchParams }: { params:
           </Tabs.Content>
 
           <Tabs.Content value="guide">
-            <GuideEditor companyId={params.id} companyName={company.name} />
+            <div className="space-y-8">
+              <GuideEditor companyId={params.id} companyName={company.name} />
+              
+              {/* Line Item Mapping Suggestions */}
+              <div className="border-t border-white/10 pt-8">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <Tag size={20} className="text-purple-400" />
+                  Line Item Mapping Suggestions
+                </h3>
+                <p className="text-sm text-white/50 mb-6">
+                  Review LLM-suggested canonical names for newly discovered line items. 
+                  Approved mappings will be used for future ingestions and display.
+                </p>
+                <MappingSuggestionsReview companyId={params.id} />
+              </div>
+            </div>
           </Tabs.Content>
         </Tabs.Root>
       </div>
+    </div>
+  );
+}
+
+// Sub-component for Mapping Suggestions Review
+function MappingSuggestionsReview({ companyId }: { companyId: string }) {
+  const [suggestions, setSuggestions] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [editingCanonical, setEditingCanonical] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetchSuggestions();
+  }, [companyId]);
+
+  const fetchSuggestions = async () => {
+    try {
+      const res = await fetch(`/api/portfolio/mapping-suggestions?companyId=${companyId}`);
+      const data = await res.json();
+      setSuggestions(data);
+    } catch (err) {
+      console.error('Error fetching suggestions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
+    setUpdating(id);
+    try {
+      const res = await fetch('/api/portfolio/mapping-suggestions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          id, 
+          status,
+          canonical: editingCanonical[id] // Include edited canonical if changed
+        })
+      });
+      
+      if (res.ok) {
+        // Refresh the list
+        await fetchSuggestions();
+      }
+    } catch (err) {
+      console.error('Error updating suggestion:', err);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+        <div className="flex items-center justify-center text-white/50 gap-2">
+          <Loader2 size={16} className="animate-spin" /> Loading suggestions...
+        </div>
+      </div>
+    );
+  }
+
+  if (!suggestions || suggestions.counts?.total === 0) {
+    return (
+      <div className="bg-white/5 rounded-xl p-6 border border-white/10 text-center">
+        <CheckCircle size={24} className="mx-auto text-emerald-400/50 mb-2" />
+        <p className="text-white/50 text-sm">No mapping suggestions to review.</p>
+        <p className="text-white/30 text-xs mt-1">
+          Suggestions are automatically created when new line items are discovered during ingestion.
+        </p>
+      </div>
+    );
+  }
+
+  const { pending, approved, auto_approved, rejected, counts } = suggestions.grouped 
+    ? suggestions 
+    : { pending: [], approved: [], auto_approved: [], rejected: [], counts: { pending: 0 } };
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Stats */}
+      <div className="grid grid-cols-4 gap-3 text-center text-xs">
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+          <div className="text-amber-400 font-medium text-lg">{counts.pending}</div>
+          <div className="text-white/40">Pending Review</div>
+        </div>
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+          <div className="text-emerald-400 font-medium text-lg">{counts.approved}</div>
+          <div className="text-white/40">Approved</div>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+          <div className="text-blue-400 font-medium text-lg">{counts.auto_approved}</div>
+          <div className="text-white/40">Auto-Approved</div>
+        </div>
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+          <div className="text-red-400 font-medium text-lg">{counts.rejected}</div>
+          <div className="text-white/40">Rejected</div>
+        </div>
+      </div>
+
+      {/* Pending Suggestions */}
+      {pending.length > 0 && (
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20">
+            <h4 className="text-sm font-medium text-amber-400 flex items-center gap-2">
+              <AlertTriangle size={14} />
+              Pending Review ({pending.length})
+            </h4>
+          </div>
+          <div className="divide-y divide-amber-500/10">
+            {pending.map((s: any) => (
+              <div key={s.id} className="p-4 hover:bg-white/5 transition-colors">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <code className="text-sm text-white/80 bg-black/30 px-2 py-0.5 rounded">{s.original_name}</code>
+                      <span className="text-white/30">→</span>
+                      <input
+                        type="text"
+                        value={editingCanonical[s.id] ?? s.suggested_canonical}
+                        onChange={(e) => setEditingCanonical(prev => ({ ...prev, [s.id]: e.target.value }))}
+                        className="text-sm text-emerald-400 bg-black/30 px-2 py-0.5 rounded border border-white/10 focus:border-emerald-500/50 outline-none"
+                      />
+                    </div>
+                    {s.reasoning && (
+                      <p className="text-xs text-white/40 mt-1 italic">{s.reasoning}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-2 text-xs text-white/30">
+                      <span>Confidence: {(s.confidence * 100).toFixed(0)}%</span>
+                      <span>•</span>
+                      <span>{new Date(s.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleUpdateStatus(s.id, 'approved')}
+                      disabled={updating === s.id}
+                      className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {updating === s.id ? <Loader2 size={12} className="animate-spin" /> : 'Approve'}
+                    </button>
+                    <button
+                      onClick={() => handleUpdateStatus(s.id, 'rejected')}
+                      disabled={updating === s.id}
+                      className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Approved Suggestions */}
+      {(approved.length > 0 || auto_approved.length > 0) && (
+        <details className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden">
+          <summary className="px-4 py-3 bg-emerald-500/10 border-b border-emerald-500/20 cursor-pointer">
+            <span className="text-sm font-medium text-emerald-400 flex items-center gap-2">
+              <CheckCircle size={14} />
+              Approved Mappings ({approved.length + auto_approved.length})
+            </span>
+          </summary>
+          <div className="divide-y divide-emerald-500/10 max-h-[300px] overflow-y-auto">
+            {[...approved, ...auto_approved].map((s: any) => (
+              <div key={s.id} className="px-4 py-3 flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <code className="text-white/60 bg-black/30 px-2 py-0.5 rounded text-xs">{s.original_name}</code>
+                  <span className="text-white/30">→</span>
+                  <code className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-xs">{s.suggested_canonical}</code>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'auto_approved' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                  {s.status === 'auto_approved' ? 'Auto' : 'Manual'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* Rejected Suggestions */}
+      {rejected.length > 0 && (
+        <details className="bg-red-500/5 border border-red-500/20 rounded-xl overflow-hidden">
+          <summary className="px-4 py-3 bg-red-500/10 border-b border-red-500/20 cursor-pointer">
+            <span className="text-sm font-medium text-red-400 flex items-center gap-2">
+              <AlertCircle size={14} />
+              Rejected ({rejected.length})
+            </span>
+          </summary>
+          <div className="divide-y divide-red-500/10 max-h-[200px] overflow-y-auto">
+            {rejected.map((s: any) => (
+              <div key={s.id} className="px-4 py-3 flex items-center justify-between text-sm opacity-60">
+                <div className="flex items-center gap-2">
+                  <code className="text-white/60 bg-black/30 px-2 py-0.5 rounded text-xs">{s.original_name}</code>
+                  <span className="text-white/30">→</span>
+                  <code className="text-red-400/60 line-through bg-red-500/10 px-2 py-0.5 rounded text-xs">{s.suggested_canonical}</code>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

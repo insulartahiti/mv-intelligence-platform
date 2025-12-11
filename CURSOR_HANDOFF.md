@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 11, 2025 (v4.11 - Categorized Financial Dashboard)
+**Last Updated:** Dec 11, 2025 (v4.12 - Hybrid Line Item Canonicalization)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -425,15 +425,14 @@ Equal Priority + <1% variance → Silent update (rounding)
 
 **Changelog Tracking:** Every update is logged with timestamp, old/new values, reason, source file, explanation, and snippet URL.
 
-### UI Improvements Needed
-
-The reconciliation backend is complete. What's missing is UI exposure:
+### UI Improvements Status
 
 | Feature | Status | Description |
 | :--- | :--- | :--- |
 | **Conflict Dashboard** | ⚠️ Not Built | UI to review high-severity conflicts flagged by reconciliation |
 | **Per-Upload View** | ⚠️ Not Built | Show what each source file contributed before reconciliation |
-| **Audit History Modal** | ⚠️ Not Built | Click any cell → see full changelog from all sources |
+| **Audit History Modal** | ✅ Complete | Click any cell → see Actual/Budget/Variance + all source records with links |
+| **Budget vs Actual Summary** | ✅ Complete | Side-by-side comparison with variance % and directional arrows |
 
 ### Dashboard Features (v4.11)
 
@@ -449,6 +448,50 @@ The Financials Dashboard now includes:
    - Profitability (ebitda, margin, profit...)
 4. **Source Links**: Snippet URLs for audit trail
 5. **Separate Actuals/Budget**: Visual distinction with color coding
+
+### Hybrid Line Item Canonicalization (v4.12)
+
+Intelligent mapping of extracted line items to canonical metric names:
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  HYBRID CANONICALIZATION                     │
+├─────────────────────────────────────────────────────────────┤
+│  1. STATIC MAPPING (instant, free)                           │
+│     Check 60+ predefined synonyms                            │
+│     e.g., "annual_recurring_revenue" → "arr"                 │
+│                                                              │
+│  2. DATABASE LOOKUP (fast)                                   │
+│     Check approved/auto_approved suggestions                 │
+│     Company-specific learned mappings                        │
+│                                                              │
+│  3. LLM SUGGESTION (when unknown)                            │
+│     GPT-4o-mini suggests canonical name                      │
+│     Stored with confidence score and reasoning               │
+│     Auto-approved if confidence >= 90%                       │
+│                                                              │
+│  4. HUMAN REVIEW (Config Tab UI)                             │
+│     Pending suggestions shown for review                     │
+│     Approve/reject with editable canonical name              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+- `lib/financials/ingestion/line_item_canonicalizer.ts` - Core logic
+- `api/portfolio/mapping-suggestions` - REST API for suggestions
+- `portfolio/[id]/page.tsx` - Review UI in Config Guide tab
+- `line_item_mapping_suggestions` table - Database storage
+
+**Static Mappings Include:**
+- MRR/ARR variations (20+ synonyms)
+- Customer metrics (customers, users, merchants, churn, ltv, cac)
+- Cash metrics (cash_balance, runway_months, burn_rate)
+- Cost metrics (cogs, opex, capex)
+- Profitability (ebitda, gross_margin, net_income)
+
+**Future Enhancement (Agent Tool):**
+Global vocabulary aggregation across all portfolio guides - designed to be called by a search agent once multiple companies have guides configured.
 
 ---
 
