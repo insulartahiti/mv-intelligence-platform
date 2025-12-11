@@ -39,13 +39,12 @@ export async function GET(req: NextRequest) {
         .eq('company_id', companyId)
         .order('period', { ascending: true }),
       
-      // 2. Raw line items from fact_financials
+      // 2. Raw line items from fact_financials (no limit - show all periods)
       supabase
         .from('fact_financials')
         .select('id, line_item_id, amount, date, scenario, currency, source_location, snippet_url')
         .eq('company_id', companyId)
-        .order('date', { ascending: false })
-        .limit(500) // Reasonable limit
+        .order('date', { ascending: true })
     ]);
     
     const { data: metrics, error: metricsError } = metricsResult;

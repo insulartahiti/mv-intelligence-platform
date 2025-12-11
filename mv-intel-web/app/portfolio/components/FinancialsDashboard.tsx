@@ -6,15 +6,17 @@ import {
   TrendingUp, 
   DollarSign, 
   Calendar, 
-  ArrowUpRight, 
-  ArrowDownRight,
   Loader2,
   FileText,
   ExternalLink,
   BarChart3,
   Target,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Wallet,
+  TrendingDown,
+  PiggyBank
 } from 'lucide-react';
 
 interface Metric {
@@ -42,6 +44,51 @@ interface FinancialsDashboardProps {
   companyId: string;
 }
 
+// Line item category definitions
+const LINE_ITEM_CATEGORIES: Record<string, { name: string; icon: any; color: string; items: string[] }> = {
+  revenue: {
+    name: 'Revenue & Growth',
+    icon: TrendingUp,
+    color: 'emerald',
+    items: ['arr', 'mrr', 'revenue', 'parr', 'nrr', 'grr', 'arpu', 'acv', 'tcv', 'bookings', 'gmv', 'tpv']
+  },
+  customers: {
+    name: 'Customers & Retention',
+    icon: Users,
+    color: 'blue',
+    items: ['customers', 'users', 'accounts', 'merchants', 'churn', 'retention', 'ltv', 'cac', 'payback']
+  },
+  cash: {
+    name: 'Cash & Liquidity',
+    icon: Wallet,
+    color: 'cyan',
+    items: ['cash', 'runway', 'burn', 'liquidity', 'working_capital']
+  },
+  costs: {
+    name: 'Costs & Expenses',
+    icon: TrendingDown,
+    color: 'red',
+    items: ['cogs', 'opex', 'capex', 'cost', 'expense', 'salary', 'personnel', 'marketing', 'sales']
+  },
+  profitability: {
+    name: 'Profitability',
+    icon: PiggyBank,
+    color: 'purple',
+    items: ['ebitda', 'ebit', 'profit', 'margin', 'contribution', 'gross_profit', 'net_income']
+  }
+};
+
+// Categorize a line item
+function categorizeLineItem(lineItemId: string): string {
+  const lower = lineItemId.toLowerCase();
+  for (const [category, config] of Object.entries(LINE_ITEM_CATEGORIES)) {
+    if (config.items.some(keyword => lower.includes(keyword))) {
+      return category;
+    }
+  }
+  return 'other';
+}
+
 // Normalize date to first of month (YYYY-MM-01)
 function normalizeToMonth(dateStr: string): string {
   const d = new Date(dateStr);
@@ -60,7 +107,14 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     actuals: [], budget: [], forecast: [], total: 0
   });
   const [loading, setLoading] = useState(true);
-  const [showBudget, setShowBudget] = useState(false);
+  const [showBudget, setShowBudget] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    revenue: true, customers: true, cash: true, costs: false, profitability: true, other: false
+  });
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -79,10 +133,10 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
   }, [companyId]);
 
   // Group and normalize actuals - take latest value per month/line_item
-  const { actualsPeriods, actualsGrouped, actualsLatest } = useMemo(() => {
+  // Sort oldest to newest (left to right)
+  const { actualsPeriods, actualsGrouped, actualsLatest, actualsLineItems } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
     
-    // Sort by date descending so latest within a month wins
     const sorted = [...financials.actuals].sort((a, b) => b.date.localeCompare(a.date));
     
     sorted.forEach(f => {
@@ -94,22 +148,30 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     });
     
     const normalized = Object.values(byMonthItem);
-    const months = Array.from(new Set(normalized.map(f => f.date))).sort().reverse();
+    // Sort ascending (oldest first, left to right)
+    const months = Array.from(new Set(normalized.map(f => f.date))).sort();
     
     const grouped: Record<string, Record<string, Financial>> = {};
     const latest: Record<string, Financial> = {};
+    const lineItems = new Set<string>();
     
     normalized.forEach(f => {
       if (!grouped[f.date]) grouped[f.date] = {};
       grouped[f.date][f.line_item_id] = f;
-      if (!latest[f.line_item_id]) latest[f.line_item_id] = f;
+      latest[f.line_item_id] = f;
+      lineItems.add(f.line_item_id);
     });
     
-    return { actualsPeriods: months, actualsGrouped: grouped, actualsLatest: latest };
+    return { 
+      actualsPeriods: months, 
+      actualsGrouped: grouped, 
+      actualsLatest: latest,
+      actualsLineItems: Array.from(lineItems).sort()
+    };
   }, [financials.actuals]);
 
-  // Group and normalize budget/plan
-  const { budgetPeriods, budgetGrouped } = useMemo(() => {
+  // Group and normalize budget/plan - oldest to newest
+  const { budgetPeriods, budgetGrouped, budgetLineItems } = useMemo(() => {
     const byMonthItem: Record<string, Financial> = {};
     
     const sorted = [...financials.budget].sort((a, b) => b.date.localeCompare(a.date));
@@ -123,21 +185,39 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
     });
     
     const normalized = Object.values(byMonthItem);
-    const months = Array.from(new Set(normalized.map(f => f.date))).sort().reverse();
+    // Sort ascending (oldest first)
+    const months = Array.from(new Set(normalized.map(f => f.date))).sort();
     
     const grouped: Record<string, Record<string, Financial>> = {};
+    const lineItems = new Set<string>();
+    
     normalized.forEach(f => {
       if (!grouped[f.date]) grouped[f.date] = {};
       grouped[f.date][f.line_item_id] = f;
+      lineItems.add(f.line_item_id);
     });
     
-    return { budgetPeriods: months, budgetGrouped: grouped };
+    return { budgetPeriods: months, budgetGrouped: grouped, budgetLineItems: Array.from(lineItems).sort() };
   }, [financials.budget]);
 
-  // Get all line items across actuals for consistent display
-  const allLineItems = useMemo(() => {
-    return Object.keys(actualsLatest).sort();
-  }, [actualsLatest]);
+  // Group line items by category
+  const categorizedLineItems = useMemo(() => {
+    const categories: Record<string, string[]> = {};
+    const allItems = [...new Set([...actualsLineItems, ...budgetLineItems])];
+    
+    allItems.forEach(item => {
+      const cat = categorizeLineItem(item);
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(item);
+    });
+    
+    // Sort items within each category
+    for (const cat in categories) {
+      categories[cat].sort();
+    }
+    
+    return categories;
+  }, [actualsLineItems, budgetLineItems]);
 
   const formatValue = (val: number, unit?: string, currency?: string) => {
     if (unit === 'percentage' || unit === 'percent') {
@@ -189,6 +269,105 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
   const keyMetrics: Record<string, Metric> = {};
   metrics.forEach(m => { keyMetrics[m.metric_id] = m; });
 
+  // Render a categorized table
+  const renderCategorizedTable = (
+    periods: string[],
+    grouped: Record<string, Record<string, Financial>>,
+    lineItems: Record<string, string[]>,
+    latest: Record<string, Financial>,
+    isActuals: boolean
+  ) => {
+    const categoryOrder = ['revenue', 'customers', 'cash', 'profitability', 'costs', 'other'];
+    const colorMap: Record<string, string> = {
+      revenue: 'emerald', customers: 'blue', cash: 'cyan', costs: 'red', profitability: 'purple', other: 'gray'
+    };
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className={`text-xs uppercase sticky top-0 z-10 ${isActuals ? 'text-white/50 bg-black/30' : 'text-amber-400/70 bg-black/30'}`}>
+            <tr>
+              <th className={`px-4 py-3 sticky left-0 z-20 min-w-[220px] border-r ${isActuals ? 'bg-[#1a1a1a] border-white/10' : 'bg-[#1a1a1a] border-amber-500/20'}`}>
+                Line Item
+              </th>
+              {periods.map(date => (
+                <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
+                  {formatMonthLabel(date)}
+                </th>
+              ))}
+              {isActuals && <th className="px-3 py-3 text-center min-w-[50px]">Src</th>}
+            </tr>
+          </thead>
+          <tbody className={`divide-y ${isActuals ? 'divide-white/5' : 'divide-amber-500/10'}`}>
+            {categoryOrder.map(cat => {
+              const items = lineItems[cat];
+              if (!items || items.length === 0) return null;
+              
+              const config = LINE_ITEM_CATEGORIES[cat] || { name: 'Other', icon: FileText, color: 'gray' };
+              const Icon = config.icon;
+              const isExpanded = expandedCategories[cat];
+              const color = colorMap[cat];
+
+              return (
+                <React.Fragment key={cat}>
+                  {/* Category Header Row */}
+                  <tr 
+                    className={`bg-${color}-500/10 cursor-pointer hover:bg-${color}-500/15 transition-colors`}
+                    onClick={() => toggleCategory(cat)}
+                  >
+                    <td 
+                      colSpan={periods.length + (isActuals ? 2 : 1)} 
+                      className={`px-4 py-2 sticky left-0 bg-${color}-500/10`}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider">
+                        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        <Icon size={12} className={`text-${color}-400`} />
+                        <span className={`text-${color}-400`}>{config.name}</span>
+                        <span className="text-white/40 normal-case">({items.length})</span>
+                      </div>
+                    </td>
+                  </tr>
+                  
+                  {/* Line Items in Category */}
+                  {isExpanded && items.map(lineItemId => (
+                    <tr key={lineItemId} className={`hover:bg-white/5 transition-colors`}>
+                      <td className={`px-4 py-2 pl-8 font-medium sticky left-0 border-r text-xs ${isActuals ? 'text-white/80 bg-[#1a1a1a] border-white/10' : 'text-amber-200/80 bg-[#1a1a1a] border-amber-500/20'}`}>
+                        {formatLineItemName(lineItemId)}
+                      </td>
+                      {periods.map(date => {
+                        const item = grouped[date]?.[lineItemId];
+                        return (
+                          <td key={date} className={`px-3 py-2 font-mono text-right whitespace-nowrap text-xs ${isActuals ? 'text-white/70' : 'text-amber-100/60'}`}>
+                            {item ? formatValue(item.amount, undefined, item.currency) : '-'}
+                          </td>
+                        );
+                      })}
+                      {isActuals && (
+                        <td className="px-3 py-2 text-center">
+                          {latest[lineItemId]?.snippet_url && (
+                            <a 
+                              href={latest[lineItemId].snippet_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-blue-400 hover:text-blue-300"
+                              title="View source"
+                            >
+                              <ExternalLink size={10} />
+                            </a>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       {/* Section 1: Computed KPIs from fact_metrics */}
@@ -237,54 +416,8 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
             </span>
           </h3>
           
-          <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-white/50 uppercase bg-black/30 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-4 py-3 sticky left-0 bg-[#1a1a1a] z-20 min-w-[200px] border-r border-white/10">
-                      Line Item
-                    </th>
-                    {actualsPeriods.slice(0, 12).map(date => (
-                      <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
-                        {formatMonthLabel(date)}
-                      </th>
-                    ))}
-                    <th className="px-3 py-3 text-center min-w-[60px]">Source</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {allLineItems.map(lineItemId => (
-                    <tr key={lineItemId} className="hover:bg-white/5 transition-colors">
-                      <td className="px-4 py-2 font-medium text-white/80 sticky left-0 bg-[#1a1a1a] border-r border-white/10 text-xs">
-                        {formatLineItemName(lineItemId)}
-                      </td>
-                      {actualsPeriods.slice(0, 12).map(date => {
-                        const item = actualsGrouped[date]?.[lineItemId];
-                        return (
-                          <td key={date} className="px-3 py-2 text-white/70 font-mono text-right whitespace-nowrap text-xs">
-                            {item ? formatValue(item.amount, undefined, item.currency) : '-'}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-center">
-                        {actualsLatest[lineItemId]?.snippet_url && (
-                          <a 
-                            href={actualsLatest[lineItemId].snippet_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="text-blue-400 hover:text-blue-300"
-                            title="View source"
-                          >
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
+            {renderCategorizedTable(actualsPeriods, actualsGrouped, categorizedLineItems, actualsLatest, true)}
           </div>
         </div>
       )}
@@ -305,40 +438,8 @@ export function FinancialsDashboard({ companyId }: FinancialsDashboardProps) {
           </button>
           
           {showBudget && (
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-amber-400/70 uppercase bg-black/30 sticky top-0 z-10">
-                    <tr>
-                      <th className="px-4 py-3 sticky left-0 bg-[#1a1a1a] z-20 min-w-[200px] border-r border-amber-500/20">
-                        Line Item
-                      </th>
-                      {budgetPeriods.slice(0, 12).map(date => (
-                        <th key={date} className="px-3 py-3 whitespace-nowrap text-right min-w-[80px]">
-                          {formatMonthLabel(date)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-amber-500/10">
-                    {Object.keys(budgetGrouped[budgetPeriods[0]] || {}).sort().map(lineItemId => (
-                      <tr key={lineItemId} className="hover:bg-amber-500/5 transition-colors">
-                        <td className="px-4 py-2 font-medium text-amber-200/80 sticky left-0 bg-[#1a1a1a] border-r border-amber-500/20 text-xs">
-                          {formatLineItemName(lineItemId)}
-                        </td>
-                        {budgetPeriods.slice(0, 12).map(date => {
-                          const item = budgetGrouped[date]?.[lineItemId];
-                          return (
-                            <td key={date} className="px-3 py-2 text-amber-100/60 font-mono text-right whitespace-nowrap text-xs">
-                              {item ? formatValue(item.amount, undefined, item.currency) : '-'}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
+              {renderCategorizedTable(budgetPeriods, budgetGrouped, categorizedLineItems, {}, false)}
             </div>
           )}
         </div>
