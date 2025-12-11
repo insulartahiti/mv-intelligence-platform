@@ -1,6 +1,6 @@
 # Motive Intelligence Platform - Engineering Handoff
 
-**Last Updated:** Dec 11, 2025 (v4.9 - Financial Ingestion Pipeline Fixes)
+**Last Updated:** Dec 11, 2025 (v4.10 - Financial Dashboard Improvements & Pipeline Review)
 
 This document serves as the primary onboarding and operational guide for the Motive Intelligence Platform. It covers system architecture, operational workflows, and the current development roadmap.
 
@@ -382,6 +382,66 @@ When multiple files are ingested for the same company/period, the system must in
 ### Visual Audit Highlighting (v3.1)
 When GPT-5.1 extracts metrics, it also returns `source_locations` with bounding box coordinates. The `pdf_snippet.ts` module extracts relevant pages, draws ellipse annotations, and uploads snippets for pixel-level auditability.
 
+### Ingestion Pipeline Review & Known Issues (Dec 11, 2025)
+
+#### Current Issues Identified
+
+| Issue | Root Cause | Status |
+| :--- | :--- | :--- |
+| **Duplicate date columns** | LLM returns dates with day precision (2025-09-30) while filename extraction returns first-of-month (2025-09-01), both stored as separate records | ✅ Fixed: `normalizeToFirstOfMonth()` in `map_to_schema.ts` |
+| **Duplicate file uploads** | Same files uploaded multiple times (24 source files for Nelly, many duplicates of same 3 docs) | ⚠️ No UI prevention of re-uploads |
+| **No per-upload output** | All data merged into single fact tables, no way to see what came from each specific upload | ⚠️ Architecture needed |
+| **Missing source links** | Dashboard table didn't show snippet URLs for audit trail | ✅ Fixed: Source column added |
+| **Budget/Actuals mixed** | Single table showed all scenarios without distinction | ✅ Fixed: Separate tables with color coding |
+
+#### Proposed Per-Upload Output Architecture (v4.10)
+
+**Goal**: Create a separate output for each file uploaded, then use orchestration rules to create one summary table with the latest values.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    PER-UPLOAD OUTPUT MODEL                        │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  STAGE 1: Individual File Processing                              │
+│  ────────────────────────────────────                             │
+│  Each uploaded file creates:                                       │
+│  • dim_source_files record (metadata, upload time)                │
+│  • fact_file_extractions (raw extracted values per file)          │
+│    - company_id, source_file_id, line_item_id, amount             │
+│    - date, scenario, extraction_confidence, snippet_url           │
+│                                                                   │
+│  STAGE 2: Orchestrated Summary                                     │
+│  ─────────────────────────────                                     │
+│  After upload completes, run reconciliation to:                    │
+│  • Apply source priority rules (Board Deck > Investor Report)     │
+│  • Create/update fact_financials_summary (one row per metric/date)│
+│  • Track which source_file_id "won" for each metric               │
+│                                                                   │
+│  STAGE 3: UI Views                                                 │
+│  ───────────────                                                   │
+│  • "Per Upload" view: Show exactly what each file contributed     │
+│  • "Summary" view: Show orchestrated latest values                │
+│  • "Audit Trail": Click any value → see all sources & history     │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**New Tables Needed:**
+
+| Table | Purpose |
+| :--- | :--- |
+| `fact_file_extractions` | Raw extraction results per file (not reconciled) |
+| `fact_financials_summary` | Orchestrated "winning" values per company/period/metric |
+| `extraction_audit_log` | History of which file contributed which value |
+
+**Reconciliation Rules:**
+
+1. **Same metric, same period, same file**: Keep latest extraction (overwrite)
+2. **Same metric, same period, different files**: Apply priority rules, log decision
+3. **Budget vs Actuals**: Never merge - always separate scenarios
+4. **Conflicts**: Flag for manual review if values differ by >10%
+
 ---
 
 ## 5. Legal Document Analysis System
@@ -560,13 +620,15 @@ A separate workflow (`cleanup.yml`) runs intelligent data assurance:
 
 ### Bug Fixes
 
-*   **Financial Ingestion Pipeline (Dec 11)**:
-    *   **Comprehensive Guide Generation**: Updated the Configuration Assistant (`/api/portfolio/guide`) system prompt from 17 lines to 138 lines, enabling AI to generate complete guides with `document_structure`, `metrics_mapping`, `line_item_mapping`, and other required sections (matching the quality of manual guides like Nelly).
-    *   **Ingestion History Page**: Fixed the query that joins `dim_source_files` with `graph.entities`. Changed from broken FK relation syntax to a proper two-query approach that fetches entities separately.
-    *   **View Dashboard Link**: Made links more explicit with cursor styling and fallback "No Link" text when company ID is missing.
-    *   **Metrics API Fallback**: Enhanced `/api/portfolio/metrics` to fall back to `fact_financials` if no computed metrics exist, ensuring dashboard shows data even before full metric computation.
-    *   **Entity Resolution**: Fixed `loadPortcoGuide` to prioritize `is_portfolio=true` entities when resolving company names (handles duplicate "Aufinity" entries).
-    *   **Database Verification**: Confirmed 237 fact_financials + 2 fact_metrics records exist for Aufinity in staging database.
+*   **Financial Dashboard Improvements (Dec 11)**:
+    *   **Separate Actuals vs Budget Tables**: Dashboard now shows Actuals (blue) and Budget/Plan (amber, collapsible) as distinct sections with clear visual distinction.
+    *   **Date Normalization**: Added `normalizeToFirstOfMonth()` in `map_to_schema.ts` to prevent duplicate columns when LLM returns dates like `2025-09-30` vs `2025-09-01` for the same month.
+    *   **Source Links Column**: Added clickable snippet URLs in the financial data table for audit trail access.
+    *   **Summary Stats Bar**: Shows counts of Actual records, Budget records, and Computed KPIs.
+    *   **Comprehensive Guide Generation**: Updated Configuration Assistant prompt from 17 to 138 lines for complete YAML guide generation.
+    *   **Ingestion History Page**: Fixed query to properly join `dim_source_files` with `graph.entities`.
+    *   **Metrics API**: Returns both `fact_metrics` (computed KPIs) and `fact_financials` (raw line items) in single response.
+    *   **Pipeline Architecture Review**: Documented per-upload output model and reconciliation strategy in handoff.
 
 *   **Admin Console Issue Queue (Dec 10)**:
     *   **Fixed "View" Button Not Clickable**: Added missing `X` icon import from `lucide-react` in `/admin` page. The modal close button (`<X />`) was causing a runtime error when clicking "View" because the icon component was undefined.
