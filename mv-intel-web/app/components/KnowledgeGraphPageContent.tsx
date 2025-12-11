@@ -156,12 +156,12 @@ export default function KnowledgeGraphPageContent({ greeting, userEntity }: { gr
   }
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden text-slate-100 font-sans relative">
+    <div className="flex h-[100dvh] bg-slate-950 overflow-hidden text-slate-100 font-sans relative">
       
       {/* COLUMN 1: Chat Interface */}
       <div 
         style={{ width: isGraphExpanded ? `${chatWidth}px` : '65%' }}
-        className="flex-shrink-0 relative z-30 transition-all duration-500 ease-in-out"
+        className="flex-shrink-0 h-full relative z-30 transition-all duration-500 ease-in-out"
       >
          <div className="absolute inset-0">
            <ChatInterface 

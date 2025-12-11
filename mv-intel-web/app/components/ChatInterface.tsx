@@ -723,7 +723,7 @@ export default function ChatInterface({
             </div>
 
             {/* Input Area */}
-            <div className="flex-shrink-0 p-3 bg-slate-900 border-t border-slate-800">
+            <div className="flex-shrink-0 p-2 bg-slate-900 border-t border-slate-800">
                 <form onSubmit={handleFormSubmit} className="relative">
                     <input
                         type="text"
